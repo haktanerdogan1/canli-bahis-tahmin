@@ -36,6 +36,84 @@ LEAGUES_CACHE["937351"] = {"name": "UEFA Conference League", "ccode": "INT", "lo
 LEAGUES_CACHE["915708"] = {"name": "Club Friendlies", "ccode": "INT", "logo": ""}
 LEAGUES_CACHE["251"] = {"name": "Ykkösliiga (Finlandiya)", "ccode": "FIN", "logo": ""}
 
+# --- "Bilindik" lig/takım filtresi + günlük kota -----------------------------------------
+# Amaç: RapidAPI sorgu kotasını, özellikle sezon dışı dönemde (çok sayıda alt lig / rezerv /
+# altyapı maçı aynı anda oynanıyor) israf etmemek. Sadece tanınan büyük liglerin/takımların
+# maçlarını takibe al, günde en fazla DAILY_MATCH_CAP kadar YENİ maç ekle. Zaten takip
+# edilmekte olan bir maç, kota dolsa bile GÜNCELLENMEYE devam eder - yoksa yarım kalıp
+# sonsuza kadar "PENDING" takılma bugu geri gelir.
+DAILY_MATCH_CAP = 30
+
+KNOWN_LEAGUE_NAMES = {
+    "champions league", "europa league", "conference league",
+    "uefa champions league", "uefa europa league", "uefa conference league",
+}
+
+KNOWN_TEAMS = {
+    # Süper Lig
+    "galatasaray", "fenerbahçe", "fenerbahce", "beşiktaş", "besiktas", "trabzonspor",
+    "başakşehir", "basaksehir", "adana demirspor", "antalyaspor", "kasımpaşa", "kasimpasa",
+    "kayserispor", "konyaspor", "sivasspor", "alanyaspor", "gaziantep", "çaykur rizespor", "rizespor",
+    "göztepe", "goztepe", "samsunspor", "eyüpspor", "eyupspor", "kocaelispor",
+    "gençlerbirliği", "genclerbirligi", "karagümrük", "karagumruk",
+    # Premier League
+    "manchester united", "manchester city", "liverpool", "chelsea", "arsenal", "tottenham",
+    "newcastle", "aston villa", "west ham", "brighton", "everton", "wolverhampton", "wolves",
+    "crystal palace", "fulham", "brentford", "nottingham forest", "bournemouth", "burnley",
+    "leeds united", "sunderland",
+    # La Liga
+    "real madrid", "barcelona", "atletico madrid", "atlético madrid", "sevilla", "real sociedad",
+    "real betis", "villarreal", "athletic bilbao", "athletic club", "valencia", "girona",
+    "celta vigo", "osasuna", "getafe", "mallorca", "rayo vallecano", "alaves", "alavés",
+    "las palmas", "espanyol", "levante", "elche", "real oviedo",
+    # Serie A
+    "juventus", "inter milan", "internazionale", "ac milan", "napoli", "as roma", " roma",
+    "lazio", "atalanta", "fiorentina", "bologna", "torino", "udinese", "sassuolo", "genoa",
+    "cagliari", "parma", "hellas verona", "lecce", "empoli", "como 1907", "cremonese", "pisa",
+    # Bundesliga
+    "bayern münchen", "bayern munich", "borussia dortmund", "rb leipzig", "bayer leverkusen",
+    "eintracht frankfurt", "wolfsburg", "mönchengladbach", "monchengladbach", "union berlin",
+    "freiburg", "hoffenheim", "mainz", "fc augsburg", "vfb stuttgart", "werder bremen",
+    "köln", "koln", "heidenheim", "st. pauli", "hamburger sv",
+    # Ligue 1
+    "paris saint-germain", "psg", "marseille", "monaco", "olympique lyonnais", "lille",
+    "nice", "rennes", "lens", "strasbourg", "toulouse", "nantes", "reims", "montpellier",
+    "brest", "le havre", "angers", "auxerre", "metz", "paris fc",
+}
+
+
+def _is_known_match(league_name, home_name, away_name):
+    """Mac 'bilindik' mi? Ya lig adi tanidik bir turnuva, ya da takimlardan biri buyuk/bilinen
+    bir kulup ise True doner."""
+    ln = (league_name or "").strip().lower()
+    if ln in KNOWN_LEAGUE_NAMES:
+        return True
+    hn = (home_name or "").strip().lower()
+    an = (away_name or "").strip().lower()
+    return any(kw in hn or kw in an for kw in KNOWN_TEAMS)
+
+
+_daily_state = {"date": None, "count": 0}
+
+
+def _daily_cap_available():
+    """Gunluk YENI mac kotasini kontrol eder, gun degisince otomatik resetler (TR saatine gore)."""
+    import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        today = datetime.datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    except Exception:
+        today = datetime.date.today()
+    if _daily_state["date"] != today:
+        _daily_state["date"] = today
+        _daily_state["count"] = 0
+    return _daily_state["count"] < DAILY_MATCH_CAP
+
+
+def _register_new_match():
+    _daily_state["count"] += 1
+
+
 # Hafıza havuzu
 V4_HISTORY = {}
 
@@ -122,6 +200,13 @@ async def process_api_matches(session):
             SET status = 'FINISHED'
             WHERE status IN ('LIVE', 'HT') AND source_match_id NOT IN ({placeholders})
         ''', active_ids)
+
+        # Bu ciklustaki maclardan hangileri DB'de zaten var (halihazirda takip ediliyor)?
+        # Zaten takip edilenler kota/filtre doldu diye BIRAKILMAZ - guncellenmeye devam eder.
+        cursor.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
+        existing_ids = set(row[0] for row in cursor.fetchall())
+    else:
+        existing_ids = set()
     
     for match in matches:
         match_id_api = str(match["id"])
@@ -141,7 +226,19 @@ async def process_api_matches(session):
         # Lig bilgilerini al
         league_id_api = str(match.get("leagueId", ""))
         league_info = LEAGUES_CACHE.get(league_id_api, {"name": "Unknown League", "ccode": "INT", "logo": ""})
-        
+
+        # --- Bilindik mac / gunluk kota filtresi ---
+        # Zaten takip edilen bir mac ise (existing_ids icinde) her zaman guncellenir.
+        # YENI bir mac ise: bilinen bir ligden/takimdan degilse VEYA gunluk 30 mac kotasi
+        # dolmussa, bu maci hic isleme almadan atla (DB'ye yazma, stats sorgusu da atma -
+        # boylece RapidAPI kotasi sadece anlamli maclarda harcanir).
+        if event_id not in existing_ids:
+            if not _is_known_match(league_info["name"], home_name, away_name):
+                continue
+            if not _daily_cap_available():
+                continue
+            _register_new_match()
+
         status_data = match.get("status", {})
         import re
         short_str = "0"

@@ -674,10 +674,15 @@
                         if (m.outcome === 'WON') outcomeBadge = '<span style="color:var(--accent-success); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-check"></i> KAZANDI</span>';
                         else if (m.outcome === 'LOST') outcomeBadge = '<span style="color:var(--accent-danger); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-times"></i> KAYBETTİ</span>';
                         
+                        const signalMinuteHtml = (m.signal_minute !== undefined && m.signal_minute !== null)
+                            ? `<div class="radar-signal-minute" style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-clock"></i> Tahmin Dakikası: ${m.signal_minute}'</div>`
+                            : '';
+
                         radarHtml = `
                         <div class="radar-panel">
                             <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market} ${outcomeBadge}</div>
                             <div class="radar-prob">%${Math.round(m.probability * 100)} Olasılık</div>
+                            ${signalMinuteHtml}
                         </div>`;
                     }
 

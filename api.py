@@ -32,7 +32,7 @@ def get_live_matches():
         SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.minute,
                p.signal_level, p.weighted_probability, p.decision, m.league_name, m.league_logo, m.id,
                m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute,
-               fh.fh_end_home, fh.fh_end_away, p.created_at
+               fh.fh_end_home, fh.fh_end_away, p.created_at, p.signal_minute, p.market
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
@@ -65,10 +65,17 @@ def get_live_matches():
         initial_home = r[13] if r[13] is not None else current_home
         initial_away = r[14] if r[14] is not None else current_away
         match_status = r[15]
-        signal_minute = r[16] if (len(r) > 16 and r[16] is not None) else minute
         fh_end_home = r[17] if len(r) > 17 else None
         fh_end_away = r[18] if len(r) > 18 else None
         match_id = r[10]
+        # p.signal_minute / p.market: sinyal uretildigi anda SABIT olarak kaydedilmis degerler
+        # (bkz. orchestrator.py). Eski (bu kolonlar eklenmeden once atilmis) sinyaller icin
+        # None gelir; o durumda eski (kirilgan) fallback'e geri donulur.
+        stored_signal_minute = r[20] if len(r) > 20 else None
+        stored_market = r[21] if len(r) > 21 else None
+        signal_minute = stored_signal_minute if stored_signal_minute is not None else (
+            r[16] if (len(r) > 16 and r[16] is not None) else minute
+        )
         
         total_goals_now = current_home + current_away
         total_goals_initial = initial_home + initial_away
@@ -92,7 +99,7 @@ def get_live_matches():
             elif match_status == 'FINISHED' or minute >= 130:
                 outcome = "LOST"
             
-        market = f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market else f"Maç Sonu {total_goals_initial + 0.5} Üst"
+        market = stored_market if stored_market else (f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market else f"Maç Sonu {total_goals_initial + 0.5} Üst")
         
         entry = {
             "home_team": r[0],
@@ -110,6 +117,7 @@ def get_live_matches():
             "home_logo": r[11] if r[11] else f"https://ui-avatars.com/api/?name={r[0].replace(' ', '+')}&background=1f2937&color=00e5ff",
             "away_logo": r[12] if r[12] else f"https://ui-avatars.com/api/?name={r[1].replace(' ', '+')}&background=1f2937&color=00e5ff",
             "outcome": outcome,
+            "signal_minute": signal_minute,
             "created_at": r[19] if len(r) > 19 else None
         }
         

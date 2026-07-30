@@ -25,8 +25,27 @@ from app.core.consensus_engine import ConsensusEngine
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'database', 'fh_goal_predictor.db')
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
 
+def _ensure_schema():
+    """consensus_predictions tablosuna signal_minute/market kolonlarini ekler (yoksa).
+    Boylece sinyalin uretildigi dakika ve market adi DB'de SABIT olarak saklanir;
+    api.py bunu daha sonra maçın o anki (degismis) dakikasindan yeniden hesaplamaya calismaz.
+    Bu, ilk yarida uretilen bir sinyalin zamanla 'Mac Sonu' olarak yanlis etiketlenmesini onler."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    for ddl in (
+        "ALTER TABLE consensus_predictions ADD COLUMN signal_minute INTEGER",
+        "ALTER TABLE consensus_predictions ADD COLUMN market TEXT",
+    ):
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    conn.close()
+
 def run_orchestrator():
     print("🧠 Başlatılıyor: Sinyal Avcısı (Konsensüs Orkestratörü) - 18 AI BOTS ACTIVE...", flush=True)
+    _ensure_schema()
     
     bots = [
         XGSniperBot(), TeamFormBot(), LiveTempoBot(), MomentumBot(),
@@ -124,12 +143,23 @@ def run_orchestrator():
                 consensus_result = consensus_engine.evaluate(predictions)
                 
                 if consensus_result.decision == "signal":
+                    # Sinyalin uretildigi dakika ve hedeflenen market SABIT olarak hesaplanip kaydedilir.
+                    # Boylece maç ilerledikce (ör. 2. yariya gecince) bu sinyal SONRADAN yanlislikla
+                    # "Mac Sonu" marketine donusmez; hep uretildigi andaki (ilk yari / mac sonu) haliyle kalir.
+                    total_goals_initial = (match["home_score"] or 0) + (match["away_score"] or 0)
+                    is_first_half_market = minute <= 45
+                    signal_market = (
+                        f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market
+                        else f"Maç Sonu {total_goals_initial + 0.5} Üst"
+                    )
+
                     # DB'ye kaydet
                     cursor.execute('''
                         INSERT INTO consensus_predictions 
                         (match_id, snapshot_id, consensus_version, positive_bot_count, negative_bot_count, 
-                         insufficient_data_count, weighted_probability, signal_level, decision)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         insufficient_data_count, weighted_probability, signal_level, decision,
+                         signal_minute, market)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         match_id,
                         latest['id'] if latest else None,
@@ -139,7 +169,9 @@ def run_orchestrator():
                         consensus_result.insufficient_data_count,
                         consensus_result.weighted_probability,
                         consensus_result.signal_level,
-                        consensus_result.decision
+                        consensus_result.decision,
+                        minute,
+                        signal_market
                     ))
                     conn.commit()
                     

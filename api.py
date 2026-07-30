@@ -32,7 +32,7 @@ def get_live_matches():
         SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.minute,
                p.signal_level, p.weighted_probability, p.decision, m.league_name, m.league_logo, m.id,
                m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute,
-               fh.fh_end_home, fh.fh_end_away
+               fh.fh_end_home, fh.fh_end_away, p.created_at
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
@@ -47,12 +47,17 @@ def get_live_matches():
             ) ls2 ON ls1.match_id = ls2.match_id AND ls1.minute = ls2.max_min
         ) fh ON fh.match_id = m.id
         ORDER BY p.created_at DESC
-        LIMIT 1000
+        LIMIT 5000
     ''')
     rows = cursor.fetchall()
     conn.close()
     
-    results = []
+    # Bir maç icin orkestrator zaman icinde birden fazla sinyal (consensus_predictions satiri)
+    # uretebilir (goller ilerledikce esik yukselerek yeni sinyal acilir). Ekranda her mac TEK
+    # satir olarak gorunmeli: herhangi bir sinyali kazandiysa mac KAZANDI, hicbiri kazanmadan
+    # hepsi sonuclandiysa KAYBETTI, hala acik/bekleyen bir sinyali varsa BEKLEMEDE sayilir.
+    by_match = {}
+    
     for r in rows:
         minute = r[4]
         current_home = r[2]
@@ -63,6 +68,7 @@ def get_live_matches():
         signal_minute = r[16] if (len(r) > 16 and r[16] is not None) else minute
         fh_end_home = r[17] if len(r) > 17 else None
         fh_end_away = r[18] if len(r) > 18 else None
+        match_id = r[10]
         
         total_goals_now = current_home + current_away
         total_goals_initial = initial_home + initial_away
@@ -88,7 +94,7 @@ def get_live_matches():
             
         market = f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market else f"Maç Sonu {total_goals_initial + 0.5} Üst"
         
-        results.append({
+        entry = {
             "home_team": r[0],
             "away_team": r[1],
             "home_score": current_home,
@@ -100,11 +106,33 @@ def get_live_matches():
             "confidence": f"Seviye: {r[5]}", 
             "league_name": r[8] if r[8] else "Canlı Alarmlar",
             "league_logo": r[9] if r[9] else "",
-            "match_id": r[10],
+            "match_id": match_id,
             "home_logo": r[11] if r[11] else f"https://ui-avatars.com/api/?name={r[0].replace(' ', '+')}&background=1f2937&color=00e5ff",
             "away_logo": r[12] if r[12] else f"https://ui-avatars.com/api/?name={r[1].replace(' ', '+')}&background=1f2937&color=00e5ff",
-            "outcome": outcome
-        })
+            "outcome": outcome,
+            "created_at": r[19] if len(r) > 19 else None
+        }
+        
+        # rows zaten p.created_at DESC sirali geldigi icin, bir match_id icin ilk gordugumuz
+        # kayit o kategori (won/pending/lost) icin en guncel olandir.
+        bucket = by_match.setdefault(match_id, {"won": None, "pending": None, "lost": None})
+        if entry["outcome"] == "WON" and bucket["won"] is None:
+            bucket["won"] = entry
+        elif entry["outcome"] == "PENDING" and bucket["pending"] is None:
+            bucket["pending"] = entry
+        elif entry["outcome"] == "LOST" and bucket["lost"] is None:
+            bucket["lost"] = entry
+    
+    results = []
+    for match_id, bucket in by_match.items():
+        if bucket["won"] is not None:
+            chosen = bucket["won"]
+        elif bucket["pending"] is not None:
+            chosen = bucket["pending"]
+        else:
+            chosen = bucket["lost"]
+        chosen.pop("created_at", None)
+        results.append(chosen)
         
     return {"success": True, "data": results}
 

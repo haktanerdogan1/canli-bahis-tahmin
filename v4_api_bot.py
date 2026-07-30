@@ -176,15 +176,35 @@ async def process_api_matches(session):
         matches = matches["live"]
     elif isinstance(matches, dict) and "matches" in matches:
         matches = matches["matches"]
-    
+
     if not matches:
-        return
+        matches = []
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Extract all currently active match IDs
     active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]
+
+    if not active_ids:
+        # KRITIK: Canli feed TAMAMEN BOS (o an oynanan hicbir mac yok - orn. gece yarisi
+        # Konferans Ligi maclari bittiginde). Eskiden fonksiyon burada "return" ile cikiyordu
+        # ve asagidaki temizlik sorgusu HIC CALISMIYORDU; bu yuzden DB'deki tum maclar son
+        # gorulen dakikalarinda (63', 64' gibi) SONSUZA KADAR 'LIVE' kaliyor, "Acik Bahisler"
+        # sayfasindan hic dusmuyordu. Feed bossa, canli gorunen her mac bitmis demektir.
+        cursor.execute("UPDATE matches SET status = 'FINISHED' WHERE status IN ('LIVE', 'HT')")
+        conn.commit()
+        conn.close()
+        print("ℹ️  Canli mac yok - acik kalan tum maclar FINISHED yapildi.", flush=True)
+        return
+
+    # Teshis sayaclari: her ciklusta feed'den kac mac geldi, kaci filtreye takildi,
+    # kaci gercekten islendi -> Railway loglarindan net gorulsun diye.
+    stat_feed_total = len(active_ids)
+    stat_skipped_unknown = 0
+    stat_skipped_cap = 0
+    stat_processed = 0
+
     if active_ids:
         placeholders = ','.join('?' for _ in active_ids)
         # Bu sorgu SADECE canli feed'den tamamen DUSMUS (artik hic donmeyen) maclari kapsar.
@@ -234,10 +254,14 @@ async def process_api_matches(session):
         # boylece RapidAPI kotasi sadece anlamli maclarda harcanir).
         if event_id not in existing_ids:
             if not _is_known_match(league_info["name"], home_name, away_name):
+                stat_skipped_unknown += 1
                 continue
             if not _daily_cap_available():
+                stat_skipped_cap += 1
                 continue
             _register_new_match()
+
+        stat_processed += 1
 
         status_data = match.get("status", {})
         import re
@@ -268,12 +292,12 @@ async def process_api_matches(session):
         
         aggregate_score = status_data.get("aggregatedStr", "")
         
-        # Bazi maclar RapidAPI feed'inde "bitti" -> tekrar "canli" diye salinip geri geliyor
-        # (PAOK - Dynamo Kyiv bugu buydu: mac bir kere FINISHED/LOST olarak cozulmustu, sonra
-        # feed onu tekrar LIVE diye rapor edince orkestrator yeni bir sinyal uretip Acik
-        # Bahisler'de tekrar PENDING olarak belirdi). Bir mac FINISHED olduktan sonra bir daha
-        # asla LIVE/HT'ye GERI DONDURULMEMELI - o yuzden mevcut status zaten FINISHED ise bu
-        # UPDATE hic calismaz (satir dondurulmus/kilitli kalir).
+        # NOT: Buraya bir ara "mac bir kere FINISHED olduysa bir daha asla guncellenmesin"
+        # kilidi konulmustu. O kilit KALDIRILDI: yukaridaki "feed tamamen bos ise hepsini
+        # FINISHED yap" temizligiyle birlesince, feed'de tek seferlik gecici bir bosluk
+        # olusmasi durumunda o an gercekten oynanan tum maclar kalici olarak olu sayilacak
+        # ve bir daha asla guncellenmeyeceklerdi. Gecici olarak yanlis FINISHED olmus bir mac
+        # geri donebilmeli; nasil olsa bitince tekrar dogru sekilde sonuclanir.
         cursor.execute('''
             INSERT INTO matches 
             (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score)
@@ -289,7 +313,6 @@ async def process_api_matches(session):
                 home_team_logo=excluded.home_team_logo,
                 away_team_logo=excluded.away_team_logo,
                 aggregate_score=excluded.aggregate_score
-            WHERE matches.status != 'FINISHED'
         ''', (event_id, home_name, away_name, match_status, league_info["name"], league_info["ccode"], league_info["logo"], score_h, score_a, minute, home_logo, away_logo, aggregate_score))
                        
         cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (event_id,))
@@ -342,8 +365,18 @@ async def process_api_matches(session):
         ''', (match_id_db, minute, 'first_half' if minute <= 45 else 'second_half', 
               score_h, score_a, h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot, h_cor, a_cor))
 
+    cursor.execute("SELECT COUNT(*) FROM matches WHERE status IN ('LIVE','HT')")
+    still_open = cursor.fetchone()[0]
+
     conn.commit()
     conn.close()
+
+    print(
+        f"📊 feed={stat_feed_total} islenen={stat_processed} "
+        f"atlanan(taninmayan)={stat_skipped_unknown} atlanan(kota)={stat_skipped_cap} "
+        f"| DB'de hala acik(LIVE/HT)={still_open}",
+        flush=True,
+    )
 
 async def main():
     print("🚀 Starting V4 OFFICIAL API Radar Bot...", flush=True)

@@ -13,6 +13,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# "Devre yaziyor / eski veri gorunuyor" gibi sikayetlerin bir kismi tarayici/CDN'in bu
+# endpoint'leri (ve index.html'i) agresifce cache'lemesinden kaynaklaniyordu - biz Cache-Control
+# header'i hic set etmiyorduk, bu da bazi tarayicilarin/ara katmanlarin GET isteklerini
+# sessizce eski haliyle sunmasina yol aciyordu. Her yanitta acikca "cache'leme" diyoruz.
+@app.middleware("http")
+async def no_cache_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
 DB_PATH = os.path.join(os.path.dirname(__file__), 'database', 'fh_goal_predictor.db')
 
 @app.get("/")

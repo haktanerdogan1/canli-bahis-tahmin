@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JCode Live Analitik | Premium</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-base: #0f172a;
+            --bg-surface: #1e293b;
+            --bg-elevated: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            
+            --accent-brand: #3b82f6;
+            --accent-brand-hover: #2563eb;
+            --accent-success: #10b981;
+            --accent-danger: #ef4444;
+            --accent-warning: #f59e0b;
+            
+            --border-light: rgba(255, 255, 255, 0.08);
+            --border-strong: rgba(255, 255, 255, 0.15);
+            
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-full: 9999px;
+            
+            --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.2);
+            --shadow-glow: 0 0 15px rgba(59, 130, 246, 0.3);
+            --shadow-danger: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.05), transparent 25%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        /* --- Navbar --- */
+        .navbar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-light);
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+
+        .navbar-content {
+            max-width: 1000px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 1.5rem;
+        }
+
+        .brand {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: -0.5px;
+        }
+
+        .brand i {
+            color: var(--accent-brand);
+            font-size: 1.3rem;
+        }
+
+        .brand span {
+            background: linear-gradient(135deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 0.5rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 6px;
+            border-radius: var(--radius-full);
+            border: 1px solid var(--border-light);
+        }
+
+        .nav-btn {
+            background: transparent;
+            color: var(--text-secondary);
+            border: none;
+            padding: 8px 20px;
+            border-radius: var(--radius-full);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-btn.active {
+            background: var(--accent-brand);
+            color: #fff;
+            box-shadow: var(--shadow-glow);
+        }
+
+        .nav-btn.active-radar {
+            background: var(--accent-danger);
+            color: #fff;
+            box-shadow: var(--shadow-danger);
+        }
+
+        /* --- Main Container --- */
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 1.5rem 3rem 1.5rem;
+        }
+
+        /* --- League Grouping --- */
+        .league-group {
+            margin-bottom: 2rem;
+            animation: slideUp 0.4s ease-out forwards;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .league-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: linear-gradient(90deg, var(--bg-elevated), transparent);
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
+            border-bottom: 2px solid var(--accent-brand);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #fff;
+        }
+
+        .league-header img {
+            width: 24px;
+            height: 24px;
+            object-fit: contain;
+            background: #fff;
+            border-radius: 50%;
+            padding: 3px;
+        }
+
+        .match-list {
+            background: var(--bg-surface);
+            border-radius: 0 0 var(--radius-md) var(--radius-md);
+            border: 1px solid var(--border-light);
+            border-top: none;
+            overflow: hidden;
+            box-shadow: var(--shadow-subtle);
+        }
+
+        /* --- Match Row --- */
+        .match-row {
+            display: grid;
+            grid-template-columns: 60px 1fr 100px;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid var(--border-light);
+            transition: background 0.2s;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .match-row:last-child {
+            border-bottom: none;
+        }
+
+        .match-row:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        /* Time */
+        .match-time {
+            text-align: center;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1rem;
+            color: var(--accent-success);
+        }
+        
+        .match-time.live-pulse {
+            animation: pulse 2s infinite;
+        }
+
+        /* Teams */
+        .match-teams {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 0 10px;
+        }
+
+        .team {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.05rem;
+            font-weight: 500;
+        }
+
+        .team-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .team-score {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.15rem;
+            color: var(--accent-brand);
+            background: rgba(59, 130, 246, 0.1);
+            padding: 2px 8px;
+            border-radius: 6px;
+            min-width: 32px;
+            text-align: center;
+        }
+
+        /* Stats/Action Button */
+        .match-action {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .btn-stats {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border-strong);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .match-row:hover .btn-stats {
+            background: var(--accent-brand);
+            border-color: var(--accent-brand);
+            box-shadow: var(--shadow-glow);
+        }
+
+        /* --- Radar Extra Data --- */
+        .radar-panel {
+            grid-column: 1 / -1;
+            background: rgba(239, 68, 68, 0.05);
+            border-top: 1px dashed rgba(239, 68, 68, 0.3);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+
+        .radar-target {
+            color: var(--accent-danger);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .radar-prob {
+            background: var(--accent-danger);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: var(--radius-full);
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+
+        /* --- Modal (Match Details) --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: var(--bg-base);
+            width: 100%;
+            max-width: 600px;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-light);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            transform: scale(0.95);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            overflow: hidden;
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            background: var(--bg-surface);
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .modal-title small {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .btn-close {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .btn-close:hover {
+            color: var(--accent-danger);
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-md);
+            padding: 1rem;
+        }
+
+        .stat-card h4 {
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            font-size: 0.95rem;
+        }
+
+        .stat-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+        }
+
+        .stat-val {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .live-stat-bar {
+            background: rgba(0,0,0,0.2);
+            height: 6px;
+            border-radius: 3px;
+            margin-top: 4px;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .live-stat-home { background: var(--accent-brand); height: 100%; }
+        .live-stat-away { background: var(--accent-danger); height: 100%; }
+
+        /* Loader */
+        .loader {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 500;
+        }
+        
+        .loader i {
+            font-size: 2rem;
+            color: var(--accent-brand);
+            margin-bottom: 1rem;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+
+        /* Status Colors */
+        .status-won { color: var(--accent-success); }
+        .status-lost { color: var(--text-muted); }
+
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="brand">
+                <i class="fa-solid fa-bolt"></i>
+                <span>JCODE ANALYTICS</span>
+            </div>
+            <div class="nav-tabs">
+                <button class="nav-btn active" onclick="switchTab('all', this)">
+                    <i class="fa-solid fa-futbol"></i> Canlı Skor
+                </button>
+                <button class="nav-btn" onclick="switchTab('radar', this)">
+                    <i class="fa-solid fa-radar"></i> Sinyaller
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container" id="content-area">
+        <div class="loader">
+            <i class="fa-solid fa-circle-notch"></i>
+            <p>Veriler Yükleniyor...</p>
+        </div>
+    </main>
+
+    <!-- Match Detail Modal -->
+    <div class="modal-overlay" id="matchModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">
+                    Maç Detayı
+                    <small>Yükleniyor...</small>
+                </div>
+                <button class="btn-close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                
+                <!-- Live Stats Section -->
+                <div class="stat-card" style="margin-bottom: 1.5rem;">
+                    <h4><i class="fa-solid fa-chart-line" style="color:var(--accent-success)"></i> CANLI İSTATİSTİKLER</h4>
+                    <div id="liveStatsContainer">
+                        <div class="loader" style="padding:1rem;"><i class="fa-solid fa-circle-notch"></i></div>
+                    </div>
+                </div>
+
+                <!-- Form Section -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h4><i class="fa-solid fa-shield-halved" style="color:var(--accent-brand)"></i> EV SAHİBİ (Form)</h4>
+                        <div class="stat-row"><span class="stat-label">Kazanma Oranı</span><span class="stat-val" id="mHomeWin">-</span></div>
+                        <div class="stat-row"><span class="stat-label">İlk Yarı Gol</span><span class="stat-val" id="mHomeFh">-</span></div>
+                        <div class="stat-row"><span class="stat-label">Maç Başı Gol</span><span class="stat-val" id="mHomeAvg">-</span></div>
+                    </div>
+                    <div class="stat-card">
+                        <h4><i class="fa-solid fa-shield-halved" style="color:var(--accent-danger)"></i> DEPLASMAN (Form)</h4>
+                        <div class="stat-row"><span class="stat-label">Kazanma Oranı</span><span class="stat-val" id="mAwayWin">-</span></div>
+                        <div class="stat-row"><span class="stat-label">İlk Yarı Gol</span><span class="stat-val" id="mAwayFh">-</span></div>
+                        <div class="stat-row"><span class="stat-label">Maç Başı Gol</span><span class="stat-val" id="mAwayAvg">-</span></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'all';
+        let refreshTimer = null;
+
+        function switchTab(tab, btnElement) {
+            currentTab = tab;
+            
+            // Update buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active', 'active-radar');
+            });
+            
+            if (tab === 'all') {
+                btnElement.classList.add('active');
+            } else {
+                btnElement.classList.add('active-radar');
+            }
+            
+            fetchData();
+        }
+
+        async function fetchData() {
+            const container = document.getElementById('content-area');
+            
+            try {
+                let url = currentTab === 'all' ? '/api/all-live' : '/api/live-matches';
+                // Fallback for local testing without server running on same port
+                url = 'http://localhost:8000' + url;
+                
+                const res = await fetch(url);
+                const result = await res.json();
+                
+                if(result.success) {
+                    renderGroups(result.data, currentTab);
+                } else {
+                    container.innerHTML = `<div class="loader"><i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning)"></i><p>Veri çekilemedi.</p></div>`;
+                }
+            } catch(e) {
+                container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Sunucuya bağlanılamadı. API açık mı?</p></div>`;
+            }
+            
+            // Auto refresh
+            clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(fetchData, 15000);
+        }
+
+        function renderGroups(matches, type) {
+            const container = document.getElementById('content-area');
+            
+            if(!matches || matches.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align:center; padding: 4rem 1rem; color: var(--text-muted);">
+                        <i class="fa-solid fa-futbol" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
+                        <h3 style="font-family:'Outfit', sans-serif; font-weight:500;">Şu an gösterilecek maç yok</h3>
+                    </div>`;
+                return;
+            }
+
+            // Group by league
+            const groups = {};
+            matches.forEach(m => {
+                const lname = m.league_name || "Diğer Ligler";
+                if(!groups[lname]) groups[lname] = [];
+                groups[lname].push(m);
+            });
+
+            // Sort leagues alphabetically
+            const sortedLeagues = Object.keys(groups).sort((a,b) => {
+                if(a === "Canlı Alarmlar" || a === "UEFA Conference League" || a === "UEFA Champions League") return -1;
+                if(a === "Diğer Ligler") return 1;
+                return a.localeCompare(b);
+            });
+
+            let html = '';
+            let animDelay = 0;
+
+            sortedLeagues.forEach(league => {
+                const leagueMatches = groups[league];
+                const logoHtml = leagueMatches[0].league_logo 
+                    ? `<img src="${leagueMatches[0].league_logo}" onerror="this.style.display='none'">` 
+                    : '<i class="fa-solid fa-trophy" style="color:var(--accent-warning)"></i>';
+                
+                html += `
+                <div class="league-group" style="animation-delay: ${animDelay}s">
+                    <div class="league-header">
+                        ${logoHtml}
+                        <span>${league}</span>
+                    </div>
+                    <div class="match-list">
+                `;
+
+                leagueMatches.forEach(m => {
+                    let radarHtml = '';
+                    
+                    if (type === 'radar') {
+                        radarHtml = `
+                        <div class="radar-panel">
+                            <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market}</div>
+                            <div class="radar-prob">%${Math.round(m.probability * 100)} Olasılık</div>
+                        </div>`;
+                    }
+
+                    const timeStr = m.minute > 0 ? `${m.minute}'` : (m.status_text || 'Devre');
+                    const isLive = m.minute > 0 && m.minute <= 120;
+                    
+                    // The ID field depends on the endpoint (all-live returns match_id, live-matches doesn't return match_id, but we can fix that later, currently fallback to 0)
+                    const matchId = m.match_id || 0;
+
+                    html += `
+                        <div class="match-row" onclick="openMatchDetails(${matchId}, '${m.home_team}', '${m.away_team}')">
+                            <div class="match-time ${isLive ? 'live-pulse' : ''}">${timeStr}</div>
+                            <div class="match-teams">
+                                <div class="team">
+                                    <span class="team-name">${m.home_team}</span>
+                                    <span class="team-score">${m.home_score}</span>
+                                </div>
+                                <div class="team">
+                                    <span class="team-name">${m.away_team}</span>
+                                    <span class="team-score">${m.away_score}</span>
+                                </div>
+                            </div>
+                            <div class="match-action">
+                                <button class="btn-stats"><i class="fa-solid fa-chart-bar"></i> Veri</button>
+                            </div>
+                            ${radarHtml}
+                        </div>
+                    `;
+                });
+
+                html += `</div></div>`;
+                animDelay += 0.05;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // --- Modal Logic ---
+        function generateStatBar(label, homeVal, awayVal) {
+            const total = (homeVal + awayVal) || 1; // prevent div/0
+            const homePct = (homeVal / total) * 100;
+            const awayPct = (awayVal / total) * 100;
+            
+            return `
+            <div style="margin-bottom: 12px;">
+                <div class="stat-row">
+                    <span class="stat-val">${homeVal}</span>
+                    <span class="stat-label" style="font-size:0.85rem;">${label}</span>
+                    <span class="stat-val">${awayVal}</span>
+                </div>
+                <div class="live-stat-bar">
+                    <div class="live-stat-home" style="width: ${homePct}%"></div>
+                    <div class="live-stat-away" style="width: ${awayPct}%"></div>
+                </div>
+            </div>`;
+        }
+
+        async function openMatchDetails(matchId, homeName, awayName) {
+            if(!matchId) return; // If ID is missing
+            
+            const modal = document.getElementById('matchModal');
+            modal.classList.add('active');
+            
+            document.getElementById('modalTitle').innerHTML = `${homeName} <span style="color:var(--text-muted);margin:0 5px;">-</span> ${awayName} <small>Detaylı Analiz</small>`;
+            const statsContainer = document.getElementById('liveStatsContainer');
+            statsContainer.innerHTML = `<div class="loader" style="padding:1rem;"><i class="fa-solid fa-circle-notch"></i></div>`;
+            
+            try {
+                const res = await fetch(`http://localhost:8000/api/match/${matchId}`);
+                const result = await res.json();
+                
+                if(result.success) {
+                    const d = result.data;
+                    
+                    // Form Data
+                    document.getElementById('mHomeWin').innerText = d.home_form.win_rate;
+                    document.getElementById('mHomeFh').innerText = d.home_form.fh_goal_rate;
+                    document.getElementById('mHomeAvg').innerText = d.home_form.avg_goals_scored;
+                    
+                    document.getElementById('mAwayWin').innerText = d.away_form.win_rate;
+                    document.getElementById('mAwayFh').innerText = d.away_form.fh_goal_rate;
+                    document.getElementById('mAwayAvg').innerText = d.away_form.avg_goals_scored;
+                    
+                    // Live Stats
+                    const ls = d.live_stats;
+                    if(ls) {
+                        statsContainer.innerHTML = `
+                            ${generateStatBar('Topla Oynama (%)', ls.possession.home, ls.possession.away)}
+                            ${generateStatBar('Gol Beklentisi (xG)', ls.xg.home, ls.xg.away)}
+                            ${generateStatBar('Toplam Şut', ls.shots.home, ls.shots.away)}
+                            ${generateStatBar('İsabetli Şut', ls.shots_target.home, ls.shots_target.away)}
+                            ${generateStatBar('Korner', ls.corners.home, ls.corners.away)}
+                        `;
+                    }
+                } else {
+                    statsContainer.innerHTML = `<div style="text-align:center; padding:1rem; color:var(--text-muted)">Veri bulunamadı.</div>`;
+                }
+            } catch(e) {
+                statsContainer.innerHTML = `<div style="text-align:center; padding:1rem; color:var(--accent-danger)">Bağlantı hatası.</div>`;
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('matchModal').classList.remove('active');
+        }
+
+        // Close modal on outside click
+        document.getElementById('matchModal').addEventListener('click', function(e) {
+            if(e.target === this) closeModal();
+        });
+
+        // Init
+        fetchData();
+    </script>
+</body>
+</html>

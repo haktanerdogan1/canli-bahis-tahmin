@@ -1,0 +1,160 @@
+"""
+Tum canli-bahis servislerini tek noktadan ayakta tutan supervisor.
+
+Yonettigi surecler:
+  - api            -> uvicorn api:app (FastAPI + index.html)
+  - v4_api_bot      -> RapidAPI (free-api-live-football-data) canli veri cekici (satin alinan API)
+  - orchestrator    -> 18 AI bot konsensus motoru (app/core/orchestrator.py)
+
+Not: sofascore (live_bot.py) ve sporkolik (sporkolik_bot.py) scraper'lari kullanilmiyor,
+gercek veri kaynagi sadece RapidAPI. Bu iki dosya projede duruyor ama supervisor tarafindan calistirilmiyor.
+
+Her surec coker/kapanirsa otomatik olarak yeniden baslatilir (basit backoff ile).
+Loglar logs/<isim>.log dosyalarina yazilir.
+
+Kullanim:
+    python3 supervisor.py
+
+Durdurmak icin: Ctrl+C (ya da launchd uzerinden calisiyorsa launchctl stop/unload)
+"""
+import os
+import subprocess
+import sys
+import time
+import signal
+
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(PROJECT_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+PYTHON = sys.executable
+
+ENV = os.environ.copy()
+ENV["PYTHONPATH"] = PROJECT_DIR
+ENV["PYTHONUNBUFFERED"] = "1"
+
+PORT = os.environ.get("PORT", "8000")
+
+# Not: sofascore (live_bot.py) ve sporkolik (sporkolik_bot.py) botlari devre disi.
+# Gercek canli veri kaynagi sadece RapidAPI (v4_api_bot.py) - kullanicinin satin aldigi API.
+SERVICES = {
+    "api": {
+        "cmd": [PYTHON, "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", PORT],
+    },
+    "v4_api_bot": {
+        "cmd": [PYTHON, "-u", "v4_api_bot.py"],
+    },
+    "orchestrator": {
+        "cmd": [PYTHON, "-u", "-m", "app.core.orchestrator"],
+    },
+}
+
+MAX_LOG_BYTES = 5 * 1024 * 1024  # 5MB, asarsa .old'a tasi
+
+_procs = {}
+_fail_streak = {name: 0 for name in SERVICES}
+_shutdown = False
+
+
+def _log_path(name):
+    return os.path.join(LOG_DIR, f"{name}.log")
+
+
+def _rotate_log_if_needed(name):
+    path = _log_path(name)
+    if os.path.exists(path) and os.path.getsize(path) > MAX_LOG_BYTES:
+        old_path = path + ".old"
+        try:
+            if os.path.exists(old_path):
+                os.remove(old_path)
+            os.rename(path, old_path)
+        except OSError:
+            pass
+
+
+def start_service(name):
+    cfg = SERVICES[name]
+    _rotate_log_if_needed(name)
+    log_file = open(_log_path(name), "a", encoding="utf-8")
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    log_file.write(f"\n===== [{ts}] supervisor: starting {name} =====\n")
+    log_file.flush()
+
+    proc = subprocess.Popen(
+        cfg["cmd"],
+        cwd=PROJECT_DIR,
+        env=ENV,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+    )
+    _procs[name] = {"proc": proc, "log_file": log_file, "started_at": time.time()}
+    print(f"[supervisor] {name} started (pid={proc.pid})", flush=True)
+
+
+def stop_all():
+    for name, info in _procs.items():
+        proc = info["proc"]
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+    deadline = time.time() + 10
+    for name, info in _procs.items():
+        proc = info["proc"]
+        remaining = max(0, deadline - time.time())
+        try:
+            proc.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    for info in _procs.values():
+        try:
+            info["log_file"].close()
+        except Exception:
+            pass
+
+
+def _handle_signal(signum, frame):
+    global _shutdown
+    _shutdown = True
+
+
+def main():
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
+    print(f"[supervisor] proje dizini: {PROJECT_DIR}", flush=True)
+    for name in SERVICES:
+        start_service(name)
+
+    while not _shutdown:
+        time.sleep(5)
+        for name, cfg in SERVICES.items():
+            info = _procs.get(name)
+            if info is None:
+                continue
+            proc = info["proc"]
+            ret = proc.poll()
+            if ret is not None:
+                uptime = time.time() - info["started_at"]
+                print(f"[supervisor] {name} durdu (exit={ret}, uptime={uptime:.1f}s)", flush=True)
+
+                if uptime < 10:
+                    _fail_streak[name] += 1
+                else:
+                    _fail_streak[name] = 0
+
+                backoff = min(300, 5 * (2 ** _fail_streak[name]))
+                print(f"[supervisor] {name} icin {backoff}s sonra yeniden baslatilacak", flush=True)
+                time.sleep(backoff)
+                if _shutdown:
+                    break
+                start_service(name)
+
+    print("[supervisor] kapatiliyor...", flush=True)
+    stop_all()
+    print("[supervisor] tum servisler durduruldu.", flush=True)
+
+
+if __name__ == "__main__":
+    main()

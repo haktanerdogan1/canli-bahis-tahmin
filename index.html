@@ -3,35 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JCODE ANALYTICS | Premium</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>JCODE — Sinyal Masası</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --bg-base: #030712;
-            --bg-surface: #111827;
-            --bg-elevated: #1f2937;
-            --text-primary: #f9fafb;
-            --text-secondary: #9ca3af;
-            --text-muted: #4b5563;
-            
-            --accent-brand: #00e5ff; /* Holographic Cyan */
-            --accent-brand-hover: #00b8cc;
-            --accent-success: #10b981;
-            --accent-danger: #f43f5e;
-            --accent-warning: #f59e0b;
-            
-            --border-light: rgba(255, 255, 255, 0.04);
-            --border-strong: rgba(255, 255, 255, 0.1);
-            
-            --radius-md: 14px;
-            --radius-lg: 20px;
-            --radius-full: 9999px;
-            
-            --shadow-subtle: 0 8px 30px rgba(0, 0, 0, 0.4);
-            --shadow-glow: 0 0 25px rgba(0, 229, 255, 0.25);
-            --shadow-danger: 0 0 20px rgba(244, 63, 94, 0.3);
+            --bg-void: #0a0a0b;
+            --bg-panel: #111113;
+            --bg-panel-raised: #18181b;
+
+            --hairline: rgba(255, 255, 255, 0.07);
+            --hairline-strong: rgba(255, 255, 255, 0.15);
+
+            --text-primary: #f1efe8;
+            --text-secondary: #9a988f;
+            --text-muted: #59574e;
+
+            --accent-brand: #dda233;
+            --accent-brand-dim: rgba(221, 162, 51, 0.14);
+            --accent-success: #4f9d6c;
+            --accent-success-dim: rgba(79, 157, 108, 0.14);
+            --accent-danger: #bd5a51;
+            --accent-danger-dim: rgba(189, 90, 81, 0.14);
+            --accent-warning: #c98a2e;
+
+            --radius-xs: 2px;
+            --radius-sm: 3px;
+            --radius-md: 5px;
         }
 
         * {
@@ -40,148 +39,195 @@
             padding: 0;
         }
 
+        html { background: var(--bg-void); }
+
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-base);
+            font-family: 'Archivo', sans-serif;
+            background-color: var(--bg-void);
             color: var(--text-primary);
             -webkit-font-smoothing: antialiased;
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(0, 229, 255, 0.05), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(0, 229, 255, 0.03), transparent 25%);
-            background-attachment: fixed;
             min-height: 100vh;
         }
+
+        .mono { font-family: 'IBM Plex Mono', monospace; }
 
         /* --- Navbar --- */
         .navbar {
             position: sticky;
             top: 0;
             z-index: 50;
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border-light);
-            padding: 1rem 0;
-            margin-bottom: 2rem;
+            background: var(--bg-void);
+            border-bottom: 1px solid var(--hairline-strong);
+            padding: 0;
         }
 
         .navbar-content {
-            max-width: 1000px;
+            max-width: 980px;
             margin: 0 auto;
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 0 1.5rem;
+            height: 62px;
         }
 
         .brand {
-            font-family: 'Outfit', sans-serif;
-            font-size: 1.5rem;
-            font-weight: 800;
             display: flex;
             align-items: center;
             gap: 10px;
-            letter-spacing: -0.5px;
         }
 
-        .brand i {
-            color: var(--accent-brand);
-            font-size: 1.3rem;
+        .brand-mark {
+            width: 10px;
+            height: 10px;
+            background: var(--accent-brand);
+            flex-shrink: 0;
         }
 
-        .brand span {
-            background: linear-gradient(135deg, #fff, #94a3b8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .brand-word {
+            font-family: 'Fraunces', serif;
+            font-weight: 600;
+            font-size: 1.25rem;
+            letter-spacing: -0.01em;
+            color: var(--text-primary);
+        }
+
+        .brand-sub {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.68rem;
+            letter-spacing: 0.14em;
+            color: var(--text-muted);
+            border-left: 1px solid var(--hairline-strong);
+            padding-left: 10px;
+            margin-left: 2px;
+            text-transform: uppercase;
         }
 
         .nav-tabs {
             display: flex;
-            gap: 0.5rem;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 6px;
-            border-radius: var(--radius-full);
-            border: 1px solid var(--border-light);
+            gap: 1.75rem;
+            height: 100%;
         }
 
         .nav-btn {
             background: transparent;
             color: var(--text-secondary);
             border: none;
-            padding: 8px 20px;
-            border-radius: var(--radius-full);
-            font-family: 'Inter', sans-serif;
-            font-size: 0.95rem;
+            border-bottom: 2px solid transparent;
+            padding: 0;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.72rem;
             font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: color 0.15s ease, border-color 0.15s ease;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            height: 100%;
         }
 
         .nav-btn:hover {
             color: var(--text-primary);
-            background: rgba(255, 255, 255, 0.05);
         }
 
-        .nav-btn.active {
-            background: var(--accent-brand);
-            color: #000;
-            box-shadow: var(--shadow-glow);
-        }
-
+        .nav-btn.active,
         .nav-btn.active-radar {
-            background: var(--accent-danger);
-            color: #fff;
-            box-shadow: var(--shadow-danger);
+            color: var(--text-primary);
+            border-bottom-color: var(--accent-brand);
         }
 
         /* --- Main Container --- */
         .container {
-            max-width: 1000px;
+            max-width: 980px;
             margin: 0 auto;
             padding: 0 1.5rem 3rem 1.5rem;
         }
 
+        /* --- Ticker / status strip (yerine gecen hero) --- */
+        .desk-strip {
+            border: 1px solid var(--hairline-strong);
+            border-radius: var(--radius-sm);
+            padding: 1.1rem 1.3rem;
+            margin: 1.75rem 0 2rem 0;
+            background: var(--bg-panel);
+        }
+
+        .desk-strip-kicker {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.68rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--accent-brand);
+            margin-bottom: 0.6rem;
+        }
+
+        .desk-strip-kicker .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-brand);
+            animation: pulse 2s infinite;
+        }
+
+        .desk-strip-line {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.8;
+            letter-spacing: 0.01em;
+        }
+
+        .desk-strip-line b {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .desk-strip-line .sep {
+            color: var(--hairline-strong);
+            margin: 0 0.6em;
+        }
+
         /* --- League Grouping --- */
         .league-group {
-            margin-bottom: 2rem;
-            animation: slideUp 0.4s ease-out forwards;
+            margin-bottom: 1.75rem;
+            animation: slideUp 0.35s ease-out forwards;
             opacity: 0;
-            transform: translateY(10px);
+            transform: translateY(6px);
         }
 
         .league-header {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            background: linear-gradient(90deg, var(--bg-elevated), transparent);
-            border-radius: var(--radius-md) var(--radius-md) 0 0;
-            border-bottom: 2px solid var(--accent-brand);
-            font-family: 'Outfit', sans-serif;
-            font-weight: 700;
-            font-size: 1.1rem;
-            color: #fff;
+            gap: 10px;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--hairline-strong);
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 600;
+            font-size: 0.78rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
         }
 
         .league-header img {
-            width: 24px;
-            height: 24px;
+            width: 18px;
+            height: 18px;
             object-fit: contain;
             background: #fff;
-            border-radius: 50%;
-            padding: 3px;
+            border-radius: 2px;
+            padding: 2px;
         }
 
         .match-list {
-            background: var(--bg-surface);
-            border-radius: 0 0 var(--radius-md) var(--radius-md);
-            border: 1px solid var(--border-light);
+            background: var(--bg-panel);
+            border: 1px solid var(--hairline);
             border-top: none;
             overflow: hidden;
-            box-shadow: var(--shadow-subtle);
         }
 
         /* --- Match Row --- */
@@ -189,9 +235,9 @@
             display: grid;
             grid-template-columns: 60px 1fr 100px;
             align-items: center;
-            padding: 16px;
-            border-bottom: 1px solid var(--border-light);
-            transition: background 0.2s;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--hairline);
+            transition: background 0.15s;
             cursor: pointer;
             text-decoration: none;
             color: inherit;
@@ -202,19 +248,24 @@
         }
 
         .match-row:hover {
-            background: rgba(255, 255, 255, 0.03);
+            background: var(--bg-panel-raised);
         }
 
         /* Time */
         .match-time {
             text-align: center;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 800;
-            font-size: 1rem;
-            color: var(--accent-success);
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 600;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            border: 1px solid var(--hairline-strong);
+            border-radius: var(--radius-xs);
+            padding: 4px 2px;
         }
-        
+
         .match-time.live-pulse {
+            color: var(--accent-success);
+            border-color: var(--accent-success-dim);
             animation: pulse 2s infinite;
         }
 
@@ -223,14 +274,14 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            padding: 0 10px;
+            padding: 0 12px;
         }
 
         .team {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 1.05rem;
+            font-size: 0.98rem;
             font-weight: 500;
         }
 
@@ -241,14 +292,16 @@
         }
 
         .team-score {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             font-weight: 700;
-            font-size: 1.15rem;
-            color: var(--accent-brand);
-            background: rgba(59, 130, 246, 0.1);
-            padding: 2px 8px;
-            border-radius: 6px;
-            min-width: 32px;
+            font-size: 0.95rem;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-primary);
+            background: var(--bg-panel-raised);
+            border: 1px solid var(--hairline-strong);
+            padding: 1px 8px;
+            border-radius: var(--radius-xs);
+            min-width: 30px;
             text-align: center;
         }
 
@@ -259,64 +312,75 @@
         }
 
         .btn-stats {
-            background: var(--bg-elevated);
-            color: var(--text-primary);
-            border: 1px solid var(--border-strong);
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--hairline-strong);
             padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            font-weight: 600;
+            border-radius: var(--radius-xs);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.72rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
 
         .match-row:hover .btn-stats {
             background: var(--accent-brand);
             border-color: var(--accent-brand);
-            box-shadow: var(--shadow-glow);
+            color: #0a0a0b;
         }
 
-        /* --- Radar Extra Data --- */
+        /* --- Radar / Signal Line --- */
         .radar-panel {
             grid-column: 1 / -1;
-            background: rgba(239, 68, 68, 0.05);
-            border-top: 1px dashed rgba(239, 68, 68, 0.3);
-            padding: 12px 16px;
+            background: var(--bg-void);
+            border-top: 1px solid var(--hairline);
+            border-left: 2px solid var(--accent-brand);
+            padding: 10px 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            margin-top: 4px;
         }
 
         .radar-target {
-            color: var(--accent-danger);
-            font-weight: 700;
+            color: var(--text-primary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.78rem;
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 6px;
         }
 
         .radar-prob {
-            background: var(--accent-danger);
-            color: #fff;
-            padding: 4px 10px;
-            border-radius: var(--radius-full);
+            background: transparent;
+            color: var(--accent-brand);
+            border: 1px solid var(--accent-brand-dim);
+            padding: 3px 9px;
+            border-radius: var(--radius-xs);
+            font-family: 'IBM Plex Mono', monospace;
             font-weight: 700;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
+        }
+
+        .radar-signal-minute {
+            font-family: 'IBM Plex Mono', monospace;
         }
 
         /* --- Modal (Match Details) --- */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(8px);
+            background: rgba(10, 10, 11, 0.9);
             z-index: 100;
             display: none;
             justify-content: center;
             align-items: center;
             opacity: 0;
-            transition: opacity 0.3s;
+            transition: opacity 0.2s;
         }
 
         .modal-overlay.active {
@@ -325,14 +389,13 @@
         }
 
         .modal-content {
-            background: var(--bg-base);
+            background: var(--bg-panel);
             width: 100%;
             max-width: 600px;
-            border-radius: var(--radius-lg);
-            border: 1px solid var(--border-light);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            transform: scale(0.95);
-            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--hairline-strong);
+            transform: scale(0.97);
+            transition: transform 0.2s ease;
             overflow: hidden;
         }
 
@@ -341,40 +404,47 @@
         }
 
         .modal-header {
-            background: var(--bg-surface);
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--border-light);
+            background: var(--bg-panel);
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--hairline-strong);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
         .modal-title {
-            font-family: 'Outfit', sans-serif;
-            font-size: 1.2rem;
-            font-weight: 700;
+            font-family: 'Fraunces', serif;
+            font-size: 1.15rem;
+            font-weight: 600;
             display: flex;
             flex-direction: column;
             gap: 4px;
         }
-        
+
         .modal-title small {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.68rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
             font-weight: 500;
         }
 
         .btn-close {
             background: transparent;
-            border: none;
+            border: 1px solid var(--hairline-strong);
+            border-radius: var(--radius-xs);
+            width: 28px;
+            height: 28px;
             color: var(--text-secondary);
-            font-size: 1.5rem;
+            font-size: 0.9rem;
             cursor: pointer;
-            transition: color 0.2s;
+            transition: all 0.15s;
         }
 
         .btn-close:hover {
             color: var(--accent-danger);
+            border-color: var(--accent-danger);
         }
 
         .modal-body {
@@ -386,26 +456,27 @@
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
+            gap: 1rem;
         }
 
         .stat-card {
-            background: var(--bg-surface);
-            border: 1px solid var(--border-light);
-            border-radius: var(--radius-md);
+            background: var(--bg-void);
+            border: 1px solid var(--hairline);
+            border-radius: var(--radius-sm);
             padding: 1rem;
         }
 
         .stat-card h4 {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             color: var(--text-secondary);
-            font-size: 0.85rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.1em;
             margin-bottom: 1rem;
             display: flex;
             align-items: center;
             gap: 6px;
+            font-weight: 600;
         }
 
         .stat-row {
@@ -413,7 +484,7 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 0.75rem;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .stat-row:last-child {
@@ -425,43 +496,47 @@
         }
 
         .stat-val {
+            font-family: 'IBM Plex Mono', monospace;
             font-weight: 600;
             color: var(--text-primary);
         }
 
         .live-stat-bar {
-            background: rgba(0,0,0,0.2);
-            height: 6px;
-            border-radius: 3px;
+            background: var(--bg-panel-raised);
+            height: 5px;
+            border-radius: var(--radius-xs);
             margin-top: 4px;
             display: flex;
             overflow: hidden;
         }
-        
+
         .live-stat-home { background: var(--accent-brand); height: 100%; }
-        .live-stat-away { background: var(--accent-danger); height: 100%; }
+        .live-stat-away { background: var(--text-muted); height: 100%; }
 
         /* Loader */
         .loader {
             text-align: center;
             padding: 3rem;
             color: var(--text-secondary);
-            font-family: 'Outfit', sans-serif;
-            font-weight: 500;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
-        
+
         .loader i {
-            font-size: 2rem;
+            font-size: 1.4rem;
             color: var(--accent-brand);
             margin-bottom: 1rem;
             animation: spin 1s linear infinite;
+            display: block;
         }
 
         @keyframes spin { 100% { transform: rotate(360deg); } }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
         @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
 
-        /* Status Colors */
+        /* Status Colors (JS inline var() references) */
         .status-won { color: var(--accent-success); }
         .status-lost { color: var(--text-muted); }
 
@@ -473,47 +548,33 @@
     <nav class="navbar">
         <div class="navbar-content">
             <div class="brand">
-                <i class="fa-solid fa-bolt" style="color: var(--accent-brand);"></i>
-                <span style="color: #fff;">JCODE ANALYTICS</span>
+                <div class="brand-mark"></div>
+                <span class="brand-word">JCODE</span>
+                <span class="brand-sub">Sinyal Masası</span>
             </div>
             <div class="nav-tabs">
-                <button class="nav-btn active" onclick="switchTab('pending', this)">
-                    <i class="fa-solid fa-radar"></i> Açık Bahisler
-                </button>
-                <button class="nav-btn" onclick="switchTab('won', this)">
-                    <i class="fa-solid fa-check-circle" style="color:var(--accent-success)"></i> Kazananlar
-                </button>
-                <button class="nav-btn" onclick="switchTab('lost', this)">
-                    <i class="fa-solid fa-times-circle" style="color:var(--text-muted)"></i> Kayıplar
-                </button>
-                <button class="nav-btn" onclick="switchTab('all', this)">
-                    <i class="fa-solid fa-futbol"></i> Tüm Canlılar
-                </button>
+                <button class="nav-btn active" onclick="switchTab('pending', this)">Açık</button>
+                <button class="nav-btn" onclick="switchTab('won', this)">Kazanan</button>
+                <button class="nav-btn" onclick="switchTab('lost', this)">Kayıp</button>
+                <button class="nav-btn" onclick="switchTab('all', this)">Tüm Canlılar</button>
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
     <main class="container" id="content-area">
-        <!-- Hero Banner -->
-        <div style="background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(0,0,0,0.8)); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 2rem; margin-bottom: 2rem; text-align: center; box-shadow: var(--shadow-glow); position: relative; overflow: hidden;">
-            <div style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(0,229,255,0.05) 0%, transparent 50%); animation: spin 10s linear infinite; pointer-events: none;"></div>
-            <h2 style="font-family: 'Outfit', sans-serif; font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">
-                <span style="color: #fff;">AI'nin gücüyle</span> <span style="color: var(--accent-brand);">herkesten önde ol</span>
-            </h2>
-            <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto 1.5rem auto; line-height: 1.6;">
-                JCode destekli 16 farklı Yapay Zeka Botu, +500 veri kaynağını kesintisiz tarar ve saniyeler içinde gizli gol fırsatlarını (Sinyal) bulur.
-            </p>
-            <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-                <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-robot" style="color:var(--accent-brand);"></i> 16 AI Uzman Bot</span>
-                <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
+
+        <div class="desk-strip">
+            <div class="desk-strip-kicker"><span class="dot"></span> CANLI TAKİP</div>
+            <div class="desk-strip-line">
+                <b>18</b> bağımsız model <span class="sep">·</span> konsensüs ile sinyal üretimi <span class="sep">·</span> kaynak: <b>RapidAPI</b> canlı veri <span class="sep">·</span> günlük kapasite <b>30</b> maç
             </div>
         </div>
 
         <div id="matchListContainer">
             <div class="loader">
                 <i class="fa-solid fa-circle-notch"></i>
-                <p>Veriler Yükleniyor...</p>
+                <p>Veriler yükleniyor</p>
             </div>
         </div>
     </main>
@@ -529,21 +590,21 @@
                 <button class="btn-close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                
-                <!-- GoalGPT Style Radar Section -->
+
+                <!-- Radar Section -->
                 <div style="position: relative; width: 100%; height: 280px; margin-bottom: 2rem; display: flex; justify-content: center;">
                     <canvas id="liveRadarChart"></canvas>
                 </div>
-                
+
                 <!-- Momentum Section -->
-                <div class="stat-card" style="margin-bottom: 1.5rem; background: rgba(0,0,0,0.6); border: 1px solid var(--border-strong); box-shadow: 0 0 15px rgba(0, 229, 255, 0.05);">
+                <div class="stat-card" style="margin-bottom: 1.5rem;">
                     <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h4 style="color: var(--accent-brand); font-size:1.1rem; margin:0;">MOMENTUM YÜKSELİYOR</h4>
-                        <span style="background: var(--accent-brand); color:#000; padding:4px 8px; border-radius:12px; font-weight:bold; font-size:0.85rem;" id="momentumScore">%-- &uarr;</span>
+                        <h4 style="color: var(--accent-brand);">Momentum</h4>
+                        <span class="mono" style="background: var(--accent-brand-dim); color: var(--accent-brand); padding:3px 8px; border-radius:var(--radius-xs); font-weight:700; font-size:0.78rem; border: 1px solid var(--accent-brand-dim);" id="momentumScore">%-- &uarr;</span>
                     </div>
                     <div id="momentumContainer" style="display: flex; align-items: flex-end; justify-content: space-between; gap: 4px; height: 60px; padding-top: 10px;">
                         <!-- JS will inject dynamic bars here -->
-                        <div class="loader" style="width:100%;"><i class="fa-solid fa-circle-notch"></i></div>
+                        <div class="loader" style="width:100%; padding: 0;"><i class="fa-solid fa-circle-notch"></i></div>
                     </div>
                 </div>
 
@@ -552,14 +613,14 @@
 
                 <!-- Form Section -->
                 <div class="stats-grid">
-                    <div class="stat-card" style="background: rgba(255,255,255,0.03); border-color: var(--border-strong);">
-                        <h4 style="color: #fff;"><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> EV SAHİBİ</h4>
+                    <div class="stat-card">
+                        <h4><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> EV SAHİBİ</h4>
                         <div class="stat-row"><span class="stat-label">Kazanma Oranı</span><span class="stat-val" id="mHomeWin">-</span></div>
                         <div class="stat-row"><span class="stat-label">İlk Yarı Gol</span><span class="stat-val" id="mHomeFh">-</span></div>
                         <div class="stat-row"><span class="stat-label">Maç Başı Gol</span><span class="stat-val" id="mHomeAvg">-</span></div>
                     </div>
-                    <div class="stat-card" style="background: rgba(255,255,255,0.03); border-color: var(--border-strong);">
-                        <h4 style="color: #fff;"><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> DEPLASMAN</h4>
+                    <div class="stat-card">
+                        <h4><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> DEPLASMAN</h4>
                         <div class="stat-row"><span class="stat-label">Kazanma Oranı</span><span class="stat-val" id="mAwayWin">-</span></div>
                         <div class="stat-row"><span class="stat-label">İlk Yarı Gol</span><span class="stat-val" id="mAwayFh">-</span></div>
                         <div class="stat-row"><span class="stat-label">Maç Başı Gol</span><span class="stat-val" id="mAwayAvg">-</span></div>
@@ -570,7 +631,7 @@
         </div>
     </div>
 
-    <script>
+<script>
         let currentTab = 'pending';
         let refreshTimer = null;
 
@@ -629,7 +690,7 @@
                 container.innerHTML = `
                     <div style="text-align:center; padding: 4rem 1rem; color: var(--text-muted);">
                         <i class="fa-solid fa-futbol" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
-                        <h3 style="font-family:'Outfit', sans-serif; font-weight:500;">Şu an gösterilecek maç yok</h3>
+                        <h3 style="font-family:'Fraunces', serif; font-weight:600;">Şu an gösterilecek maç yok</h3>
                     </div>`;
                 return;
             }
@@ -819,9 +880,9 @@
                                 datasets: [{
                                     label: homeName,
                                     data: homeData,
-                                    backgroundColor: 'rgba(0, 229, 255, 0.2)',
-                                    borderColor: 'rgba(0, 229, 255, 1)',
-                                    pointBackgroundColor: 'rgba(0, 229, 255, 1)',
+                                    backgroundColor: 'rgba(221, 162, 51, 0.2)',
+                                    borderColor: 'rgba(221, 162, 51, 1)',
+                                    pointBackgroundColor: 'rgba(221, 162, 51, 1)',
                                     borderWidth: 2
                                 }, {
                                     label: awayName,
@@ -839,12 +900,12 @@
                                     r: {
                                         angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
                                         grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                                        pointLabels: { color: '#a0a0a0', font: { family: 'Outfit', size: 11, weight: '600' } },
+                                        pointLabels: { color: '#a0a0a0', font: { family: 'Archivo', size: 11, weight: '600' } },
                                         ticks: { display: false, max: 100, min: 0 }
                                     }
                                 },
                                 plugins: {
-                                    legend: { labels: { color: '#fff', font: { family: 'Outfit' } } }
+                                    legend: { labels: { color: '#f1efe8', font: { family: 'Archivo' } } }
                                 }
                             }
                         });

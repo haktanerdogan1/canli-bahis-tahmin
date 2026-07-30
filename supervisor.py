@@ -20,6 +20,7 @@ Durdurmak icin: Ctrl+C (ya da launchd uzerinden calisiyorsa launchctl stop/unloa
 import os
 import subprocess
 import sys
+import threading
 import time
 import signal
 
@@ -72,6 +73,27 @@ def _rotate_log_if_needed(name):
             pass
 
 
+def _pump_output(name, proc, log_file):
+    """Alt surecin ciktisini hem ana stdout'a (Railway/terminal gorsun diye)
+    hem de yerel log dosyasina yazar."""
+    try:
+        for raw_line in iter(proc.stdout.readline, b""):
+            try:
+                line = raw_line.decode("utf-8", errors="replace")
+            except Exception:
+                line = str(raw_line)
+            if not line:
+                break
+            print(f"[{name}] {line.rstrip()}", flush=True)
+            try:
+                log_file.write(line)
+                log_file.flush()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def start_service(name):
     cfg = SERVICES[name]
     _rotate_log_if_needed(name)
@@ -84,10 +106,14 @@ def start_service(name):
         cfg["cmd"],
         cwd=PROJECT_DIR,
         env=ENV,
-        stdout=log_file,
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    _procs[name] = {"proc": proc, "log_file": log_file, "started_at": time.time()}
+    pump_thread = threading.Thread(
+        target=_pump_output, args=(name, proc, log_file), daemon=True
+    )
+    pump_thread.start()
+    _procs[name] = {"proc": proc, "log_file": log_file, "started_at": time.time(), "pump": pump_thread}
     print(f"[supervisor] {name} started (pid={proc.pid})", flush=True)
 
 

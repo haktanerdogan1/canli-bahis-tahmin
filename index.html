@@ -596,9 +596,7 @@
             
             try {
                 let url = currentTab === 'all' ? '/api/all-live' : '/api/live-matches';
-                // Fallback for local testing without server running on same port
-                url = 'http://localhost:8000' + url;
-                
+
                 const res = await fetch(url);
                 const result = await res.json();
                 
@@ -760,7 +758,7 @@
             momentumContainer.innerHTML = `<div class="loader" style="width:100%;"><i class="fa-solid fa-circle-notch"></i></div>`;
             
             try {
-                const res = await fetch(`http://localhost:8000/api/match/${matchId}`);
+                const res = await fetch(`/api/match/${matchId}`);
                 const result = await res.json();
                 
                 if(result.success) {

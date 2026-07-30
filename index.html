@@ -694,7 +694,7 @@
                     } else if (isHalftime) {
                         timeStr = 'İY';
                     } else {
-                        timeStr = m.minute > 0 ? `${m.minute}'` : (m.status_text || 'Devre');
+                        timeStr = m.minute >= 0 ? `${m.minute}'` : 'Başlıyor';
                     }
                     const isLive = !isFinished && !isHalftime && m.minute > 0 && m.minute <= 120;
                     

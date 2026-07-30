@@ -114,7 +114,7 @@ async def process_api_matches(session):
             SET status = CASE 
                 WHEN minute >= 40 AND minute <= 50 THEN 'HT'
                 ELSE 'FINISHED' END
-            WHERE status = 'LIVE' AND source_match_id NOT IN ({placeholders})
+            WHERE status IN ('LIVE', 'HT') AND source_match_id NOT IN ({placeholders})
         ''', active_ids)
     
     for match in matches:

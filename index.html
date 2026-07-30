@@ -681,8 +681,17 @@
                         </div>`;
                     }
 
-                    const timeStr = m.minute > 0 ? `${m.minute}'` : (m.status_text || 'Devre');
-                    const isLive = m.minute > 0 && m.minute <= 120;
+                    const isFinished = m.match_status === 'FINISHED';
+                    const isHalftime = m.match_status === 'HT';
+                    let timeStr;
+                    if (isFinished) {
+                        timeStr = 'MS';
+                    } else if (isHalftime) {
+                        timeStr = 'İY';
+                    } else {
+                        timeStr = m.minute > 0 ? `${m.minute}'` : (m.status_text || 'Devre');
+                    }
+                    const isLive = !isFinished && !isHalftime && m.minute > 0 && m.minute <= 120;
                     
                     // The ID field depends on the endpoint (all-live returns match_id, live-matches doesn't return match_id, but we can fix that later, currently fallback to 0)
                     const matchId = m.match_id || 0;

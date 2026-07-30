@@ -31,10 +31,21 @@ def get_live_matches():
     cursor.execute('''
         SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.minute,
                p.signal_level, p.weighted_probability, p.decision, m.league_name, m.league_logo, m.id,
-               m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute
+               m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute,
+               fh.fh_end_home, fh.fh_end_away
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
+        LEFT JOIN (
+            SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away
+            FROM live_snapshots ls1
+            INNER JOIN (
+                SELECT match_id, MAX(minute) AS max_min
+                FROM live_snapshots
+                WHERE minute <= 45
+                GROUP BY match_id
+            ) ls2 ON ls1.match_id = ls2.match_id AND ls1.minute = ls2.max_min
+        ) fh ON fh.match_id = m.id
         ORDER BY p.created_at DESC
         LIMIT 1000
     ''')
@@ -49,21 +60,33 @@ def get_live_matches():
         initial_home = r[13] if r[13] is not None else current_home
         initial_away = r[14] if r[14] is not None else current_away
         match_status = r[15]
+        signal_minute = r[16] if (len(r) > 16 and r[16] is not None) else minute
+        fh_end_home = r[17] if len(r) > 17 else None
+        fh_end_away = r[18] if len(r) > 18 else None
         
         total_goals_now = current_home + current_away
         total_goals_initial = initial_home + initial_away
         
-        signal_minute = r[16] if (len(r) > 16 and r[16] is not None) else minute
+        is_first_half_market = signal_minute <= 45
         
         outcome = "PENDING"
-        if total_goals_now > total_goals_initial:
-            outcome = "WON"
-        elif signal_minute <= 45 and (match_status in ('Ended', 'FT', 'FINISHED', 'HT', 'Halftime', 'Canceled') or minute > 45):
-            outcome = "LOST"
-        elif signal_minute > 45 and (match_status in ('Ended', 'FT', 'FINISHED', 'Canceled') or minute >= 95):
-            outcome = "LOST"
+        if is_first_half_market:
+            # İlk Yarı marketleri SADECE ilk yarı bitene kadar olan gollere göre sonuçlanır.
+            # 2. yarıda atılan goller bu marketi etkilemez.
+            first_half_over = match_status in ('HT', 'FINISHED') or minute > 45
+            if first_half_over:
+                ref_home = fh_end_home if fh_end_home is not None else current_home
+                ref_away = fh_end_away if fh_end_away is not None else current_away
+                total_fh = ref_home + ref_away
+                outcome = "WON" if total_fh > total_goals_initial else "LOST"
+        else:
+            # Maç Sonu marketleri tüm maç boyunca atılan gollere göre sonuçlanır.
+            if total_goals_now > total_goals_initial:
+                outcome = "WON"
+            elif match_status == 'FINISHED' or minute >= 130:
+                outcome = "LOST"
             
-        market = f"İlk Yarı {total_goals_initial + 0.5} Üst" if signal_minute <= 45 else f"Maç Sonu {total_goals_initial + 0.5} Üst"
+        market = f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market else f"Maç Sonu {total_goals_initial + 0.5} Üst"
         
         results.append({
             "home_team": r[0],
@@ -71,6 +94,7 @@ def get_live_matches():
             "home_score": current_home,
             "away_score": current_away,
             "minute": minute,
+            "match_status": match_status,
             "market": market,
             "probability": round(r[6], 3),
             "confidence": f"Seviye: {r[5]}", 

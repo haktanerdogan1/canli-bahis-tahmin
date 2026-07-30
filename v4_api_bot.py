@@ -109,11 +109,17 @@ async def process_api_matches(session):
     active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]
     if active_ids:
         placeholders = ','.join('?' for _ in active_ids)
+        # Bu sorgu SADECE canli feed'den tamamen DUSMUS (artik hic donmeyen) maclari kapsar.
+        # Eskiden burada "dakika 40-50 arasindaysa HT yap" gibi bir kural vardi; bu, dakikasi
+        # 40-50 araliginda donup kalmis (ornegin API'nin bir daha hic donmedigi) bir maci
+        # SONSUZA KADAR 'HT' durumunda tutuyordu. 'HT' durumu "Mac Sonu" marketlerinde sonuc
+        # olarak sayilmadigindan (sadece 'FINISHED' terminal sayilir), o mac PENDING'de takili
+        # kaliyordu - hatta aylar/yillar sonra bile ("kiev macinin bir yil sonra hala acik
+        # gozukmesi" bugu buradan geliyordu). Feed'den dusen bir mac artik takip edilmiyor
+        # demektir, dogrudan FINISHED yapilmali.
         cursor.execute(f'''
-            UPDATE matches 
-            SET status = CASE 
-                WHEN minute >= 40 AND minute <= 50 THEN 'HT'
-                ELSE 'FINISHED' END
+            UPDATE matches
+            SET status = 'FINISHED'
             WHERE status IN ('LIVE', 'HT') AND source_match_id NOT IN ({placeholders})
         ''', active_ids)
     

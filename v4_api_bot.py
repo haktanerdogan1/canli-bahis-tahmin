@@ -268,6 +268,12 @@ async def process_api_matches(session):
         
         aggregate_score = status_data.get("aggregatedStr", "")
         
+        # Bazi maclar RapidAPI feed'inde "bitti" -> tekrar "canli" diye salinip geri geliyor
+        # (PAOK - Dynamo Kyiv bugu buydu: mac bir kere FINISHED/LOST olarak cozulmustu, sonra
+        # feed onu tekrar LIVE diye rapor edince orkestrator yeni bir sinyal uretip Acik
+        # Bahisler'de tekrar PENDING olarak belirdi). Bir mac FINISHED olduktan sonra bir daha
+        # asla LIVE/HT'ye GERI DONDURULMEMELI - o yuzden mevcut status zaten FINISHED ise bu
+        # UPDATE hic calismaz (satir dondurulmus/kilitli kalir).
         cursor.execute('''
             INSERT INTO matches 
             (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score)
@@ -283,6 +289,7 @@ async def process_api_matches(session):
                 home_team_logo=excluded.home_team_logo,
                 away_team_logo=excluded.away_team_logo,
                 aggregate_score=excluded.aggregate_score
+            WHERE matches.status != 'FINISHED'
         ''', (event_id, home_name, away_name, match_status, league_info["name"], league_info["ccode"], league_info["logo"], score_h, score_a, minute, home_logo, away_logo, aggregate_score))
                        
         cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (event_id,))

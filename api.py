@@ -200,7 +200,7 @@ def get_live_matches(request: Request):
         # Sadece henuz sonuclanmamis (mac devam eden) sinyaller anlik hesaplanir.
         stored_outcome = r[22] if len(r) > 22 else None
 
-        if stored_outcome in ("WON", "LOST"):
+        if stored_outcome in ("WON", "LOST", "VOID"):
             outcome = stored_outcome
         else:
             outcome = settlement.compute_outcome(
@@ -232,13 +232,15 @@ def get_live_matches(request: Request):
         
         # rows zaten p.created_at DESC sirali geldigi icin, bir match_id icin ilk gordugumuz
         # kayit o kategori (won/pending/lost) icin en guncel olandir.
-        bucket = by_match.setdefault(match_id, {"won": None, "pending": None, "lost": None})
+        bucket = by_match.setdefault(match_id, {"won": None, "pending": None, "lost": None, "void": None})
         if entry["outcome"] == "WON" and bucket["won"] is None:
             bucket["won"] = entry
         elif entry["outcome"] == "PENDING" and bucket["pending"] is None:
             bucket["pending"] = entry
         elif entry["outcome"] == "LOST" and bucket["lost"] is None:
             bucket["lost"] = entry
+        elif entry["outcome"] == "VOID" and bucket["void"] is None:
+            bucket["void"] = entry
     
     results = []
     for match_id, bucket in by_match.items():
@@ -246,8 +248,10 @@ def get_live_matches(request: Request):
             chosen = bucket["won"]
         elif bucket["pending"] is not None:
             chosen = bucket["pending"]
-        else:
+        elif bucket["lost"] is not None:
             chosen = bucket["lost"]
+        else:
+            chosen = bucket["void"]
         chosen.pop("created_at", None)
 
         if not is_member:
@@ -285,6 +289,9 @@ def get_ozet():
     lost = tally.get("LOST", 0)
     settled = won + lost
 
+    cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome='VOID'")
+    void = cur.fetchone()[0]
+
     cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome IS NULL")
     pending = cur.fetchone()[0]
 
@@ -306,6 +313,7 @@ def get_ozet():
         "kaybeden": lost,
         "isabet_orani": round(won / settled, 3) if settled else None,
         "bekleyen": pending,
+        "gozlem_disi": void,
         "bugun_kazanan": bugun.get("WON", 0),
         "bugun_kaybeden": bugun.get("LOST", 0),
     }
@@ -335,6 +343,9 @@ def get_metrics(request: Request):
     won = tally.get("WON", 0)
     lost = tally.get("LOST", 0)
     settled = won + lost
+
+    cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome='VOID'")
+    void = cur.fetchone()[0]
 
     cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome IS NULL")
     pending = cur.fetchone()[0]
@@ -451,6 +462,7 @@ def get_metrics(request: Request):
             "kaybeden": lost,
             "isabet_orani": round(won / settled, 3) if settled else None,
             "bekleyen": pending,
+            "gozlem_disi": void,
         },
         "bot_performansi": bots,
         "kalibrasyon": calibration,

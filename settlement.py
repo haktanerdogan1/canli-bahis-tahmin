@@ -21,6 +21,8 @@ import sqlite3
 
 from db_config import DB_PATH, connect
 
+GHOST_LOSS_MIGRATION = "2026_07_31_early_finished_losses_to_void"
+
 
 def _connect():
     return connect()
@@ -41,6 +43,57 @@ def ensure_schema():
             pass  # sutun zaten var
     conn.commit()
     conn.close()
+
+
+def backfill_ghost_losses(verbose=True):
+    """Erken takip kaybi nedeniyle LOST yazilmis kayitlari bir kez VOID yapar.
+
+    Bu, outcome degismezligi kuralinin genel bir istisnasi degildir. Yalnizca
+    kullanici tarafindan dogrulanan eski bugun dar kosuluna uygulanir ve migration
+    anahtari sayesinde ayni veritabaninda ikinci kez calismaz.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS data_migrations (
+            migration_key TEXT PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            affected_rows INTEGER NOT NULL DEFAULT 0
+        )
+    ''')
+    if cur.execute("SELECT 1 FROM data_migrations WHERE migration_key=?",
+                   (GHOST_LOSS_MIGRATION,)).fetchone():
+        conn.close()
+        return 0
+
+    # Once maclari isaretle; ardindan yalnizca bu maclarin hatali LOST
+    # sinyallerini VOID'e cevir. WON/PENDING ve 85+ dakika kayitlari korunur.
+    cur.execute('''
+        UPDATE matches
+        SET status='ABANDONED'
+        WHERE status='FINISHED' AND COALESCE(minute, 0) < 85
+          AND EXISTS (
+              SELECT 1 FROM consensus_predictions p
+              WHERE p.match_id=matches.id AND p.decision='signal' AND p.outcome='LOST'
+          )
+    ''')
+    cur.execute('''
+        UPDATE consensus_predictions
+        SET outcome='VOID'
+        WHERE decision='signal' AND outcome='LOST'
+          AND match_id IN (
+              SELECT id FROM matches
+              WHERE status='ABANDONED' AND COALESCE(minute, 0) < 85
+          )
+    ''')
+    affected = cur.rowcount
+    cur.execute("INSERT INTO data_migrations(migration_key, affected_rows) VALUES(?,?)",
+                (GHOST_LOSS_MIGRATION, affected))
+    conn.commit()
+    conn.close()
+    if verbose:
+        print(f"[settlement] hayalet kayip backfill: {affected} kayit VOID yapildi", flush=True)
+    return affected
 
 
 def compute_outcome(signal_minute, initial_goals, current_home, current_away,

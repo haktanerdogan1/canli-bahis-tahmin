@@ -36,6 +36,7 @@ def _has_signal_for_half(cursor, match_id, minute):
 def _ensure_schema():
     """Sema garantisi tek yerden (settlement.ensure_schema) yonetilir."""
     settlement.ensure_schema()
+    settlement.backfill_ghost_losses()
 
 def run_orchestrator():
     print("🧠 Başlatılıyor: Sinyal Avcısı (Konsensüs Orkestratörü)", flush=True)

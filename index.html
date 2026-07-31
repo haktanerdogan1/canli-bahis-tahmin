@@ -771,6 +771,9 @@
                 <button class="nav-btn" onclick="switchTab('lost', this)">
                     <i class="fa-solid fa-times-circle" style="color:var(--text-muted)"></i> Kayıplar
                 </button>
+                <button class="nav-btn" onclick="switchTab('void', this)">
+                    <i class="fa-solid fa-circle-minus" style="color:var(--accent-warning)"></i> Geçersiz
+                </button>
                 <button class="nav-btn" onclick="switchTab('all', this)">
                     <i class="fa-solid fa-futbol"></i> Tüm Canlılar
                 </button>
@@ -1037,6 +1040,8 @@
                     `<span class="ozet-item">İsabet <b>${oranTxt}</b></span>` +
                     `<span class="ozet-sep">·</span>` +
                     `<span class="ozet-item">Bekleyen <b>${d.bekleyen}</b></span>` +
+                    `<span class="ozet-sep">·</span>` +
+                    `<span class="ozet-item">Gözlem dışı <b>${d.gozlem_disi || 0}</b></span>` +
                     `</div>`;
 
                 // DURUSTLUK: kucuk orneklemde oran guvenilir degildir, bunu gizlemiyoruz.
@@ -1143,6 +1148,8 @@
                         dataToRender = dataToRender.filter(m => m.outcome === "WON");
                     } else if (currentTab === 'lost') {
                         dataToRender = dataToRender.filter(m => m.outcome === "LOST");
+                    } else if (currentTab === 'void') {
+                        dataToRender = dataToRender.filter(m => m.outcome === "VOID");
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {
@@ -1208,6 +1215,7 @@
                         let outcomeBadge = '';
                         if (m.outcome === 'WON') outcomeBadge = '<span style="color:var(--accent-success); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-check"></i> KAZANDI</span>';
                         else if (m.outcome === 'LOST') outcomeBadge = '<span style="color:var(--accent-danger); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-times"></i> KAYBETTİ</span>';
+                        else if (m.outcome === 'VOID') outcomeBadge = '<span style="color:var(--accent-warning); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-circle-minus"></i> GEÇERSİZ</span>';
 
                         if (m.locked) {
                             // Uye degil: sunucu zaten market/probability gondermiyor.
@@ -1238,16 +1246,19 @@
                     }
 
                     const isFinished = m.match_status === 'FINISHED';
+                    const isAbandoned = m.match_status === 'ABANDONED';
                     const isHalftime = m.match_status === 'HT';
                     let timeStr;
-                    if (isFinished) {
+                    if (isAbandoned) {
+                        timeStr = 'GD';
+                    } else if (isFinished) {
                         timeStr = 'MS';
                     } else if (isHalftime) {
                         timeStr = 'İY';
                     } else {
                         timeStr = m.minute >= 0 ? `${m.minute}'` : 'Başlıyor';
                     }
-                    const isLive = !isFinished && !isHalftime && m.minute > 0 && m.minute <= 120;
+                    const isLive = !isFinished && !isAbandoned && !isHalftime && m.minute > 0 && m.minute <= 120;
                     
                     // The ID field depends on the endpoint (all-live returns match_id, live-matches doesn't return match_id, but we can fix that later, currently fallback to 0)
                     const matchId = m.match_id || 0;

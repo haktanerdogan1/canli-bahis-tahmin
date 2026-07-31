@@ -49,6 +49,11 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
 
     Saf fonksiyon - veritabanina dokunmaz, bu sayede test edilebilir.
     """
+    # Feed takibi mac bitmeden kaybolduysa sonucu bilmiyoruz. Bu bir kayip degil,
+    # gozlem disidir; referans snapshot eksik olsa bile VOID karari verilebilir.
+    if match_status == "ABANDONED":
+        return "VOID"
+
     if initial_goals is None:
         return None
 
@@ -113,7 +118,7 @@ def settle_pending(verbose=True):
     ''')
     rows = cur.fetchall()
 
-    settled = won = lost = 0
+    settled = won = lost = void = 0
     for (pid, sig_min, snap_h, snap_a, cur_h, cur_a, status, minute,
          fh_h, fh_a, stored_initial) in rows:
 
@@ -138,12 +143,15 @@ def settle_pending(verbose=True):
         settled += 1
         if outcome == "WON":
             won += 1
-        else:
+        elif outcome == "LOST":
             lost += 1
+        else:
+            void += 1
 
     conn.commit()
     conn.close()
 
     if verbose and settled:
-        print(f"[settlement] {settled} sinyal sonuclandi (kazanan={won} kaybeden={lost})", flush=True)
-    return settled, won, lost
+        print(f"[settlement] {settled} sinyal sonuclandi "
+              f"(kazanan={won} kaybeden={lost} gecersiz={void})", flush=True)
+    return settled, won, lost, void

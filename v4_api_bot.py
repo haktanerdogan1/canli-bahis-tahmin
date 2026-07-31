@@ -313,13 +313,18 @@ async def process_api_matches(session):
         # Konferans Ligi maclari bittiginde). Eskiden fonksiyon burada "return" ile cikiyordu
         # ve asagidaki temizlik sorgusu HIC CALISMIYORDU; bu yuzden DB'deki tum maclar son
         # gorulen dakikalarinda (63', 64' gibi) SONSUZA KADAR 'LIVE' kaliyor, "Acik Bahisler"
-        # sayfasindan hic dusmuyordu. Feed bossa, canli gorunen her mac bitmis demektir.
+        # sayfasindan hic dusmuyordu. Feed bossa acik kayitlari kapat; ancak erken
+        # dakikada kaybolanlari gercek mac sonu gibi gostermeyip ABANDONED yap.
         conn = connect()
-        conn.execute("UPDATE matches SET status = 'FINISHED' "
-                     "WHERE status NOT IN ('FINISHED','Ended','FT','Canceled')")
+        conn.execute("""
+            UPDATE matches
+            SET status = CASE WHEN COALESCE(minute, 0) >= 85
+                              THEN 'FINISHED' ELSE 'ABANDONED' END
+            WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+        """)
         conn.commit()
         conn.close()
-        print("ℹ️  Canli mac yok - acik kalan tum maclar FINISHED yapildi.", flush=True)
+        print("ℹ️  Canli mac yok - 85+ FINISHED, erken kaybolanlar ABANDONED yapildi.", flush=True)
         return
 
     # Teshis sayaclari: her ciklusta feed'den kac mac geldi, kaci filtreye takildi,
@@ -348,8 +353,9 @@ async def process_api_matches(session):
     # o satirlar hicbir zaman temizlenemiyordu.
     cursor.execute(f'''
         UPDATE matches
-        SET status = 'FINISHED'
-        WHERE status NOT IN ('FINISHED', 'Ended', 'FT', 'Canceled')
+        SET status = CASE WHEN COALESCE(minute, 0) >= 85
+                          THEN 'FINISHED' ELSE 'ABANDONED' END
+        WHERE status NOT IN ('FINISHED', 'ABANDONED', 'Ended', 'FT', 'Canceled')
           AND source_match_id NOT IN ({placeholders})
     ''', active_ids)
 
@@ -569,7 +575,7 @@ async def process_api_matches(session):
               h_red, a_red, h_big, a_big))
 
     cursor.execute("SELECT COUNT(*) FROM matches "
-                   "WHERE status NOT IN ('FINISHED','Ended','FT','Canceled')")
+                   "WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')")
     still_open = cursor.fetchone()[0]
 
     conn.commit()

@@ -771,9 +771,6 @@
                 <button class="nav-btn" onclick="switchTab('lost', this)">
                     <i class="fa-solid fa-times-circle" style="color:var(--text-muted)"></i> Kayıplar
                 </button>
-                <button class="nav-btn" onclick="switchTab('void', this)">
-                    <i class="fa-solid fa-circle-minus" style="color:var(--accent-warning)"></i> Geçersiz
-                </button>
                 <button class="nav-btn" onclick="switchTab('all', this)">
                     <i class="fa-solid fa-futbol"></i> Tüm Canlılar
                 </button>
@@ -1148,8 +1145,6 @@
                         dataToRender = dataToRender.filter(m => m.outcome === "WON");
                     } else if (currentTab === 'lost') {
                         dataToRender = dataToRender.filter(m => m.outcome === "LOST");
-                    } else if (currentTab === 'void') {
-                        dataToRender = dataToRender.filter(m => m.outcome === "VOID");
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {

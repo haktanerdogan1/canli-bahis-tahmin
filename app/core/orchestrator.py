@@ -3,11 +3,13 @@ import sqlite3
 import os
 import json
 from app.bots.bot_prematch_prophet import PrematchProphetBot
+from app.bots.bot_base_rate import BaseRateBot
 from app.bots.specialists import tum_uzmanlar
 from app.core.consensus_engine import ConsensusEngine
 import settlement
 import prematch
 import odds as odds_mod
+import baserates
 
 from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
@@ -26,6 +28,13 @@ def run_orchestrator():
         prematch.build_profiles()
     except Exception as e:
         print(f"⚠️  Takim profilleri kurulamadi: {e}")
+
+    # Olculmus taban oranlari hesapla (veri biriktikce her aciliste tazelenir)
+    try:
+        baserates.build()
+        baserates.tazele()
+    except Exception as e:
+        print(f"⚠️  Taban oranlar hesaplanamadi: {e}")
     
     # BOT KADROSU
     # Eski kadroda 18 bottan 12'si birebir ayni formulu kullaniyordu; bu yuzden
@@ -33,7 +42,7 @@ def run_orchestrator():
     # geliyordu. Yeni kadroda her bot AYRI bir bilgi ailesine bakar ve baktigi
     # veri yoksa durustce cekilir. Bir toplulugun deger uretmesi, uyelerinin
     # BAGIMSIZ hatalar yapmasina baglidir.
-    bots = [PrematchProphetBot()] + tum_uzmanlar()
+    bots = [PrematchProphetBot(), BaseRateBot()] + tum_uzmanlar()
 
     consensus_engine = ConsensusEngine()
     

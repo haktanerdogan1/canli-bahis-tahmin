@@ -24,17 +24,19 @@ class ConsensusEngine:
         # tek basina ele geciremiyor.
         self.bot_weights = {
             # Mac oncesi aile (canli veri gerekmez, macin 1. dakikasindan calisir)
-            "bot_19_prematch_prophet": 0.13,
-            "bot_form_asymmetry":      0.07,
+            "bot_19_prematch_prophet": 0.11,
+            # Olculmus tarihsel taban oran - sistemin "capasi", tek uydurmayan bot
+            "bot_base_rate":            0.10,
+            "bot_form_asymmetry":      0.05,
             # Kalite ailesi (uretilen pozisyonun degeri)
-            "bot_xg_sniper":           0.10,
-            "bot_finishing_gap":       0.07,
+            "bot_xg_sniper":           0.09,
+            "bot_finishing_gap":       0.06,
             "bot_shot_accuracy":       0.06,
             # Tempo / hacim ailesi
-            "bot_tempo_scanner":       0.09,
-            "bot_attack_volume":       0.06,
+            "bot_tempo_scanner":       0.07,
+            "bot_attack_volume":       0.05,
             # Degisim ailesi (son dakikalardaki hareket)
-            "bot_momentum_surge":      0.09,
+            "bot_momentum_surge":      0.08,
             "bot_acceleration":        0.06,
             "bot_corner_pressure":     0.05,
             # Mac durumu ailesi (skor/sure, istatistikten bagimsiz)

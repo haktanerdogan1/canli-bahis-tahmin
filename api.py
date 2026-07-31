@@ -5,6 +5,7 @@ import sqlite3
 import os
 
 import auth
+import settlement
 
 app = FastAPI(title="Canlı Gol Olasılığı API")
 
@@ -13,26 +14,13 @@ auth.init_auth_schema()
 
 
 def _ensure_prediction_schema():
-    """consensus_predictions.signal_minute / market kolonlarini garanti eder.
+    """Sema garantisi tek yerden (settlement.ensure_schema) yonetilir.
 
-    Bu kolonlari normalde orchestrator olusturuyor; ancak api.py de bunlari
-    SORGULUYOR. Orkestrator henuz hic calismadiysa (ilk deploy, temiz veritabani
-    veya orkestrator cokmus durumdayken) API "no such column: p.signal_minute"
-    ile komple cokuyordu. API artik kendi ihtiyaci olan semayi kendisi garantiliyor.
+    api.py bu sutunlari SORGULADIGI icin, orkestrator henuz hic calismamis olsa
+    bile (ilk deploy / temiz veritabani) API'nin cokmemesi gerekiyor.
     """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        for ddl in (
-            "ALTER TABLE consensus_predictions ADD COLUMN signal_minute INTEGER",
-            "ALTER TABLE consensus_predictions ADD COLUMN market TEXT",
-        ):
-            try:
-                cur.execute(ddl)
-            except sqlite3.OperationalError:
-                pass  # kolon zaten var
-        conn.commit()
-        conn.close()
+        settlement.ensure_schema()
     except Exception as e:
         print(f"Sema kontrolu atlandi: {e}")
 
@@ -149,7 +137,7 @@ def get_live_matches(request: Request):
         SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.minute,
                p.signal_level, p.weighted_probability, p.decision, m.league_name, m.league_logo, m.id,
                m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute,
-               fh.fh_end_home, fh.fh_end_away, p.created_at, p.signal_minute, p.market
+               fh.fh_end_home, fh.fh_end_away, p.created_at, p.signal_minute, p.market, p.outcome
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
@@ -199,22 +187,18 @@ def get_live_matches(request: Request):
         
         is_first_half_market = signal_minute <= 45
         
-        outcome = "PENDING"
-        if is_first_half_market:
-            # İlk Yarı marketleri SADECE ilk yarı bitene kadar olan gollere göre sonuçlanır.
-            # 2. yarıda atılan goller bu marketi etkilemez.
-            first_half_over = match_status in ('HT', 'FINISHED') or minute > 45
-            if first_half_over:
-                ref_home = fh_end_home if fh_end_home is not None else current_home
-                ref_away = fh_end_away if fh_end_away is not None else current_away
-                total_fh = ref_home + ref_away
-                outcome = "WON" if total_fh > total_goals_initial else "LOST"
+        # ONCE KALICI SONUCA BAK. Sinyal bir kez sonuclandiysa (settlement.py) o sonuc
+        # degismez - mac verisi sonradan degisse/eskise bile gecmis bozulmaz.
+        # Sadece henuz sonuclanmamis (mac devam eden) sinyaller anlik hesaplanir.
+        stored_outcome = r[22] if len(r) > 22 else None
+
+        if stored_outcome in ("WON", "LOST"):
+            outcome = stored_outcome
         else:
-            # Maç Sonu marketleri tüm maç boyunca atılan gollere göre sonuçlanır.
-            if total_goals_now > total_goals_initial:
-                outcome = "WON"
-            elif match_status == 'FINISHED' or minute >= 130:
-                outcome = "LOST"
+            outcome = settlement.compute_outcome(
+                signal_minute, total_goals_initial, current_home, current_away,
+                match_status, minute, fh_end_home, fh_end_away,
+            ) or "PENDING"
             
         market = stored_market if stored_market else (f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market else f"Maç Sonu {total_goals_initial + 0.5} Üst")
         
@@ -272,6 +256,117 @@ def get_live_matches(request: Request):
         results.append(chosen)
 
     return {"success": True, "data": results, "is_member": is_member}
+
+@app.get("/api/metrics")
+def get_metrics(request: Request):
+    """Bot bazli isabet orani + konsensus kalibrasyonu.
+
+    "Piyasanin en iyisi" iddiasi ancak olculebilirse anlamlidir. Bu uc, sonuclanmis
+    (outcome dolu) sinyaller uzerinden calisir - anlik tahmin degil, gecmis gercek.
+
+    Uyelere ozel: rakiplere veya rastgele ziyaretcilere sistemin ic performansini acmayiz.
+    """
+    if current_user_id(request) is None:
+        return {"success": False, "locked": True, "error": "Bu sayfa üyelere özel."}
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # --- Genel tablo ---
+    cur.execute("""
+        SELECT outcome, COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST') GROUP BY outcome
+    """)
+    tally = dict(cur.fetchall())
+    won = tally.get("WON", 0)
+    lost = tally.get("LOST", 0)
+    settled = won + lost
+
+    cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome IS NULL")
+    pending = cur.fetchone()[0]
+
+    # --- Bot bazli isabet ---
+    # Her botun "goal" dedigi sinyallerde gercekten gol gelmis mi?
+    cur.execute("""
+        SELECT b.bot_name,
+               COUNT(*) AS n,
+               SUM(CASE WHEN c.outcome='WON' THEN 1 ELSE 0 END) AS hits,
+               ROUND(AVG(b.probability), 3) AS avg_prob
+        FROM bot_predictions b
+        JOIN consensus_predictions c
+          ON c.match_id = b.match_id AND c.snapshot_id = b.snapshot_id
+        WHERE c.outcome IN ('WON','LOST') AND b.decision = 'goal'
+        GROUP BY b.bot_name
+        HAVING n > 0
+        ORDER BY (CAST(hits AS FLOAT)/n) DESC
+    """)
+    bots = []
+    for name, n, hits, avg_prob in cur.fetchall():
+        rate = round(hits / n, 3) if n else None
+        bots.append({
+            "bot": name,
+            "sinyal_sayisi": n,
+            "isabet": hits,
+            "isabet_orani": rate,
+            "ortalama_iddia": avg_prob,
+            # Kalibrasyon farki: bot %80 diyorsa ve %55 tutuyorsa, +0.25 fazla iyimser
+            "asiri_iyimserlik": round((avg_prob or 0) - (rate or 0), 3),
+        })
+
+    # --- Konsensus kalibrasyonu: iddia edilen olasilik vs gerceklesen ---
+    cur.execute("""
+        SELECT CAST(weighted_probability*10 AS INT) AS band,
+               COUNT(*) AS n,
+               SUM(CASE WHEN outcome='WON' THEN 1 ELSE 0 END) AS hits,
+               ROUND(AVG(weighted_probability),3)
+        FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST')
+        GROUP BY band ORDER BY band
+    """)
+    calibration = []
+    for band, n, hits, avg_p in cur.fetchall():
+        calibration.append({
+            "olasilik_araligi": f"%{band*10}-{band*10+10}",
+            "sinyal_sayisi": n,
+            "gerceklesen": round(hits / n, 3) if n else None,
+            "iddia_edilen": avg_p,
+        })
+
+    # --- Sinyal seviyesine gore ---
+    cur.execute("""
+        SELECT signal_level, COUNT(*), SUM(CASE WHEN outcome='WON' THEN 1 ELSE 0 END)
+        FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST')
+        GROUP BY signal_level
+    """)
+    by_level = [
+        {"seviye": lvl, "sinyal_sayisi": n, "isabet_orani": round(h/n, 3) if n else None}
+        for lvl, n, h in cur.fetchall()
+    ]
+
+    conn.close()
+
+    # Istatistiksel uyari: kucuk orneklemde oranlar yaniltici olur.
+    note = None
+    if settled < 100:
+        note = (f"UYARI: Sadece {settled} sonuclanmis sinyal var. Bu sayida veriyle "
+                f"bot siralamasi buyuk olcude sanstan ibarettir; guvenilir bir "
+                f"karsilastirma icin en az birkac yuz sinyal gerekir.")
+
+    return {
+        "success": True,
+        "ozet": {
+            "sonuclanan": settled,
+            "kazanan": won,
+            "kaybeden": lost,
+            "isabet_orani": round(won / settled, 3) if settled else None,
+            "bekleyen": pending,
+        },
+        "bot_performansi": bots,
+        "kalibrasyon": calibration,
+        "seviyeye_gore": by_level,
+        "uyari": note,
+    }
 
 @app.get("/api/results")
 def get_results():

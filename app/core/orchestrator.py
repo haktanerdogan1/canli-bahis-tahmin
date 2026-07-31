@@ -2,57 +2,38 @@ import time
 import sqlite3
 import os
 import json
-from app.bots.live_tempo_bot import LiveTempoBot
-from app.bots.team_form_bot import TeamFormBot
-from app.bots.bot_xg_sniper import XGSniperBot
-from app.bots.bot_momentum import MomentumBot
-from app.bots.bot_h2h import H2HOracleBot
-from app.bots.bot_late_drama import LateDramaBot
-from app.bots.bot_corner_pressure import CornerPressureBot
-from app.bots.bot_red_advantage import RedAdvantageBot
-from app.bots.bot_danger_zone import DangerZoneBot
-from app.bots.bot_possession import PossessionDominatorBot
-from app.bots.bot_shot_accuracy import ShotAccuracyBot
-from app.bots.bot_favorite_trailing import FavoriteTrailingBot
-from app.bots.bot_first_half import FirstHalfSpecialistBot
-from app.bots.bot_draw_breaker import DrawBreakerBot
-from app.bots.bot_underdog_bite import UnderdogBiteBot
-from app.bots.bot_dangerous_attacks import DangerousAttackBot
-from app.bots.bot_early_blitz import EarlyBlitzBot
-from app.bots.bot_dark_form import DarkFormBot
+from app.bots.bot_prematch_prophet import PrematchProphetBot
+from app.bots.specialists import tum_uzmanlar
 from app.core.consensus_engine import ConsensusEngine
+import settlement
+import prematch
 
 from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
 
 def _ensure_schema():
-    """consensus_predictions tablosuna signal_minute/market kolonlarini ekler (yoksa).
-    Boylece sinyalin uretildigi dakika ve market adi DB'de SABIT olarak saklanir;
-    api.py bunu daha sonra maçın o anki (degismis) dakikasindan yeniden hesaplamaya calismaz.
-    Bu, ilk yarida uretilen bir sinyalin zamanla 'Mac Sonu' olarak yanlis etiketlenmesini onler."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    for ddl in (
-        "ALTER TABLE consensus_predictions ADD COLUMN signal_minute INTEGER",
-        "ALTER TABLE consensus_predictions ADD COLUMN market TEXT",
-    ):
-        try:
-            cur.execute(ddl)
-        except sqlite3.OperationalError:
-            pass
-    conn.commit()
-    conn.close()
+    """Sema garantisi tek yerden (settlement.ensure_schema) yonetilir."""
+    settlement.ensure_schema()
 
 def run_orchestrator():
-    print("🧠 Başlatılıyor: Sinyal Avcısı (Konsensüs Orkestratörü) - 18 AI BOTS ACTIVE...", flush=True)
+    print("🧠 Başlatılıyor: Sinyal Avcısı (Konsensüs Orkestratörü)", flush=True)
     _ensure_schema()
+
+    # Arsivden takim profillerini kur (bir kez, acilista).
+    # Bunlar botlarin macin ilk dakikalarinda kullanacagi mac oncesi bilgidir.
+    try:
+        prematch.build_profiles()
+    except Exception as e:
+        print(f"⚠️  Takim profilleri kurulamadi: {e}")
     
-    bots = [
-        XGSniperBot(), TeamFormBot(), LiveTempoBot(), MomentumBot(),
-        H2HOracleBot(), LateDramaBot(), CornerPressureBot(), RedAdvantageBot(),
-        DangerZoneBot(), PossessionDominatorBot(), ShotAccuracyBot(), FavoriteTrailingBot(),
-        FirstHalfSpecialistBot(), DrawBreakerBot(), UnderdogBiteBot(), DangerousAttackBot(), EarlyBlitzBot(), DarkFormBot()
-    ]
+    # BOT KADROSU
+    # Eski kadroda 18 bottan 12'si birebir ayni formulu kullaniyordu; bu yuzden
+    # "18 bot oy verdi" demek aslinda tek botun oyunu 18 kez saymak anlamina
+    # geliyordu. Yeni kadroda her bot AYRI bir bilgi ailesine bakar ve baktigi
+    # veri yoksa durustce cekilir. Bir toplulugun deger uretmesi, uyelerinin
+    # BAGIMSIZ hatalar yapmasina baglidir.
+    bots = [PrematchProphetBot()] + tum_uzmanlar()
+
     consensus_engine = ConsensusEngine()
     
     # Hangi maç için en son ne zaman sinyal ürettik? (Spam önleyici)
@@ -120,7 +101,16 @@ def run_orchestrator():
                     cursor.execute("SELECT * FROM live_snapshots WHERE match_id = ? AND minute <= ? ORDER BY id DESC LIMIT 1", (match_id, latest['minute'] - 15))
                     snap_15 = cursor.fetchone()
                 
+                # MAC ONCESI PROFIL: canli veri henuz yokken (ilk dakikalar) botlarin
+                # dayanabilecegi tek bilgi kaynagi. Takim eslesmezse None doner ve
+                # botlar bu bilgiyi kullanmaz - uydurma yapmaz.
+                try:
+                    pre = prematch.match_expectation(match['home_team_id'], match['away_team_id'])
+                except Exception:
+                    pre = None
+
                 context = {
+                    "prematch": pre,
                     "match_id_db": match_id,
                     "source_match_id": match["source_match_id"],
                     "home_team_id": match["home_team_id"],
@@ -158,8 +148,8 @@ def run_orchestrator():
                         INSERT INTO consensus_predictions 
                         (match_id, snapshot_id, consensus_version, positive_bot_count, negative_bot_count, 
                          insufficient_data_count, weighted_probability, signal_level, decision,
-                         signal_minute, market)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         signal_minute, market, initial_goals)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         match_id,
                         latest['id'] if latest else None,
@@ -171,8 +161,37 @@ def run_orchestrator():
                         consensus_result.signal_level,
                         consensus_result.decision,
                         minute,
-                        signal_market
+                        signal_market,
+                        total_goals_initial
                     ))
+
+                    # HER BOTUN KARARINI AYRI AYRI KAYDET.
+                    # Bu tablo onceden hic doldurulmuyordu (0 kayit), bu yuzden hangi botun
+                    # ne kadar isabetli oldugu OLCULEMIYORDU. Artik her sinyalde 18 botun
+                    # karari saklaniyor; sonuc kesinlestiginde bot bazli basari orani
+                    # hesaplanabiliyor.
+                    for bp in predictions:
+                        try:
+                            cursor.execute('''
+                                INSERT INTO bot_predictions
+                                (match_id, snapshot_id, bot_name, bot_version, decision,
+                                 probability, confidence, data_quality, reasons_json, warnings_json)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                match_id,
+                                latest['id'] if latest else None,
+                                bp.bot_name,
+                                bp.bot_version,
+                                bp.decision,
+                                bp.probability,
+                                bp.confidence,
+                                bp.data_quality,
+                                json.dumps(bp.reasons, ensure_ascii=False),
+                                json.dumps(bp.warnings, ensure_ascii=False),
+                            ))
+                        except Exception as be:
+                            print(f"⚠️  Bot kaydi yazilamadi ({bp.bot_name}): {be}")
+
                     conn.commit()
                     
                     # Cooldown ekle
@@ -181,7 +200,15 @@ def run_orchestrator():
                     print(f"🚨 SİNYAL BULUNDU! Maç: {match['home_team_id']} vs {match['away_team_id']} | Dakika: {minute} | Seviye: {consensus_result.signal_level} | Olasılık: %{int(consensus_result.weighted_probability * 100)}")
             
             conn.close()
-            
+
+            # Kesinlesen sinyalleri KALICI olarak sonuclandir.
+            # Boylece gecmis, mac verisi degisse bile bozulmaz ve bot basari
+            # oranlarini hesaplayabilecegimiz egitim verisi birikir.
+            try:
+                settlement.settle_pending()
+            except Exception as se:
+                print(f"⚠️  Sonuclandirma hatasi: {se}")
+
         except Exception as e:
             print(f"❌ Orkestratör Hatası: {e}")
             

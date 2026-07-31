@@ -18,25 +18,34 @@ class ConsensusResult(BaseModel):
 class ConsensusEngine:
     def __init__(self):
         # Ağırlıklar toplamı %100'e (1.0) eşit olmalı
+        # AGIRLIKLAR - bilgi ailesine gore dengelenmis.
+        # Ayni aileden botlar birbirine benzer hata yapar; bu yuzden aile bazinda
+        # toplam agirlik sinirli tutuluyor. Boylece kalabalik bir aile konsensusu
+        # tek basina ele geciremiyor.
         self.bot_weights = {
-            "bot_1_xg_sniper": 0.05,
-            "bot_1_team_form": 0.05,
-            "bot_3_live_tempo": 0.15, 
-            "bot_4_momentum": 0.10, # 0.15'ten 0.10'a düşürüldü
-            "bot_5_h2h": 0.05,
-            "bot_6_late_drama": 0.05,
-            "bot_7_corner_pressure": 0.05,
-            "bot_8_red_advantage": 0.05,
-            "bot_9_danger_zone": 0.05,
-            "bot_10_possession": 0.05,
-            "bot_11_shot_accuracy": 0.05,
-            "bot_12_favorite_trailing": 0.05,
-            "bot_13_first_half": 0.05,
-            "bot_14_draw_breaker": 0.02,
-            "bot_15_underdog_bite": 0.03,
-            "bot_16_dangerous_attacks": 0.05,
-            "bot_17_early_blitz": 0.05,
-            "bot_18_dark_form": 0.05
+            # Mac oncesi aile (canli veri gerekmez, macin 1. dakikasindan calisir)
+            "bot_19_prematch_prophet": 0.13,
+            "bot_form_asymmetry":      0.07,
+            # Kalite ailesi (uretilen pozisyonun degeri)
+            "bot_xg_sniper":           0.10,
+            "bot_finishing_gap":       0.07,
+            "bot_shot_accuracy":       0.06,
+            # Tempo / hacim ailesi
+            "bot_tempo_scanner":       0.09,
+            "bot_attack_volume":       0.06,
+            # Degisim ailesi (son dakikalardaki hareket)
+            "bot_momentum_surge":      0.09,
+            "bot_acceleration":        0.06,
+            "bot_corner_pressure":     0.05,
+            # Mac durumu ailesi (skor/sure, istatistikten bagimsiz)
+            "bot_game_state":          0.08,
+            "bot_draw_breaker":        0.04,
+            "bot_red_card":            0.03,
+            # Zaman penceresi ailesi
+            "bot_early_blitz":         0.03,
+            "bot_late_drama":          0.03,
+            # Hakimiyet
+            "bot_possession_dominance": 0.01,
         }
 
     def evaluate(self, predictions: List[BotPrediction]) -> ConsensusResult:
@@ -81,15 +90,32 @@ class ConsensusEngine:
         signal_level = "none"
         decision = "no_signal"
         
-        if insufficient_count > 10:
+        # ESIK KURALLARI
+        # Eskiden mutlak sayiya bakiliyordu ("en az 8 bot evet desin"). Bu, tum
+        # botlar hemen her zaman oy verdigi icin hic devreye girmiyordu: olculdu,
+        # pozitif bot sayisi her sinyalde 12-14 arasindaydi ve "cok_guclu" ile
+        # "guclu_aday" seviyeleri arasinda isabet farki YOKTU (%72.7 vs %71.4).
+        #
+        # Yeni kadroda botlar veri yoksa cekildigi icin oy veren bot sayisi maca
+        # gore degisir. Bu yuzden mutlak sayi yerine KATILANLAR ICINDEKI ORAN'a
+        # bakiyoruz; ayrica en az kac botun konustugunu da sart kosuyoruz.
+        oy_veren = pos_count + neg_count
+        mutabakat = (pos_count / oy_veren) if oy_veren else 0.0
+
+        # NOT: Botlar artik gercekten bagimsiz oldugu icin OYBIRLIGI NADIRDIR -
+        # ve bu tasarim geregidir. Cok yuksek mutabakat sarti koyarsak sistem
+        # hicbir zaman sinyal uretmez. Asagidaki esikler baslangic degeridir;
+        # yeterli sonuclanmis sinyal birikince /api/metrics'teki kalibrasyon
+        # verisine gore AYARLANMALIDIR (su an veri az, tahmin yurutmuyoruz).
+        if oy_veren < 5:
             signal_level = "eksik_veri"
-        elif pos_count >= 8 and final_prob >= 0.70:
+        elif mutabakat >= 0.70 and final_prob >= 0.70:
             signal_level = "cok_guclu"
             decision = "signal"
-        elif pos_count >= 5 and final_prob >= 0.62:
+        elif mutabakat >= 0.55 and final_prob >= 0.63:
             signal_level = "guclu_aday"
             decision = "signal"
-        elif pos_count >= 3 and final_prob >= 0.55:
+        elif mutabakat >= 0.45 and final_prob >= 0.55:
             signal_level = "izleme"
 
         return ConsensusResult(

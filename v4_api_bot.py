@@ -192,7 +192,8 @@ async def process_api_matches(session):
         # ve asagidaki temizlik sorgusu HIC CALISMIYORDU; bu yuzden DB'deki tum maclar son
         # gorulen dakikalarinda (63', 64' gibi) SONSUZA KADAR 'LIVE' kaliyor, "Acik Bahisler"
         # sayfasindan hic dusmuyordu. Feed bossa, canli gorunen her mac bitmis demektir.
-        cursor.execute("UPDATE matches SET status = 'FINISHED' WHERE status IN ('LIVE', 'HT')")
+        cursor.execute("UPDATE matches SET status = 'FINISHED' "
+                       "WHERE status NOT IN ('FINISHED','Ended','FT','Canceled')")
         conn.commit()
         conn.close()
         print("ℹ️  Canli mac yok - acik kalan tum maclar FINISHED yapildi.", flush=True)
@@ -215,10 +216,14 @@ async def process_api_matches(session):
         # kaliyordu - hatta aylar/yillar sonra bile ("kiev macinin bir yil sonra hala acik
         # gozukmesi" bugu buradan geliyordu). Feed'den dusen bir mac artik takip edilmiyor
         # demektir, dogrudan FINISHED yapilmali.
+        # Terminal olmayan HER durumu kapsa - sadece LIVE/HT degil.
+        # Gecmiste ham metin durumlar ("2nd half", "Started") kaydedildigi icin
+        # o satirlar hicbir zaman temizlenemiyordu.
         cursor.execute(f'''
             UPDATE matches
             SET status = 'FINISHED'
-            WHERE status IN ('LIVE', 'HT') AND source_match_id NOT IN ({placeholders})
+            WHERE status NOT IN ('FINISHED', 'Ended', 'FT', 'Canceled')
+              AND source_match_id NOT IN ({placeholders})
         ''', active_ids)
 
         # Bu ciklustaki maclardan hangileri DB'de zaten var (halihazirda takip ediliyor)?
@@ -286,7 +291,13 @@ async def process_api_matches(session):
             elif not short_str or short_str == "0":
                 match_status = "FINISHED" # If it's not ongoing and has no time, it's likely finished or hasn't started. For our purposes, it's inactive.
             else:
-                match_status = short_str
+                # ONEMLI: Eskiden buraya API'nin ham metni ("2nd half", "Started",
+                # "Halftime" gibi) oldugu gibi yaziliyordu. Temizlik sorgusu ise
+                # sadece 'LIVE'/'HT' ariyordu; bu yuzden ham durumlu satirlar
+                # SONSUZA KADAR temizlenemiyor ve "Tum Canlilar" sekmesinde
+                # kaliciolarak takili kaliyordu. Artik her sey bilinen uc durumdan
+                # birine indirgeniyor.
+                match_status = "LIVE"
             
         target_market = f"İlk Yarı {total_goals + 0.5} Üst" if period_length == 45 and minute <= 45 else f"Maç Sonu {total_goals + 0.5} Üst"
         
@@ -365,7 +376,8 @@ async def process_api_matches(session):
         ''', (match_id_db, minute, 'first_half' if minute <= 45 else 'second_half', 
               score_h, score_a, h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot, h_cor, a_cor))
 
-    cursor.execute("SELECT COUNT(*) FROM matches WHERE status IN ('LIVE','HT')")
+    cursor.execute("SELECT COUNT(*) FROM matches "
+                   "WHERE status NOT IN ('FINISHED','Ended','FT','Canceled')")
     still_open = cursor.fetchone()[0]
 
     conn.commit()

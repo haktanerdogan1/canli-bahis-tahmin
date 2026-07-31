@@ -147,9 +147,6 @@
         /* --- League Grouping --- */
         .league-group {
             margin-bottom: 2rem;
-            animation: slideUp 0.4s ease-out forwards;
-            opacity: 0;
-            transform: translateY(10px);
         }
 
         .league-header {
@@ -898,6 +895,10 @@
     <script>
         let currentTab = 'pending';
         let refreshTimer = null;
+        // Basarili cevaplarda gordugumuz sinyalleri mac+yari anahtariyla tutariz.
+        // Bir sonraki API cevabi gecici olarak eksik gelirse ekrandaki mevcut
+        // sinyaller silinmez; ayni sinyalin sonucu/skoru gelirse yerinde guncellenir.
+        const signalCache = new Map();
 
         // --- Kimlik dogrulama durumu ---------------------------------------
         let isMember = false;
@@ -1138,7 +1139,16 @@
                 const result = await res.json();
 
                 if(result.success) {
-                    let dataToRender = result.data;
+                    if (currentTab !== 'all') {
+                        (result.data || []).forEach(m => {
+                            const key = `${m.match_id}:${m.signal_period || 'H?'}`;
+                            signalCache.set(key, m);
+                        });
+                    }
+
+                    let dataToRender = currentTab === 'all'
+                        ? (result.data || [])
+                        : Array.from(signalCache.values());
                     if (currentTab === 'pending') {
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'won') {
@@ -1187,8 +1197,6 @@
             });
 
             let html = '';
-            let animDelay = 0;
-
             sortedLeagues.forEach(league => {
                 const leagueMatches = groups[league];
                 const logoHtml = leagueMatches[0].league_logo 
@@ -1196,7 +1204,7 @@
                     : '<i class="fa-solid fa-trophy" style="color:var(--accent-warning)"></i>';
                 
                 html += `
-                <div class="league-group" style="animation-delay: ${animDelay}s">
+                <div class="league-group">
                     <div class="league-header">
                         ${logoHtml}
                         <span>${league}</span>
@@ -1286,7 +1294,6 @@
                 });
 
                 html += `</div></div>`;
-                animDelay += 0.05;
             });
 
             container.innerHTML = html;

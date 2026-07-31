@@ -227,6 +227,7 @@ def get_live_matches(request: Request):
             "away_logo": r[12] if r[12] else f"https://ui-avatars.com/api/?name={r[1].replace(' ', '+')}&background=1f2937&color=00e5ff",
             "outcome": outcome,
             "signal_minute": signal_minute,
+            "signal_period": "H1" if signal_minute <= 45 else "H2",
             "created_at": r[19] if len(r) > 19 else None
         }
         

@@ -401,12 +401,26 @@ async def process_api_matches(session):
         status_data = match.get("status", {})
         import re
         short_str = "0"
+        minute = 0
+        minute_parsed_ok = False
         try:
             short_str = status_data.get("liveTime", {}).get("short", "0")
             num_str = re.sub(r'\D', '', short_str)
-            minute = int(num_str) if num_str else 0
-        except:
-            minute = 0
+            if num_str:
+                minute = int(num_str)
+                minute_parsed_ok = True
+        except Exception:
+            pass
+
+        if not minute_parsed_ok:
+            # KESIF: dakika rakamsal olarak ayristirilamadi (orn. liveTime.short
+            # "HT" gibi harf iceren bir deger dondurdu, regex her seyi sildi).
+            # Boyle bir maca 0 yazip DB'deki GERCEK dakikayi EZMEK yerine (asagida
+            # ON CONFLICT'te minute sadece basariyla ayristirildiyse guncelleniyor),
+            # API'nin devre arasinda/molada gercekte ne gonderdigini TAHMIN etmeden
+            # OLCEREK ogreniyoruz - istatistik anahtari kesfindeki yaklasimin aynisi.
+            print(f"⏱️ DAKIKA AYRISTIRILAMADI: {home_name}-{away_name} "
+                  f"skor={score_h}-{score_a} status={status_data}", flush=True)
 
         period_length = status_data.get("periodLength", 45)
         is_ongoing = status_data.get("ongoing", False)
@@ -445,6 +459,7 @@ async def process_api_matches(session):
             "league_info": league_info,
             "match_status": match_status,
             "minute": minute,
+            "minute_parsed_ok": minute_parsed_ok,
             "aggregate_score": aggregate_score,
         })
 
@@ -477,7 +492,7 @@ async def process_api_matches(session):
             (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_match_id) DO UPDATE SET
-                minute=excluded.minute,
+                minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
                 status=excluded.status,
                 home_score=excluded.home_score,
                 away_score=excluded.away_score,
@@ -490,7 +505,7 @@ async def process_api_matches(session):
         ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
               m["league_info"]["name"], m["league_info"]["ccode"], m["league_info"]["logo"],
               m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
-              m["aggregate_score"]))
+              m["aggregate_score"], m["minute_parsed_ok"]))
 
         cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))
         match_id_db_res = cursor.fetchone()

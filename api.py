@@ -6,6 +6,7 @@ import os
 
 import auth
 import settlement
+import odds as odds_mod
 
 app = FastAPI(title="Canlı Gol Olasılığı API")
 
@@ -346,6 +347,42 @@ def get_metrics(request: Request):
 
     conn.close()
 
+    # --- PIYASA KARSILASTIRMASI ---
+    # Asil soru "kac tuttu" degil, "piyasanin fiyatini yendik mi".
+    conn2 = sqlite3.connect(DB_PATH)
+    c2 = conn2.cursor()
+    c2.execute("""
+        SELECT p.id, p.match_id, p.weighted_probability, p.outcome
+        FROM consensus_predictions p
+        WHERE p.decision='signal' AND p.outcome IN ('WON','LOST')
+    """)
+    kiyas = []
+    for pid, mid, bizim, sonuc in c2.fetchall():
+        try:
+            piyasa = odds_mod.piyasa_gol_olasiligi(mid)
+        except Exception:
+            piyasa = None
+        if piyasa is None:
+            continue
+        kiyas.append({"bizim": bizim, "piyasa": piyasa,
+                      "fark": round(bizim - piyasa, 3), "sonuc": sonuc})
+    conn2.close()
+
+    piyasa_ozet = None
+    if kiyas:
+        n = len(kiyas)
+        kazanan = sum(1 for k in kiyas if k["sonuc"] == "WON")
+        ort_biz = sum(k["bizim"] for k in kiyas) / n
+        ort_piy = sum(k["piyasa"] for k in kiyas) / n
+        piyasa_ozet = {
+            "oran_bulunan_sinyal": n,
+            "bizim_ortalama_iddia": round(ort_biz, 3),
+            "piyasa_ortalama": round(ort_piy, 3),
+            "gerceklesen": round(kazanan / n, 3),
+            "aciklama": ("Piyasa bu sinyallere ortalama %{:.0f} diyordu, biz %{:.0f} dedik, "
+                         "gercekte %{:.0f} tuttu.").format(100*ort_piy, 100*ort_biz, 100*kazanan/n),
+        }
+
     # Istatistiksel uyari: kucuk orneklemde oranlar yaniltici olur.
     note = None
     if settled < 100:
@@ -364,6 +401,7 @@ def get_metrics(request: Request):
         },
         "bot_performansi": bots,
         "kalibrasyon": calibration,
+        "piyasa_karsilastirmasi": piyasa_ozet,
         "seviyeye_gore": by_level,
         "uyari": note,
     }

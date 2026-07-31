@@ -7,6 +7,7 @@ from app.bots.specialists import tum_uzmanlar
 from app.core.consensus_engine import ConsensusEngine
 import settlement
 import prematch
+import odds as odds_mod
 
 from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
@@ -194,6 +195,15 @@ def run_orchestrator():
 
                     conn.commit()
                     
+                    # SINYAL ANINDAKI PIYASA FIYATINI KAYDET.
+                    # Bu, "kac tuttu" degil "oranin ustunde mi tuttu" sorusunu
+                    # cevaplayabilmemiz icin sart. Sadece sinyal uretildiginde
+                    # cagriliyor (her mac icin degil) - kota israfi olmasin diye.
+                    try:
+                        odds_mod.kaydet(match_id, match["source_match_id"], minute)
+                    except Exception as oe:
+                        print(f"⚠️  Oran kaydedilemedi: {oe}")
+
                     # Cooldown ekle
                     signal_cooldowns[match_id] = current_time
                     

@@ -10,3 +10,8 @@ data/*.zip
 *.zip
 venv/
 .venv/
+
+# Oran kesif ciktilari (gecici test dosyalari, repoda durmasina gerek yok)
+oran_*.json
+oran_ciktilari/
+canli.json

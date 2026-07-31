@@ -684,6 +684,72 @@
             .user-area { order: 3; }
         }
 
+        /* --- Olculmus sonuc ozeti seridi --- */
+        .ozet-strip {
+            max-width: 1000px;
+            margin: 0 auto 2rem auto;
+            padding: 0.85rem 1.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-md);
+            text-align: center;
+        }
+
+        .ozet-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: baseline;
+            gap: 0.35rem 0.6rem;
+            font-size: 0.92rem;
+            color: var(--text-secondary);
+        }
+
+        .ozet-item b { color: var(--text-primary); font-weight: 700; }
+        .ozet-item.ozet-win b { color: var(--accent-success); }
+        .ozet-item.ozet-loss b { color: var(--accent-danger); }
+        .ozet-sep { color: var(--text-muted); }
+
+        .ozet-warning {
+            margin-top: 0.6rem;
+            font-size: 0.76rem;
+            color: var(--text-muted);
+        }
+
+        /* --- Istatistik sekmesi: bot bazli tablo --- */
+        .stats-table-wrap {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+        }
+
+        .stats-table-wrap h3 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #fff;
+        }
+
+        .stats-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+
+        .stats-table th, .stats-table td {
+            padding: 0.6rem 0.8rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-light);
+            white-space: nowrap;
+        }
+
+        .stats-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .stats-table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+
     </style>
 </head>
 <body>
@@ -708,6 +774,9 @@
                 <button class="nav-btn" onclick="switchTab('all', this)">
                     <i class="fa-solid fa-futbol"></i> Tüm Canlılar
                 </button>
+                <button class="nav-btn" onclick="switchTab('stats', this)">
+                    <i class="fa-solid fa-chart-simple"></i> İstatistik
+                </button>
             </div>
             <div class="user-area" id="userArea">
                 <button class="btn-auth-nav" onclick="openAuth('register')">Üye Ol</button>
@@ -730,6 +799,11 @@
                 <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-robot" style="color:var(--accent-brand);"></i> 16 AI Uzman Bot</span>
                 <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
             </div>
+        </div>
+
+        <!-- Olculmus sonuc ozeti -->
+        <div class="ozet-strip" id="ozetStrip">
+            <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
         </div>
 
         <div id="matchListContainer">
@@ -933,24 +1007,134 @@
                 btn.classList.remove('active', 'active-radar');
             });
             
-            if (tab === 'all') {
+            if (tab === 'all' || tab === 'stats') {
                 btnElement.classList.add('active');
             } else {
                 btnElement.classList.add('active-radar');
             }
-            
+
             fetchData();
         }
 
+        async function fetchOzet() {
+            const el = document.getElementById('ozetStrip');
+            if (!el) return;
+            try {
+                const res = await fetch('/api/ozet');
+                const d = await res.json();
+                if (!d.success) return;
+
+                const oranTxt = (d.isabet_orani !== null && d.isabet_orani !== undefined)
+                    ? `%${Math.round(d.isabet_orani * 100)}` : '—';
+
+                let html = `<div class="ozet-row">` +
+                    `<span class="ozet-item">Sonuçlanan <b>${d.sonuclanan}</b></span>` +
+                    `<span class="ozet-sep">·</span>` +
+                    `<span class="ozet-item ozet-win">Kazanan <b>${d.kazanan}</b></span>` +
+                    `<span class="ozet-sep">·</span>` +
+                    `<span class="ozet-item ozet-loss">Kaybeden <b>${d.kaybeden}</b></span>` +
+                    `<span class="ozet-sep">·</span>` +
+                    `<span class="ozet-item">İsabet <b>${oranTxt}</b></span>` +
+                    `<span class="ozet-sep">·</span>` +
+                    `<span class="ozet-item">Bekleyen <b>${d.bekleyen}</b></span>` +
+                    `</div>`;
+
+                // DURUSTLUK: kucuk orneklemde oran guvenilir degildir, bunu gizlemiyoruz.
+                if (d.sonuclanan < 100) {
+                    html += `<div class="ozet-warning">Örneklem küçük (${d.sonuclanan} sinyal) — bu oran henüz güvenilir değil.</div>`;
+                }
+
+                el.innerHTML = html;
+            } catch (e) {
+                // Ozet dekoratif bir seffaflik unsuru - basarisiz olursa sayfanin
+                // geri kalanini bozmadan sessizce gec.
+            }
+        }
+
+        async function renderStatsTab() {
+            const container = document.getElementById('matchListContainer');
+            try {
+                const res = await fetch('/api/metrics');
+                const d = await res.json();
+
+                if (d.locked) {
+                    container.innerHTML = `
+                        <div class="radar-panel locked" style="max-width:700px; margin:2rem auto;">
+                            <div class="locked-blur">
+                                <div style="padding:2rem;">
+                                    <h3 style="font-family:'Outfit', sans-serif; margin-bottom:0.75rem;">Bot Bazlı İstatistikler</h3>
+                                    <p style="color:var(--text-secondary);">Her yapay zeka botunun isabet oranı, ortalama iddiası ve kalibrasyon farkı.</p>
+                                </div>
+                            </div>
+                            <div class="lock-overlay" onclick="openAuth('register')">
+                                <button class="lock-btn"><i class="fa-solid fa-lock"></i> Görmek için Üye Olun</button>
+                            </div>
+                        </div>`;
+                    return;
+                }
+
+                if (!d.success) {
+                    container.innerHTML = `<div class="loader"><i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning)"></i><p>İstatistikler alınamadı.</p></div>`;
+                    return;
+                }
+
+                let rows = '';
+                (d.bot_performansi || []).forEach(b => {
+                    const oran = (b.isabet_orani !== null && b.isabet_orani !== undefined) ? `%${Math.round(b.isabet_orani * 100)}` : '—';
+                    const iddia = (b.ortalama_iddia !== null && b.ortalama_iddia !== undefined) ? `%${Math.round(b.ortalama_iddia * 100)}` : '—';
+                    const fark = b.asiri_iyimserlik || 0;
+                    const farkPuan = Math.round(fark * 100);
+                    const farkRenk = fark > 0.05 ? 'var(--accent-danger)' : (fark < -0.05 ? 'var(--accent-success)' : 'var(--text-secondary)');
+                    rows += `<tr>
+                        <td>${b.bot}</td>
+                        <td>${b.sinyal_sayisi}</td>
+                        <td style="color:var(--accent-brand); font-weight:700;">${oran}</td>
+                        <td>${iddia}</td>
+                        <td style="color:${farkRenk};">${farkPuan > 0 ? '+' : ''}${farkPuan}</td>
+                    </tr>`;
+                });
+                if (!rows) {
+                    rows = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Henüz yeterli sonuçlanmış sinyal yok.</td></tr>`;
+                }
+
+                const uyariHtml = d.uyari ? `<div class="ozet-warning" style="margin-bottom:1rem;">${d.uyari}</div>` : '';
+
+                container.innerHTML = `
+                    <div class="stats-table-wrap">
+                        <h3>Bot Bazlı İsabet ve Kalibrasyon</h3>
+                        ${uyariHtml}
+                        <div style="overflow-x:auto;">
+                            <table class="stats-table">
+                                <thead><tr>
+                                    <th>Bot</th><th>Sinyal</th><th>İsabet</th><th>Ort. İddia</th><th>Kalibrasyon Farkı (puan)</th>
+                                </tr></thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>
+                    </div>`;
+            } catch (e) {
+                container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Sunucuya bağlanılamadı.</p></div>`;
+            }
+        }
+
         async function fetchData() {
+            fetchOzet();
+
+            if (currentTab === 'stats') {
+                await renderStatsTab();
+                clearTimeout(refreshTimer);
+                refreshTimer = setTimeout(fetchData, 15000);
+                return;
+            }
+
             const container = document.getElementById('content-area');
-            
+
             try {
                 let url = currentTab === 'all' ? '/api/all-live' : '/api/live-matches';
 
                 const res = await fetch(url);
                 const result = await res.json();
-                
+
                 if(result.success) {
                     let dataToRender = result.data;
                     if (currentTab === 'pending') {
@@ -967,7 +1151,7 @@
             } catch(e) {
                 container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Sunucuya bağlanılamadı. API açık mı?</p></div>`;
             }
-            
+
             // Auto refresh
             clearTimeout(refreshTimer);
             refreshTimer = setTimeout(fetchData, 15000);

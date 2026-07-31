@@ -265,6 +265,52 @@ def get_live_matches(request: Request):
 
     return {"success": True, "data": results, "is_member": is_member}
 
+@app.get("/api/ozet")
+def get_ozet():
+    """Herkese acik sonuc ozeti - seffaflik kozu, UYELIK GEREKTIRMEZ.
+
+    /api/metrics'teki 'ozet' bloguyla ayni hesap; farki uyelik sarti olmamasi.
+    Bot bazli detay ve kalibrasyon gibi rekabete hassas veriler burada YOK,
+    onlar /api/metrics'te uyelere ozel kalmaya devam ediyor.
+    """
+    conn = connect()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT outcome, COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST') GROUP BY outcome
+    """)
+    tally = dict(cur.fetchall())
+    won = tally.get("WON", 0)
+    lost = tally.get("LOST", 0)
+    settled = won + lost
+
+    cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome IS NULL")
+    pending = cur.fetchone()[0]
+
+    # Bugun (Turkiye saatiyle, UTC+3 - Turkiye yaz saati uygulamiyor) uretilmis
+    # ve sonuclanmis sinyaller. created_at SQLite CURRENT_TIMESTAMP oldugu icin UTC'dir.
+    cur.execute("""
+        SELECT outcome, COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST')
+          AND date(created_at, '+3 hours') = date('now', '+3 hours')
+        GROUP BY outcome
+    """)
+    bugun = dict(cur.fetchall())
+    conn.close()
+
+    return {
+        "success": True,
+        "sonuclanan": settled,
+        "kazanan": won,
+        "kaybeden": lost,
+        "isabet_orani": round(won / settled, 3) if settled else None,
+        "bekleyen": pending,
+        "bugun_kazanan": bugun.get("WON", 0),
+        "bugun_kaybeden": bugun.get("LOST", 0),
+    }
+
+
 @app.get("/api/metrics")
 def get_metrics(request: Request):
     """Bot bazli isabet orani + konsensus kalibrasyonu.

@@ -400,11 +400,19 @@ async def process_api_matches(session):
 
         status_data = match.get("status", {})
         import re
-        short_str = "0"
+        live_time = status_data.get("liveTime", {}) or {}
+        short_str = live_time.get("short", "0")
+        short_key = live_time.get("shortKey", "")
         minute = 0
         minute_parsed_ok = False
+
+        # HT TESPITI ongoing'den BAGIMSIZ: dakika kesif logu gosterdi ki API
+        # devre arasinda bile "ongoing": true donduruyor - eskiden HT kontrolu
+        # "if not is_ongoing" bloguyle korunuyordu, bu yuzden devre arasi maclar
+        # hic HT'ye gecmiyor, LIVE + dakika 0'da takili kaliyordu.
+        is_halftime = short_key == "halftime_short" or short_str in ["HT", "Halftime", "Devre"]
+
         try:
-            short_str = status_data.get("liveTime", {}).get("short", "0")
             num_str = re.sub(r'\D', '', short_str)
             if num_str:
                 minute = int(num_str)
@@ -412,13 +420,38 @@ async def process_api_matches(session):
         except Exception:
             pass
 
+        if is_halftime:
+            # Devre arasinda liveTime.short zaten "HT" (rakamsiz) oldugundan
+            # yukaridaki regex hep basarisiz olur. Dakika olarak 0 yerine devrenin
+            # sonunu (maxTime/basePeriod, ikisi de yoksa 45) kullan.
+            ht_minute = live_time.get("maxTime") or live_time.get("basePeriod") or 45
+            try:
+                minute = int(ht_minute)
+                minute_parsed_ok = True
+            except (TypeError, ValueError):
+                pass
+
         if not minute_parsed_ok:
-            # KESIF: dakika rakamsal olarak ayristirilamadi (orn. liveTime.short
-            # "HT" gibi harf iceren bir deger dondurdu, regex her seyi sildi).
-            # Boyle bir maca 0 yazip DB'deki GERCEK dakikayi EZMEK yerine (asagida
-            # ON CONFLICT'te minute sadece basariyla ayristirildiyse guncelleniyor),
-            # API'nin devre arasinda/molada gercekte ne gonderdigini TAHMIN etmeden
-            # OLCEREK ogreniyoruz - istatistik anahtari kesfindeki yaklasimin aynisi.
+            # YEDEK: ilk yari baslangic zaman damgasindan gecen sureyi hesapla.
+            # halfs.firstHalfStarted'in gercek varligi/birimi henuz Railway
+            # loglarinda dogrulanmadi - bu yuzden makul araliga (0-130dk) uymayan
+            # sonuclar sessizce reddedilir, tahmine dayali yanlis dakika yazilmaz.
+            try:
+                started = (status_data.get("halfs") or {}).get("firstHalfStarted")
+                if started:
+                    gecen_dk = int((time.time() - float(started)) / 60)
+                    if 0 <= gecen_dk <= 130:
+                        minute = gecen_dk
+                        minute_parsed_ok = True
+            except Exception:
+                pass
+
+        if not minute_parsed_ok:
+            # KESIF: dakika hicbir yontemle ayristirilamadi. Boyle bir maca 0 yazip
+            # DB'deki GERCEK dakikayi EZMEK yerine (asagida ON CONFLICT'te minute
+            # sadece basariyla ayristirildiyse guncelleniyor), API'nin bu durumda
+            # gercekte ne gonderdigini TAHMIN etmeden OLCEREK ogreniyoruz -
+            # istatistik anahtari kesfindeki yaklasimin aynisi.
             print(f"⏱️ DAKIKA AYRISTIRILAMADI: {home_name}-{away_name} "
                   f"skor={score_h}-{score_a} status={status_data}", flush=True)
 
@@ -427,10 +460,10 @@ async def process_api_matches(session):
 
         # Determine actual status
         match_status = "LIVE"
-        if not is_ongoing:
-            if short_str in ["HT", "Halftime", "Devre"]:
-                match_status = "HT"
-            elif short_str in ["FT", "Finished", "Ended", "Bitti"]:
+        if is_halftime:
+            match_status = "HT"
+        elif not is_ongoing:
+            if short_str in ["FT", "Finished", "Ended", "Bitti"]:
                 match_status = "FINISHED"
             elif not short_str or short_str == "0":
                 match_status = "FINISHED" # If it's not ongoing and has no time, it's likely finished or hasn't started. For our purposes, it's inactive.

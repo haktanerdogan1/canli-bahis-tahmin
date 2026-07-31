@@ -165,11 +165,11 @@ def get_live_matches(request: Request):
     rows = cursor.fetchall()
     conn.close()
     
-    # Bir maç icin orkestrator zaman icinde birden fazla sinyal (consensus_predictions satiri)
-    # uretebilir (goller ilerledikce esik yukselerek yeni sinyal acilir). Ekranda her mac TEK
-    # satir olarak gorunmeli: herhangi bir sinyali kazandiysa mac KAZANDI, hicbiri kazanmadan
-    # hepsi sonuclandiysa KAYBETTI, hala acik/bekleyen bir sinyali varsa BEKLEMEDE sayilir.
-    by_match = {}
+    # Bir mac artik her yarida en fazla bir sinyal uretiyor. Ilk yari sinyali
+    # sonuclandiktan sonra ikinci yarida yeni bir sinyal acilabilir; bunlari yalnizca
+    # match_id ile gruplarsak eski WON kaydi yeni PENDING kaydini gizler. Bu nedenle
+    # gorunurluk birimi mac + yari: H1 sonucu gecmiste kalir, H2 acik sinyali kaybolmaz.
+    by_match_half = {}
     
     for r in rows:
         minute = r[4]
@@ -230,9 +230,13 @@ def get_live_matches(request: Request):
             "created_at": r[19] if len(r) > 19 else None
         }
         
-        # rows zaten p.created_at DESC sirali geldigi icin, bir match_id icin ilk gordugumuz
-        # kayit o kategori (won/pending/lost) icin en guncel olandir.
-        bucket = by_match.setdefault(match_id, {"won": None, "pending": None, "lost": None, "void": None})
+        # rows p.created_at DESC sirali; mac+yari icin ilk gordugumuz kayit
+        # ilgili sonuc kategorisinin en guncel kaydidir.
+        half_key = "H1" if signal_minute <= 45 else "H2"
+        group_key = (match_id, half_key)
+        bucket = by_match_half.setdefault(
+            group_key, {"won": None, "pending": None, "lost": None, "void": None}
+        )
         if entry["outcome"] == "WON" and bucket["won"] is None:
             bucket["won"] = entry
         elif entry["outcome"] == "PENDING" and bucket["pending"] is None:
@@ -243,7 +247,7 @@ def get_live_matches(request: Request):
             bucket["void"] = entry
     
     results = []
-    for match_id, bucket in by_match.items():
+    for (_match_id, _half), bucket in by_match_half.items():
         if bucket["won"] is not None:
             chosen = bucket["won"]
         elif bucket["pending"] is not None:

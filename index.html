@@ -1218,9 +1218,9 @@
                     if (currentTab === 'pending') {
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'won') {
-                        dataToRender = dataToRender.filter(m => m.outcome === "WON" && m.signal_date === currentTodayTR);
+                        dataToRender = dataToRender.filter(m => m.outcome === "WON" && m.result_date === currentTodayTR);
                     } else if (currentTab === 'lost') {
-                        dataToRender = dataToRender.filter(m => m.outcome === "LOST" && m.signal_date === currentTodayTR);
+                        dataToRender = dataToRender.filter(m => m.outcome === "LOST" && m.result_date === currentTodayTR);
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {

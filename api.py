@@ -146,7 +146,8 @@ def get_live_matches(request: Request):
                p.signal_level, p.weighted_probability, p.decision, m.league_name, m.league_logo, m.id,
                m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute,
                fh.fh_end_home, fh.fh_end_away, p.created_at, p.signal_minute, p.market, p.outcome,
-               date(p.created_at, '+3 hours') AS signal_date
+               date(p.created_at, '+3 hours') AS signal_date,
+               date(COALESCE(p.settled_at, p.created_at), '+3 hours') AS result_date
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
@@ -230,6 +231,7 @@ def get_live_matches(request: Request):
             "signal_minute": signal_minute,
             "signal_period": "H1" if signal_minute <= 45 else "H2",
             "signal_date": r[23] if len(r) > 23 else None,
+            "result_date": r[24] if len(r) > 24 else None,
             "created_at": r[19] if len(r) > 19 else None
         }
         

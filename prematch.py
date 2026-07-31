@@ -59,12 +59,20 @@ _index_cache = {"idx": None}
 
 
 def _get_index():
-    if _index_cache["idx"] is None:
+    idx = _index_cache["idx"]
+    if idx is None or not idx["names"]:
         conn = sqlite3.connect(DB_PATH)
         names = [r[0] for r in conn.execute("SELECT team_id FROM team_profiles")]
         conn.close()
-        _index_cache["idx"] = team_matcher.build_index(names)
-    return _index_cache["idx"]
+        idx = team_matcher.build_index(names)
+        # team_profiles henuz bossa (v4_api_bot ile orchestrator ayri surecler,
+        # digeri henuz build_profiles() calistirmamis olabilir) bos indeksi
+        # ONBELLEKLEME - bir sonraki cagrida tekrar denesin. Aksi halde ilk
+        # cagrida bos gelen indeks kalici olarak yapisip tum eslesmeler
+        # sonsuza kadar basarisiz oluyordu.
+        if idx["names"]:
+            _index_cache["idx"] = idx
+    return idx
 
 
 def resolve_team(live_name):

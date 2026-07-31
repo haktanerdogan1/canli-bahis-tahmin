@@ -484,8 +484,34 @@ async def process_api_matches(session):
         flush=True,
     )
 
+def _ensure_team_profiles():
+    """team_profiles bossa hemen kurar - orchestrator'in acilisini beklemez.
+
+    v4_api_bot ve orchestrator ayri surecler. Ikisi de takim eslestirmesi
+    icin team_profiles'a bagli (bkz. prematch._get_index); orchestrator henuz
+    ayaga kalkmadan v4_api_bot mac cektiginde tablo bos oluyor ve _is_known_match
+    tum maclari 'taninmayan' sayip atliyordu.
+    """
+    try:
+        import prematch
+        conn = sqlite3.connect(DB_PATH)
+        count = conn.execute("SELECT COUNT(*) FROM team_profiles").fetchone()[0] if _table_exists(conn, "team_profiles") else 0
+        conn.close()
+        if count == 0:
+            print("ℹ️  team_profiles bos, kuruluyor...", flush=True)
+            prematch.build_profiles()
+    except Exception as e:
+        print(f"⚠️  team_profiles kurulamadi: {e}", flush=True)
+
+
+def _table_exists(conn, name):
+    row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+    return row is not None
+
+
 async def main():
     print("🚀 Starting V4 OFFICIAL API Radar Bot...", flush=True)
+    _ensure_team_profiles()
     async with aiohttp.ClientSession() as session:
         while True:
             start_time = time.time()

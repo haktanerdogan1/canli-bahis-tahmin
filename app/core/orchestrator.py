@@ -4,12 +4,14 @@ import os
 import json
 from app.bots.bot_prematch_prophet import PrematchProphetBot
 from app.bots.bot_base_rate import BaseRateBot
+from app.bots.bot_odds_profile import OddsProfileBot
 from app.bots.specialists import tum_uzmanlar
 from app.core.consensus_engine import ConsensusEngine
 import settlement
 import prematch
 import odds as odds_mod
 import baserates
+import odds_profile
 
 from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
@@ -35,6 +37,13 @@ def run_orchestrator():
         baserates.tazele()
     except Exception as e:
         print(f"⚠️  Taban oranlar hesaplanamadi: {e}")
+
+    # Oran profili tablosu (arsiv oranlari -> tarihsel sonuc)
+    try:
+        odds_profile.build()
+        odds_profile.tazele()
+    except Exception as e:
+        print(f"⚠️  Oran profilleri hesaplanamadi: {e}")
     
     # BOT KADROSU
     # Eski kadroda 18 bottan 12'si birebir ayni formulu kullaniyordu; bu yuzden
@@ -42,6 +51,12 @@ def run_orchestrator():
     # geliyordu. Yeni kadroda her bot AYRI bir bilgi ailesine bakar ve baktigi
     # veri yoksa durustce cekilir. Bir toplulugun deger uretmesi, uyelerinin
     # BAGIMSIZ hatalar yapmasina baglidir.
+    # NOT: OddsProfileBot gecici olarak devre disi. Sebep: canli 1X2 oranini
+    # MAC ONCESI oran bantlariyla karsilastiriyordu; mac ilerledikce beraberlik
+    # favorilestigi icin her mac 'dengeli' gorunuyor ve bot ayirt edemiyordu.
+    # Ayrica guclu sinyal (ust/alt orani, 8.2 puan) canli API'de yok; elimizdeki
+    # 1X2 sadece 4.9 puanlik zayif sinyal veriyor. Dogru veri kaynagi bulununca
+    # yeniden ele alinacak.
     bots = [PrematchProphetBot(), BaseRateBot()] + tum_uzmanlar()
 
     consensus_engine = ConsensusEngine()

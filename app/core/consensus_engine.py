@@ -24,30 +24,32 @@ class ConsensusEngine:
         # tek basina ele geciremiyor.
         self.bot_weights = {
             # Mac oncesi aile (canli veri gerekmez, macin 1. dakikasindan calisir)
-            "bot_19_prematch_prophet": 0.11,
+            "bot_19_prematch_prophet": 0.12,
             # Olculmus tarihsel taban oran - sistemin "capasi", tek uydurmayan bot
-            "bot_base_rate":            0.10,
+            "bot_base_rate":            0.13,
+            # Piyasa fiyatindan arsiv esleme - out-of-sample dogrulandi, cokmedi
+            "bot_odds_profile":         0.00,  # devre disi (bkz. orchestrator.py)
             "bot_form_asymmetry":      0.05,
             # Kalite ailesi (uretilen pozisyonun degeri)
             "bot_xg_sniper":           0.09,
             "bot_finishing_gap":       0.06,
             "bot_shot_accuracy":       0.06,
             # Tempo / hacim ailesi
-            "bot_tempo_scanner":       0.07,
+            "bot_tempo_scanner":       0.06,
             "bot_attack_volume":       0.05,
             # Degisim ailesi (son dakikalardaki hareket)
-            "bot_momentum_surge":      0.08,
+            "bot_momentum_surge":      0.07,
             "bot_acceleration":        0.06,
             "bot_corner_pressure":     0.05,
             # Mac durumu ailesi (skor/sure, istatistikten bagimsiz)
-            "bot_game_state":          0.08,
+            "bot_game_state":          0.07,
             "bot_draw_breaker":        0.04,
             "bot_red_card":            0.03,
             # Zaman penceresi ailesi
             "bot_early_blitz":         0.03,
             "bot_late_drama":          0.03,
             # Hakimiyet
-            "bot_possession_dominance": 0.01,
+            "bot_possession_dominance": 0.00,
         }
 
     def evaluate(self, predictions: List[BotPrediction]) -> ConsensusResult:

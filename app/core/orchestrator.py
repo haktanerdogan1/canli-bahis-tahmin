@@ -16,6 +16,23 @@ import odds_profile
 from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
 
+
+def _has_signal_for_half(cursor, match_id, minute):
+    """Bir macin ilgili yarisinda daha once sinyal uretilmis mi?"""
+    first_half = minute <= 45
+    cursor.execute('''
+        SELECT 1
+        FROM consensus_predictions p
+        LEFT JOIN live_snapshots s ON s.id = p.snapshot_id
+        WHERE p.match_id = ? AND p.decision = 'signal'
+          AND CASE
+                WHEN COALESCE(p.signal_minute, s.minute, 0) <= 45 THEN 1
+                ELSE 0
+              END = ?
+        LIMIT 1
+    ''', (match_id, 1 if first_half else 0))
+    return cursor.fetchone() is not None
+
 def _ensure_schema():
     """Sema garantisi tek yerden (settlement.ensure_schema) yonetilir."""
     settlement.ensure_schema()
@@ -102,21 +119,11 @@ def run_orchestrator():
                     if (current_time - signal_cooldowns[match_id]) < COOLDOWN_SECONDS:
                         continue
                         
-                # Check if we should allow a new signal based on score progression
-                cursor.execute('''
-                    SELECT s.home_score, s.away_score 
-                    FROM consensus_predictions p 
-                    JOIN live_snapshots s ON p.snapshot_id = s.id 
-                    WHERE p.match_id = ? AND p.decision = 'signal' 
-                    ORDER BY p.id DESC LIMIT 1
-                ''', (match_id,))
-                last_signal = cursor.fetchone()
-                
-                if last_signal:
-                    last_total = (last_signal[0] or 0) + (last_signal[1] or 0)
-                    current_total = (match['home_score'] or 0) + (match['away_score'] or 0)
-                    if current_total <= last_total:
-                        continue 
+                # Bir mac icin her yarida EN FAZLA bir sinyal. Gol geldikten sonra
+                # ayni yarida daha yuksek bir esik acmak (0.5 -> 1.5 gibi) hem ilk
+                # sinyali ekranda gizliyor hem de gol sonrasi gereksiz risk yaratiyor.
+                if _has_signal_for_half(cursor, match_id, minute):
+                    continue
                 
                 # Get snapshots for momentum (delta) analysis
                 cursor.execute("SELECT * FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1", (match_id,))

@@ -1218,12 +1218,9 @@
                     if (currentTab === 'pending') {
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'won') {
-                        // "Bugunun sonucu" = BUGUN PAYLASILAN sinyalin sonucu.
-                        // Eski/takili bir mac bugün yeniden settlement edilirse
-                        // result_date bugun olur; onu bugune tasimamak icin signal_date kullan.
-                        dataToRender = dataToRender.filter(m => m.outcome === "WON" && m.signal_date === currentTodayTR);
+                        dataToRender = dataToRender.filter(m => m.outcome === "WON");
                     } else if (currentTab === 'lost') {
-                        dataToRender = dataToRender.filter(m => m.outcome === "LOST" && m.signal_date === currentTodayTR);
+                        dataToRender = dataToRender.filter(m => m.outcome === "LOST");
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {

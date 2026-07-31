@@ -26,7 +26,7 @@ MARJ SORUNU:
 """
 import sqlite3
 
-from db_config import DB_PATH
+from db_config import DB_PATH, connect
 
 # Olculmus taban (33.525 mac)
 TABAN_IY = 0.616
@@ -37,7 +37,7 @@ MIN_ORNEK = 200
 
 
 def ensure_schema():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         CREATE TABLE IF NOT EXISTS odds_profile_rates (
@@ -80,7 +80,7 @@ def denge_bandi(ev, beraberlik, dep):
 def build(verbose=True):
     """Arsivden oran bandi -> sonuc oranlarini hesaplar."""
     ensure_schema()
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         SELECT o.home_win_odds, o.draw_odds, o.away_win_odds,
@@ -127,7 +127,7 @@ def tazele():
 
 def _yukle():
     if _onbellek["v"] is None:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect()
         try:
             rows = conn.execute(
                 "SELECT band, ornek, iy_gol_orani, ms15_orani FROM odds_profile_rates"
@@ -141,7 +141,7 @@ def _yukle():
 
 def canli_1x2(match_id_db):
     """Kaydedilmis canli 1X2 oranlarini doner (en guncel). Yoksa None."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     try:
         cur.execute('''

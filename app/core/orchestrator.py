@@ -13,7 +13,7 @@ import odds as odds_mod
 import baserates
 import odds_profile
 
-from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
+from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
 
 def _ensure_schema():
@@ -68,7 +68,7 @@ def run_orchestrator():
 
     while True:
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = connect()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             

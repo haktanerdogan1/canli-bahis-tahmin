@@ -62,7 +62,7 @@ async def no_cache_headers(request, call_next):
     response.headers["Pragma"] = "no-cache"
     return response
 
-from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
+from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
 
 _ensure_prediction_schema()
 
@@ -139,7 +139,7 @@ def me(request: Request):
 @app.get("/api/live-matches")
 def get_live_matches(request: Request):
     is_member = current_user_id(request) is not None
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.minute,
@@ -277,7 +277,7 @@ def get_metrics(request: Request):
     if current_user_id(request) is None:
         return {"success": False, "locked": True, "error": "Bu sayfa üyelere özel."}
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
 
     # --- Genel tablo ---
@@ -356,7 +356,7 @@ def get_metrics(request: Request):
 
     # --- PIYASA KARSILASTIRMASI ---
     # Asil soru "kac tuttu" degil, "piyasanin fiyatini yendik mi".
-    conn2 = sqlite3.connect(DB_PATH)
+    conn2 = connect()
     c2 = conn2.cursor()
     c2.execute("""
         SELECT p.id, p.match_id, p.weighted_probability, p.outcome
@@ -423,7 +423,7 @@ def get_monitor(request: Request):
     if current_user_id(request) is None:
         return {"success": False, "locked": True, "error": "Üyelere özel."}
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
 
     # --- Sistem nabzi ---
@@ -500,7 +500,7 @@ def get_monitor(request: Request):
 
 @app.get("/api/results")
 def get_results():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cursor = conn.cursor()
     # fix the error: use created_at instead of updated_at since it wasn't defined
     cursor.execute('''
@@ -535,7 +535,7 @@ def get_results():
 
 @app.get("/api/all-live")
 def get_all_live():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cursor = conn.cursor()
     # status in matches table indicates '1st half', '2nd half', 'Halftime' etc.
     cursor.execute('''
@@ -575,7 +575,7 @@ def get_match_detail(match_id: int, request: Request):
     if current_user_id(request) is None:
         return {"success": False, "locked": True, "error": "Bu analizi görmek için üye olun."}
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -584,8 +584,9 @@ def get_match_detail(match_id: int, request: Request):
     ''', (match_id,))
     row = cursor.fetchone()
     if not row:
+        conn.close()
         return {"success": False, "error": "Match not found"}
-        
+
     home_team = row[0]
     away_team = row[1]
     

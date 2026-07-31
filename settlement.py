@@ -19,11 +19,11 @@ SONUCLANDIRMA KURALI (mevcut api.py mantiginin birebir tasinmis hali):
 """
 import sqlite3
 
-from db_config import DB_PATH
+from db_config import DB_PATH, connect
 
 
 def _connect():
-    return sqlite3.connect(DB_PATH)
+    return connect()
 
 
 def ensure_schema():

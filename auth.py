@@ -15,7 +15,7 @@ import secrets
 import sqlite3
 import time
 
-from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
+from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
 
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 gun
 
@@ -26,7 +26,7 @@ _SCRYPT_DKLEN = 32
 
 
 def _connect():
-    return sqlite3.connect(DB_PATH)
+    return connect()
 
 
 def init_auth_schema():

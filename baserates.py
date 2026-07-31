@@ -20,14 +20,14 @@ ISTATISTIKSEL YAKLASIM:
 """
 import sqlite3
 
-from db_config import DB_PATH
+from db_config import DB_PATH, connect
 
 MIN_ORNEK = 60          # bir hucreye guvenmek icin gereken en az ornek
 DAKIKA_KOVASI = 15
 
 
 def ensure_schema():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         CREATE TABLE IF NOT EXISTS base_rates (
@@ -46,7 +46,7 @@ def ensure_schema():
 def build(verbose=True):
     """Arsiv + snapshot verisinden taban oranlari yeniden hesaplar."""
     ensure_schema()
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
 
     # Her snapshot bir gozlem: o andaki durum -> mac sonunda gol geldi mi?
@@ -108,7 +108,7 @@ _onbellek = {"veri": None}
 
 def _yukle():
     if _onbellek["veri"] is None:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect()
         try:
             rows = conn.execute("SELECT kirilim, anahtar, ornek, oran FROM base_rates").fetchall()
         except sqlite3.OperationalError:

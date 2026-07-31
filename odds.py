@@ -27,7 +27,7 @@ import sqlite3
 import urllib.request
 from datetime import datetime, timezone
 
-from db_config import DB_PATH
+from db_config import DB_PATH, connect
 
 HOST = "free-api-live-football-data.p.rapidapi.com"
 
@@ -39,7 +39,7 @@ ULKE_SIRASI = ["DE", "GB", "BR"]
 
 
 def ensure_schema():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         CREATE TABLE IF NOT EXISTS live_odds (
@@ -107,7 +107,7 @@ def kaydet(match_id_db, source_match_id, minute, anahtar=None):
     ensure_schema()
     simdi = datetime.now(timezone.utc).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     toplam = 0
 
@@ -144,7 +144,7 @@ def piyasa_gol_olasiligi(match_id_db):
     'Next to score' marketinin x secenegi 'daha gol olmaz' demektir.
     Marj (overround) cikarilarak gercek olasilik tahmini uretilir.
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         SELECT selection, odds FROM live_odds
@@ -172,7 +172,7 @@ def piyasa_gol_olasiligi(match_id_db):
 
 def marj(match_id_db, market="Next to score"):
     """Bir marketteki bahisci marjini doner (0.14 = %14)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         SELECT odds FROM live_odds
@@ -194,7 +194,7 @@ def hareket(match_id_db, market="Next to score", selection="x", dakika_penceresi
     olaya daha yuksek ihtimal verdigi anlamina gelir (para o yone akiyor).
     Doner: (eski_oran, yeni_oran, yuzde_degisim) veya None.
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         SELECT odds, minute FROM live_odds

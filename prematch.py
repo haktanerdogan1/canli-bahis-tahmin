@@ -18,13 +18,13 @@ BU MODUL:
 import sqlite3
 
 import team_matcher
-from db_config import DB_PATH
+from db_config import DB_PATH, connect
 
 MIN_MATCHES = 5  # bu sayidan az maci olan takim icin profil guvenilmez
 
 
 def ensure_schema():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''
         CREATE TABLE IF NOT EXISTS team_profiles (
@@ -61,7 +61,7 @@ _index_cache = {"idx": None}
 def _get_index():
     idx = _index_cache["idx"]
     if idx is None or not idx["names"]:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect()
         names = [r[0] for r in conn.execute("SELECT team_id FROM team_profiles")]
         conn.close()
         idx = team_matcher.build_index(names)
@@ -79,7 +79,7 @@ def resolve_team(live_name):
     """Canli API adini arsiv adina cevirir (onbellekli). Bulunamazsa None."""
     if not live_name:
         return None
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute("SELECT archive_name FROM team_aliases WHERE live_name = ?", (live_name,))
     row = cur.fetchone()
@@ -100,7 +100,7 @@ def resolve_team(live_name):
 def build_profiles(verbose=True):
     """Arsivdeki bitmis maclardan takim profillerini yeniden hesaplar."""
     ensure_schema()
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
 
     # Her takimin hem ev sahibi hem deplasman maclarini tek listede topla
@@ -158,7 +158,7 @@ def build_profiles(verbose=True):
 
 def get_profile(team_id):
     """Tek takimin profilini doner; yoksa None."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cur = conn.cursor()
     cur.execute('''SELECT matches_played, fh_goal_rate, over_15_rate, over_25_rate,
                           avg_total_goals, avg_fh_goals

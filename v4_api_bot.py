@@ -5,7 +5,7 @@ import os
 import aiohttp
 from collections import deque
 
-from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
+from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
 API_KEY = os.environ.get("RAPIDAPI_KEY")
 if not API_KEY:
     raise RuntimeError("RAPIDAPI_KEY ortam degiskeni tanimli degil. Railway'de Variables'a ekle.")
@@ -166,7 +166,7 @@ def _kesif_ozeti_yaz():
     if not _gorulen_anahtarlar:
         return
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect()
         cur = conn.cursor()
         cur.execute("""CREATE TABLE IF NOT EXISTS stat_key_discovery (
             anahtar TEXT PRIMARY KEY, gorulme INTEGER, ilk_gorulme TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -248,7 +248,7 @@ async def process_api_matches(session):
     if not matches:
         matches = []
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect()
     cursor = conn.cursor()
 
     # Extract all currently active match IDs
@@ -494,7 +494,7 @@ def _ensure_team_profiles():
     """
     try:
         import prematch
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect()
         count = conn.execute("SELECT COUNT(*) FROM team_profiles").fetchone()[0] if _table_exists(conn, "team_profiles") else 0
         conn.close()
         if count == 0:

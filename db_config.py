@@ -15,6 +15,7 @@ COZUM:
 """
 import os
 import shutil
+import sqlite3
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SEED_DB = os.path.join(PROJECT_DIR, 'database', 'fh_goal_predictor.db')
@@ -41,3 +42,23 @@ def get_db_path() -> str:
 
 
 DB_PATH = get_db_path()
+
+
+def connect() -> sqlite3.Connection:
+    """Ortak baglanti yardimcisi.
+
+    NEDEN GEREKLI:
+      api, v4_api_bot ve orchestrator ayri surecler olarak AYNI SQLite
+      dosyasina yaziyor. SQLite'in varsayilan modu (rollback journal) bir
+      yazici aktifken diger tum baglantilari kilitler; kisa sureli cakismalar
+      "database is locked" hatasina donusuyordu (uyelik kaydinda 500).
+
+      WAL (Write-Ahead Log) modu okuyucularin yazicidan etkilenmemesini
+      saglar. busy_timeout ise geriye kalan yazici-yazici cakismalarinda
+      aninda hata vermek yerine 30 saniye bekleyip tekrar dener.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn

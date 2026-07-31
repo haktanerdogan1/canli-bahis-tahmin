@@ -327,6 +327,9 @@ def get_ozet():
     conn = connect()
     cur = conn.cursor()
 
+    # TUM ZAMANLAR toplami - seffaflik seridi kucuk gunluk orneklemle (bazi gunler
+    # 0/0) yanitlayip yanlis izlenim vermesin diye kalici, olculmus toplam gosterilir.
+    # Gunun kendi hareketi ayrica bugun_kazanan/bugun_kaybeden alanlarinda donuyor.
     cur.execute("""
         SELECT outcome, COUNT(*) FROM consensus_predictions
         WHERE decision='signal' AND outcome IN ('WON','LOST') GROUP BY outcome

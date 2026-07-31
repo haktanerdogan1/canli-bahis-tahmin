@@ -1238,9 +1238,24 @@
             refreshTimer = setTimeout(fetchData, 15000);
         }
 
+        function formatSignalDate(dateStr) {
+            if (!dateStr) return '';
+            if (dateStr === currentTodayTR) return 'Bugün';
+            try {
+                const d = new Date(dateStr + 'T00:00:00');
+                const today = new Date((currentTodayTR || dateStr) + 'T00:00:00');
+                const diffDays = Math.round((today - d) / 86400000);
+                if (diffDays === 1) return 'Dün';
+                const aylar = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+                return `${d.getDate()} ${aylar[d.getMonth()]}`;
+            } catch (e) {
+                return dateStr;
+            }
+        }
+
         function renderGroups(matches, type) {
             const container = document.getElementById('matchListContainer');
-            
+
             if(!matches || matches.length === 0) {
                 container.innerHTML = `
                     <div style="text-align:center; padding: 4rem 1rem; color: var(--text-muted);">
@@ -1258,12 +1273,26 @@
                 groups[lname].push(m);
             });
 
-            // Sort leagues alphabetically
-            const sortedLeagues = Object.keys(groups).sort((a,b) => {
-                if(a === "Canlı Alarmlar" || a === "UEFA Conference League" || a === "UEFA Champions League") return -1;
-                if(a === "Diğer Ligler") return 1;
-                return a.localeCompare(b);
-            });
+            let sortedLeagues;
+            if (type === 'won' || type === 'lost') {
+                // GUNCELLIK ESAS: Kazananlar/Kayiplar'da hicbir lig sabitlenmez.
+                // Her lig grubu, o gruptaki EN YENI sinyalin tarihine gore siralanir -
+                // boylece dunku Konferans Ligi sonuclari bugunku taze bir sonucun
+                // onune gecemez. Grup ici maclar da kendi icinde en yeniden eskiye dizilir.
+                const mostRecent = {};
+                Object.keys(groups).forEach(lg => {
+                    groups[lg].sort((a, b) => (b.signal_date || '').localeCompare(a.signal_date || ''));
+                    mostRecent[lg] = groups[lg][0] ? (groups[lg][0].signal_date || '') : '';
+                });
+                sortedLeagues = Object.keys(groups).sort((a, b) => mostRecent[b].localeCompare(mostRecent[a]));
+            } else {
+                // Diger sekmelerde (Acik Bahisler, Tum Canlilar) eski davranis korunur.
+                sortedLeagues = Object.keys(groups).sort((a,b) => {
+                    if(a === "Canlı Alarmlar" || a === "UEFA Conference League" || a === "UEFA Champions League") return -1;
+                    if(a === "Diğer Ligler") return 1;
+                    return a.localeCompare(b);
+                });
+            }
 
             let html = '';
             sortedLeagues.forEach(league => {
@@ -1289,6 +1318,14 @@
                         else if (m.outcome === 'LOST') outcomeBadge = '<span style="color:var(--accent-danger); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-times"></i> KAYBETTİ</span>';
                         else if (m.outcome === 'VOID') outcomeBadge = '<span style="color:var(--accent-warning); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-circle-minus"></i> GEÇERSİZ</span>';
 
+                        // GUNCELLIK: Kazananlar/Kayiplar'da her karta ne zaman paylasildigi
+                        // yazilir - kullanici hangi sonucun bugune, hangisinin gecmise ait
+                        // oldugunu her zaman gorsun, gizli bir tarih filtresine bagli kalmasin.
+                        let dateBadge = '';
+                        if ((type === 'won' || type === 'lost') && m.signal_date) {
+                            dateBadge = `<span style="color:var(--text-muted); margin-left:8px; font-weight:500; font-size:0.82rem;"><i class="fa-solid fa-calendar-day"></i> ${formatSignalDate(m.signal_date)}</span>`;
+                        }
+
                         if (m.locked) {
                             // Uye degil: sunucu zaten market/probability gondermiyor.
                             // Asagidaki metin GERCEK tahmin DEGIL, sadece bulanik bir
@@ -1296,7 +1333,7 @@
                             radarHtml = `
                             <div class="radar-panel locked">
                                 <div class="locked-blur">
-                                    <div class="radar-target"><i class="fa-solid fa-bullseye"></i> Maç Sonu 2.5 Üst ${outcomeBadge}</div>
+                                    <div class="radar-target"><i class="fa-solid fa-bullseye"></i> Maç Sonu 2.5 Üst ${outcomeBadge}${dateBadge}</div>
                                     <div class="radar-prob">%78 Olasılık</div>
                                 </div>
                                 <div class="lock-overlay" onclick="event.stopPropagation(); openAuth('register')">
@@ -1310,7 +1347,7 @@
 
                             radarHtml = `
                             <div class="radar-panel">
-                                <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market} ${outcomeBadge}</div>
+                                <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market} ${outcomeBadge}${dateBadge}</div>
                                 <div class="radar-prob">%${Math.round(m.probability * 100)} Olasılık</div>
                                 ${signalMinuteHtml}
                             </div>`;

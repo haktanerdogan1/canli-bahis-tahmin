@@ -42,7 +42,7 @@ LEAGUES_CACHE["251"] = {"name": "Ykkösliiga (Finlandiya)", "ccode": "FIN", "log
 # maçlarını takibe al, günde en fazla DAILY_MATCH_CAP kadar YENİ maç ekle. Zaten takip
 # edilmekte olan bir maç, kota dolsa bile GÜNCELLENMEYE devam eder - yoksa yarım kalıp
 # sonsuza kadar "PENDING" takılma bugu geri gelir.
-DAILY_MATCH_CAP = 30
+DAILY_MATCH_CAP = 60
 
 KNOWN_LEAGUE_NAMES = {
     "champions league", "europa league", "conference league",
@@ -82,15 +82,42 @@ KNOWN_TEAMS = {
 }
 
 
+def _arsivde_var_mi(takim_adi):
+    """Takim, İddaa arsivimizden cikarilan profillerde var mi?
+
+    Elle takim adi listesi tutmak yerine VERIYE dayali bir olcut: bir takim
+    33 bin maclik bultene girmisse, zaten takip edilmeye deger tanidik bir
+    takimdir. Bu, listeyi elle guncelleme zahmetini ortadan kaldirir ve
+    Iddaa'nin listeledigi tum ligleri otomatik kapsar.
+
+    Sonuc team_aliases tablosunda onbelleklenir, her ciklusta yeniden aranmaz.
+    """
+    try:
+        import prematch
+        return prematch.resolve_team(takim_adi) is not None
+    except Exception:
+        return False
+
+
 def _is_known_match(league_name, home_name, away_name):
-    """Mac 'bilindik' mi? Ya lig adi tanidik bir turnuva, ya da takimlardan biri buyuk/bilinen
-    bir kulup ise True doner."""
+    """Mac takip edilmeye deger mi?
+
+    Uc kademe:
+      1. Lig adi tanidik bir turnuva mi (Sampiyonlar/Avrupa/Konferans Ligi)
+      2. Takim adi elle tutulan buyuk kulup listesinde mi
+      3. Takim Iddaa arsivinde var mi (veriye dayali, en genis kapsam)
+    """
     ln = (league_name or "").strip().lower()
     if ln in KNOWN_LEAGUE_NAMES:
         return True
+
     hn = (home_name or "").strip().lower()
     an = (away_name or "").strip().lower()
-    return any(kw in hn or kw in an for kw in KNOWN_TEAMS)
+    if any(kw in hn or kw in an for kw in KNOWN_TEAMS):
+        return True
+
+    # Arsiv kontrolu - en genis ag. Iki takimdan biri yetiyor.
+    return _arsivde_var_mi(home_name) or _arsivde_var_mi(away_name)
 
 
 _daily_state = {"date": None, "count": 0}

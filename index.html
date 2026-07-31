@@ -1205,16 +1205,19 @@
 
                 if(result.success) {
                     currentTodayTR = result.today_tr || currentTodayTR;
-                    if (currentTab !== 'all') {
+                    // Kalici tarayici cache'i sadece ACIK sinyaller icindir.
+                    // Sonuc sekmeleri her zaman DB'nin canli WON/LOST cevabini
+                    // dogrudan cizer; eski bir cache sonucu gizleyemez.
+                    if (currentTab === 'pending') {
                         (result.data || []).forEach(m => {
                             const key = `${m.match_id}:${m.signal_period || 'H?'}`;
                             signalCache.set(key, m);
                         });
                     }
 
-                    let dataToRender = currentTab === 'all'
-                        ? (result.data || [])
-                        : Array.from(signalCache.values());
+                    let dataToRender = currentTab === 'pending'
+                        ? Array.from(signalCache.values())
+                        : (result.data || []);
                     if (currentTab === 'pending') {
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'won') {

@@ -43,6 +43,7 @@ LEAGUES_CACHE["251"] = {"name": "Ykkösliiga (Finlandiya)", "ccode": "FIN", "log
 # edilmekte olan bir maç, kota dolsa bile GÜNCELLENMEYE devam eder - yoksa yarım kalıp
 # sonsuza kadar "PENDING" takılma bugu geri gelir.
 DAILY_MATCH_CAP = 60
+MISSING_GRACE_MINUTES = 5
 
 KNOWN_LEAGUE_NAMES = {
     "champions league", "europa league", "conference league",
@@ -284,6 +285,42 @@ def _parse_stats(stats_groups):
             h_red, a_red, h_big, a_big)
 
 
+def _ensure_match_tracking_schema():
+    """Feed dalgalanmasinda maci tek turda kaybetmemek icin son gorulme alani."""
+    conn = connect()
+    try:
+        conn.execute("ALTER TABLE matches ADD COLUMN last_seen_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass
+    conn.execute("""
+        UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
+        WHERE last_seen_at IS NULL
+          AND status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+    """)
+    conn.commit()
+    conn.close()
+
+
+def _close_stale_missing(cursor, active_ids):
+    """Sadece grace suresince feed'e donmeyen maclari kapatir."""
+    params = []
+    active_clause = ""
+    if active_ids:
+        placeholders = ','.join('?' for _ in active_ids)
+        active_clause = f"AND source_match_id NOT IN ({placeholders})"
+        params.extend(active_ids)
+    cursor.execute(f'''
+        UPDATE matches
+        SET status = CASE WHEN COALESCE(minute, 0) >= 85
+                          THEN 'FINISHED' ELSE 'ABANDONED' END
+        WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+          AND last_seen_at IS NOT NULL
+          AND last_seen_at <= datetime('now', '-{MISSING_GRACE_MINUTES} minutes')
+          {active_clause}
+    ''', params)
+    return cursor.rowcount
+
+
 async def process_api_matches(session):
     url_live = f"https://{HOST}/football-current-live"
     try:
@@ -316,15 +353,10 @@ async def process_api_matches(session):
         # sayfasindan hic dusmuyordu. Feed bossa acik kayitlari kapat; ancak erken
         # dakikada kaybolanlari gercek mac sonu gibi gostermeyip ABANDONED yap.
         conn = connect()
-        conn.execute("""
-            UPDATE matches
-            SET status = CASE WHEN COALESCE(minute, 0) >= 85
-                              THEN 'FINISHED' ELSE 'ABANDONED' END
-            WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
-        """)
+        closed = _close_stale_missing(conn.cursor(), [])
         conn.commit()
         conn.close()
-        print("ℹ️  Canli mac yok - 85+ FINISHED, erken kaybolanlar ABANDONED yapildi.", flush=True)
+        print(f"ℹ️  Canli feed bos - grace suresi dolan {closed} mac kapatildi.", flush=True)
         return
 
     # Teshis sayaclari: her ciklusta feed'den kac mac geldi, kaci filtreye takildi,
@@ -351,13 +383,7 @@ async def process_api_matches(session):
     # Terminal olmayan HER durumu kapsa - sadece LIVE/HT degil.
     # Gecmiste ham metin durumlar ("2nd half", "Started") kaydedildigi icin
     # o satirlar hicbir zaman temizlenemiyordu.
-    cursor.execute(f'''
-        UPDATE matches
-        SET status = CASE WHEN COALESCE(minute, 0) >= 85
-                          THEN 'FINISHED' ELSE 'ABANDONED' END
-        WHERE status NOT IN ('FINISHED', 'ABANDONED', 'Ended', 'FT', 'Canceled')
-          AND source_match_id NOT IN ({placeholders})
-    ''', active_ids)
+    _close_stale_missing(cursor, active_ids)
 
     # Bu ciklustaki maclardan hangileri DB'de zaten var (halihazirda takip ediliyor)?
     # Zaten takip edilenler kota/filtre doldu diye BIRAKILMAZ - guncellenmeye devam eder.
@@ -528,8 +554,8 @@ async def process_api_matches(session):
         # geri donebilmeli; nasil olsa bitince tekrar dogru sekilde sonuclanir.
         cursor.execute('''
             INSERT INTO matches
-            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(source_match_id) DO UPDATE SET
                 minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
                 status=excluded.status,
@@ -540,7 +566,8 @@ async def process_api_matches(session):
                 league_logo=excluded.league_logo,
                 home_team_logo=excluded.home_team_logo,
                 away_team_logo=excluded.away_team_logo,
-                aggregate_score=excluded.aggregate_score
+                aggregate_score=excluded.aggregate_score,
+                last_seen_at=CURRENT_TIMESTAMP
         ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
               m["league_info"]["name"], m["league_info"]["ccode"], m["league_info"]["logo"],
               m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
@@ -617,6 +644,7 @@ def _table_exists(conn, name):
 
 async def main():
     print("🚀 Starting V4 OFFICIAL API Radar Bot...", flush=True)
+    _ensure_match_tracking_schema()
     _ensure_team_profiles()
     async with aiohttp.ClientSession() as session:
         while True:

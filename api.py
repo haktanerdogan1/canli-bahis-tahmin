@@ -145,7 +145,8 @@ def get_live_matches(request: Request):
         SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.minute,
                p.signal_level, p.weighted_probability, p.decision, m.league_name, m.league_logo, m.id,
                m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute,
-               fh.fh_end_home, fh.fh_end_away, p.created_at, p.signal_minute, p.market, p.outcome
+               fh.fh_end_home, fh.fh_end_away, p.created_at, p.signal_minute, p.market, p.outcome,
+               date(p.created_at, '+3 hours') AS signal_date
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
@@ -228,6 +229,7 @@ def get_live_matches(request: Request):
             "outcome": outcome,
             "signal_minute": signal_minute,
             "signal_period": "H1" if signal_minute <= 45 else "H2",
+            "signal_date": r[23] if len(r) > 23 else None,
             "created_at": r[19] if len(r) > 19 else None
         }
         
@@ -272,7 +274,43 @@ def get_live_matches(request: Request):
 
         results.append(chosen)
 
-    return {"success": True, "data": results, "is_member": is_member}
+    conn = connect()
+    today_tr = conn.execute("SELECT date('now', '+3 hours')").fetchone()[0]
+    conn.close()
+    return {"success": True, "data": results, "is_member": is_member,
+            "today_tr": today_tr}
+
+
+@app.get("/api/daily-results")
+def get_daily_results(request: Request):
+    """Sonuclari sinyalin uretildigi Turkiye gunune gore gruplar."""
+    payload = get_live_matches(request)
+    days = {}
+    for match in payload["data"]:
+        outcome = match.get("outcome")
+        if outcome not in ("WON", "LOST", "VOID"):
+            continue
+        day = match.get("signal_date") or "Tarihsiz"
+        bucket = days.setdefault(day, {
+            "date": day, "won": 0, "lost": 0, "gozlem_disi": 0, "matches": []
+        })
+        if outcome == "WON":
+            bucket["won"] += 1
+        elif outcome == "LOST":
+            bucket["lost"] += 1
+        else:
+            bucket["gozlem_disi"] += 1
+        bucket["matches"].append(match)
+
+    result = []
+    for day in sorted(days, reverse=True):
+        bucket = days[day]
+        measured = bucket["won"] + bucket["lost"]
+        bucket["total"] = measured
+        bucket["isabet_orani"] = round(bucket["won"] / measured, 3) if measured else None
+        result.append(bucket)
+    return {"success": True, "days": result, "today_tr": payload["today_tr"],
+            "is_member": payload["is_member"]}
 
 @app.get("/api/ozet")
 def get_ozet():

@@ -1,13 +1,55 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import sqlite3
 import os
 
+import auth
+
 app = FastAPI(title="Canlı Gol Olasılığı API")
 
+# users / app_config tablolarini hazirla (idempotent)
+auth.init_auth_schema()
+
+
+def _ensure_prediction_schema():
+    """consensus_predictions.signal_minute / market kolonlarini garanti eder.
+
+    Bu kolonlari normalde orchestrator olusturuyor; ancak api.py de bunlari
+    SORGULUYOR. Orkestrator henuz hic calismadiysa (ilk deploy, temiz veritabani
+    veya orkestrator cokmus durumdayken) API "no such column: p.signal_minute"
+    ile komple cokuyordu. API artik kendi ihtiyaci olan semayi kendisi garantiliyor.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        for ddl in (
+            "ALTER TABLE consensus_predictions ADD COLUMN signal_minute INTEGER",
+            "ALTER TABLE consensus_predictions ADD COLUMN market TEXT",
+        ):
+            try:
+                cur.execute(ddl)
+            except sqlite3.OperationalError:
+                pass  # kolon zaten var
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Sema kontrolu atlandi: {e}")
+
+SESSION_COOKIE = "jcode_session"
+
+
+def current_user_id(request: Request):
+    """Istekteki oturum cookie'sinden kullanici id'si cikarir; yoksa None."""
+    return auth.verify_session_token(request.cookies.get(SESSION_COOKIE, ""))
+
+# NOT: Eskiden allow_origins=["*"] + allow_credentials=True vardi. Bu ikisi birlikte
+# hem tarayici tarafindan reddedilir hem de cookie tabanli oturumla birlesince baska
+# sitelerin kullanicinin oturumuyla istek atmasina zemin hazirlar (CSRF). Frontend
+# zaten ayni sunucudan (ayni origin) servis edildigi icin CORS'a ihtiyac yok.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,7 +66,9 @@ async def no_cache_headers(request, call_next):
     response.headers["Pragma"] = "no-cache"
     return response
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'database', 'fh_goal_predictor.db')
+from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
+
+_ensure_prediction_schema()
 
 @app.get("/")
 def serve_index():
@@ -35,8 +79,70 @@ def serve_index():
 def health_check():
     return {"status": "ok"}
 
+
+# ---------------------------------------------------------------------------
+# Kimlik dogrulama uclari
+# ---------------------------------------------------------------------------
+
+class Credentials(BaseModel):
+    email: str
+    password: str
+
+
+def _set_session_cookie(response: Response, user_id: int, request: Request):
+    token = auth.create_session_token(user_id)
+    # https uzerinden servis ediliyorsa cookie'yi sadece guvenli baglantida gonder
+    is_https = request.url.scheme == "https" or \
+        request.headers.get("x-forwarded-proto", "") == "https"
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        max_age=auth.SESSION_TTL_SECONDS,
+        httponly=True,       # JavaScript cookie'yi okuyamaz (XSS'e karsi)
+        secure=is_https,
+        samesite="lax",      # baska sitelerden gelen isteklerde gonderilmez (CSRF'e karsi)
+        path="/",
+    )
+
+
+@app.post("/api/register")
+def register(creds: Credentials, request: Request, response: Response):
+    user_id, error = auth.create_user(creds.email, creds.password)
+    if error:
+        return {"success": False, "error": error}
+    _set_session_cookie(response, user_id, request)
+    return {"success": True, "email": auth.normalize_email(creds.email)}
+
+
+@app.post("/api/login")
+def login(creds: Credentials, request: Request, response: Response):
+    user_id, error = auth.authenticate(creds.email, creds.password)
+    if error:
+        return {"success": False, "error": error}
+    _set_session_cookie(response, user_id, request)
+    return {"success": True, "email": auth.normalize_email(creds.email)}
+
+
+@app.post("/api/logout")
+def logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"success": True}
+
+
+@app.get("/api/me")
+def me(request: Request):
+    user_id = current_user_id(request)
+    if not user_id:
+        return {"authenticated": False}
+    email = auth.get_user_email(user_id)
+    if not email:
+        # Kullanici silinmis ama cookie duruyorsa oturumu gecersiz say
+        return {"authenticated": False}
+    return {"authenticated": True, "email": email}
+
 @app.get("/api/live-matches")
-def get_live_matches():
+def get_live_matches(request: Request):
+    is_member = current_user_id(request) is not None
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
@@ -151,9 +257,21 @@ def get_live_matches():
         else:
             chosen = bucket["lost"]
         chosen.pop("created_at", None)
+
+        if not is_member:
+            # UYE DEGILSE tahmin verisi hic gonderilmez. Sadece ekrani CSS ile
+            # bulaniklastirmak koruma SAGLAMAZ (kullanici sayfa kaynagina veya
+            # gelistirici konsoluna bakip veriyi okur). Bu yuzden hassas alanlar
+            # sunucuda siliniyor; on yuzdeki bulanik gorunum yalnizca dekoratif.
+            chosen["market"] = None
+            chosen["probability"] = None
+            chosen["confidence"] = None
+            chosen["signal_minute"] = None
+            chosen["locked"] = True
+
         results.append(chosen)
-        
-    return {"success": True, "data": results}
+
+    return {"success": True, "data": results, "is_member": is_member}
 
 @app.get("/api/results")
 def get_results():
@@ -226,7 +344,12 @@ def get_all_live():
     return {"success": True, "data": results}
 
 @app.get("/api/match/{match_id}")
-def get_match_detail(match_id: int):
+def get_match_detail(match_id: int, request: Request):
+    # Detayli analiz (xG, momentum, form) uyelere ozel. Uye olmayana veri
+    # hic uretilmez - on yuzde gizlemek yeterli degil.
+    if current_user_id(request) is None:
+        return {"success": False, "locked": True, "error": "Bu analizi görmek için üye olun."}
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     

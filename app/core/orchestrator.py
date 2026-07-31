@@ -22,7 +22,7 @@ from app.bots.bot_early_blitz import EarlyBlitzBot
 from app.bots.bot_dark_form import DarkFormBot
 from app.core.consensus_engine import ConsensusEngine
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'database', 'fh_goal_predictor.db')
+from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
 
 def _ensure_schema():

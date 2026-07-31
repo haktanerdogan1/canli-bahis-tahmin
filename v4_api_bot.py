@@ -5,7 +5,7 @@ import os
 import aiohttp
 from collections import deque
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'database', 'fh_goal_predictor.db')
+from db_config import DB_PATH  # Railway kalici disk destegi (bkz. db_config.py)
 API_KEY = os.environ.get("RAPIDAPI_KEY")
 if not API_KEY:
     raise RuntimeError("RAPIDAPI_KEY ortam degiskeni tanimli degil. Railway'de Variables'a ekle.")

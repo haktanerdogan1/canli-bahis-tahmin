@@ -465,6 +465,225 @@
         .status-won { color: var(--accent-success); }
         .status-lost { color: var(--text-muted); }
 
+        /* --- Uye olmayanlar icin kilitli tahmin gorunumu --- */
+        .radar-panel.locked {
+            position: relative;
+        }
+
+        .locked-blur {
+            filter: blur(6px);
+            user-select: none;
+            pointer-events: none;
+            opacity: 0.65;
+        }
+
+        .lock-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: linear-gradient(90deg, rgba(3,7,18,0.55), rgba(3,7,18,0.75));
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .lock-btn {
+            background: var(--accent-brand);
+            color: #001014;
+            border: none;
+            padding: 7px 18px;
+            border-radius: var(--radius-full);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: var(--shadow-glow);
+            transition: transform 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .lock-btn:hover { transform: translateY(-1px); }
+
+        /* --- Auth modal --- */
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(3, 7, 18, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .auth-overlay.active { display: flex; }
+
+        .auth-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 25px 60px rgba(0,0,0,0.6), var(--shadow-glow);
+            width: 100%;
+            max-width: 400px;
+            padding: 2rem;
+        }
+
+        .auth-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 0.4rem;
+        }
+
+        .auth-sub {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .auth-tabs {
+            display: flex;
+            gap: 6px;
+            background: rgba(0,0,0,0.25);
+            padding: 5px;
+            border-radius: var(--radius-full);
+            margin-bottom: 1.5rem;
+        }
+
+        .auth-tab {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 9px;
+            border-radius: var(--radius-full);
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .auth-tab.active {
+            background: var(--accent-brand);
+            color: #001014;
+        }
+
+        .auth-field { margin-bottom: 1rem; }
+
+        .auth-field label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .auth-field input {
+            width: 100%;
+            background: var(--bg-base);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .auth-field input:focus { border-color: var(--accent-brand); }
+
+        .auth-submit {
+            width: 100%;
+            background: var(--accent-brand);
+            color: #001014;
+            border: none;
+            padding: 13px;
+            border-radius: var(--radius-md);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 0.5rem;
+            transition: opacity 0.2s;
+        }
+
+        .auth-submit:disabled { opacity: 0.55; cursor: not-allowed; }
+
+        .auth-error {
+            background: rgba(244, 63, 94, 0.1);
+            border: 1px solid rgba(244, 63, 94, 0.35);
+            color: var(--accent-danger);
+            padding: 10px 12px;
+            border-radius: var(--radius-md);
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .auth-close {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: block;
+            margin: 1rem auto 0 auto;
+        }
+
+        .auth-close:hover { color: var(--text-secondary); }
+
+        /* Navbar user area */
+        .user-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .btn-auth-nav {
+            background: var(--accent-brand);
+            color: #001014;
+            border: none;
+            padding: 8px 18px;
+            border-radius: var(--radius-full);
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            cursor: pointer;
+            box-shadow: var(--shadow-glow);
+        }
+
+        .btn-logout {
+            background: transparent;
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
+            padding: 6px 14px;
+            border-radius: var(--radius-full);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-logout:hover { border-color: var(--accent-danger); color: var(--accent-danger); }
+
+        @media (max-width: 720px) {
+            .navbar-content { flex-wrap: wrap; gap: 0.75rem; }
+            .user-area { order: 3; }
+        }
+
     </style>
 </head>
 <body>
@@ -489,6 +708,9 @@
                 <button class="nav-btn" onclick="switchTab('all', this)">
                     <i class="fa-solid fa-futbol"></i> Tüm Canlılar
                 </button>
+            </div>
+            <div class="user-area" id="userArea">
+                <button class="btn-auth-nav" onclick="openAuth('register')">Üye Ol</button>
             </div>
         </div>
     </nav>
@@ -517,6 +739,35 @@
             </div>
         </div>
     </main>
+
+    <!-- Auth Modal (Uye Ol / Giris Yap) -->
+    <div class="auth-overlay" id="authOverlay">
+        <div class="auth-card">
+            <div class="auth-title" id="authTitle">Üye Ol</div>
+            <div class="auth-sub" id="authSub">Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.</div>
+
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tabRegister" onclick="switchAuthMode('register')">Üye Ol</button>
+                <button class="auth-tab" id="tabLogin" onclick="switchAuthMode('login')">Giriş Yap</button>
+            </div>
+
+            <div class="auth-error" id="authError"></div>
+
+            <form id="authForm" onsubmit="submitAuth(event)">
+                <div class="auth-field">
+                    <label for="authEmail">E-posta</label>
+                    <input type="email" id="authEmail" autocomplete="email" required placeholder="ornek@mail.com">
+                </div>
+                <div class="auth-field">
+                    <label for="authPassword">Şifre</label>
+                    <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" placeholder="En az 6 karakter">
+                </div>
+                <button type="submit" class="auth-submit" id="authSubmit">Hesap Oluştur</button>
+            </form>
+
+            <button class="auth-close" onclick="closeAuth()">Kapat</button>
+        </div>
+    </div>
 
     <!-- Match Detail Modal -->
     <div class="modal-overlay" id="matchModal">
@@ -573,6 +824,106 @@
     <script>
         let currentTab = 'pending';
         let refreshTimer = null;
+
+        // --- Kimlik dogrulama durumu ---------------------------------------
+        let isMember = false;
+        let authMode = 'register';
+
+        async function checkAuth() {
+            try {
+                const res = await fetch('/api/me');
+                const d = await res.json();
+                isMember = !!d.authenticated;
+                renderUserArea(d.email);
+            } catch (e) {
+                isMember = false;
+                renderUserArea(null);
+            }
+        }
+
+        function renderUserArea(email) {
+            const el = document.getElementById('userArea');
+            if (!el) return;
+            if (isMember) {
+                el.innerHTML = `
+                    <span title="${email || ''}"><i class="fa-solid fa-circle-check" style="color:var(--accent-success)"></i> Üye</span>
+                    <button class="btn-logout" onclick="doLogout()">Çıkış</button>`;
+            } else {
+                el.innerHTML = `<button class="btn-auth-nav" onclick="openAuth('register')">Üye Ol</button>`;
+            }
+        }
+
+        function openAuth(mode) {
+            switchAuthMode(mode || 'register');
+            document.getElementById('authOverlay').classList.add('active');
+            setTimeout(() => document.getElementById('authEmail').focus(), 50);
+        }
+
+        function closeAuth() {
+            document.getElementById('authOverlay').classList.remove('active');
+            document.getElementById('authError').style.display = 'none';
+        }
+
+        function switchAuthMode(mode) {
+            authMode = mode;
+            const isReg = mode === 'register';
+            document.getElementById('authTitle').innerText = isReg ? 'Üye Ol' : 'Giriş Yap';
+            document.getElementById('authSub').innerText = isReg
+                ? 'Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.'
+                : 'Hesabınıza giriş yapın.';
+            document.getElementById('authSubmit').innerText = isReg ? 'Hesap Oluştur' : 'Giriş Yap';
+            document.getElementById('tabRegister').classList.toggle('active', isReg);
+            document.getElementById('tabLogin').classList.toggle('active', !isReg);
+            document.getElementById('authPassword').setAttribute(
+                'autocomplete', isReg ? 'new-password' : 'current-password');
+            document.getElementById('authError').style.display = 'none';
+        }
+
+        function showAuthError(msg) {
+            const el = document.getElementById('authError');
+            el.innerText = msg;
+            el.style.display = 'block';
+        }
+
+        async function submitAuth(ev) {
+            ev.preventDefault();
+            const btn = document.getElementById('authSubmit');
+            const email = document.getElementById('authEmail').value.trim();
+            const password = document.getElementById('authPassword').value;
+
+            btn.disabled = true;
+            const originalText = btn.innerText;
+            btn.innerText = 'Lütfen bekleyin...';
+
+            try {
+                const res = await fetch(authMode === 'register' ? '/api/register' : '/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const d = await res.json();
+
+                if (d.success) {
+                    closeAuth();
+                    document.getElementById('authForm').reset();
+                    await checkAuth();
+                    fetchData();
+                } else {
+                    showAuthError(d.error || 'Bir hata oluştu.');
+                }
+            } catch (e) {
+                showAuthError('Sunucuya bağlanılamadı.');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
+        }
+
+        async function doLogout() {
+            try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+            await checkAuth();
+            fetchData();
+        }
 
         function switchTab(tab, btnElement) {
             currentTab = tab;
@@ -673,17 +1024,33 @@
                         let outcomeBadge = '';
                         if (m.outcome === 'WON') outcomeBadge = '<span style="color:var(--accent-success); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-check"></i> KAZANDI</span>';
                         else if (m.outcome === 'LOST') outcomeBadge = '<span style="color:var(--accent-danger); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-times"></i> KAYBETTİ</span>';
-                        
-                        const signalMinuteHtml = (m.signal_minute !== undefined && m.signal_minute !== null)
-                            ? `<div class="radar-signal-minute" style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-clock"></i> Tahmin Dakikası: ${m.signal_minute}'</div>`
-                            : '';
 
-                        radarHtml = `
-                        <div class="radar-panel">
-                            <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market} ${outcomeBadge}</div>
-                            <div class="radar-prob">%${Math.round(m.probability * 100)} Olasılık</div>
-                            ${signalMinuteHtml}
-                        </div>`;
+                        if (m.locked) {
+                            // Uye degil: sunucu zaten market/probability gondermiyor.
+                            // Asagidaki metin GERCEK tahmin DEGIL, sadece bulanik bir
+                            // yer tutucu - uzerine "Uye Olun" katmani biniyor.
+                            radarHtml = `
+                            <div class="radar-panel locked">
+                                <div class="locked-blur">
+                                    <div class="radar-target"><i class="fa-solid fa-bullseye"></i> Maç Sonu 2.5 Üst ${outcomeBadge}</div>
+                                    <div class="radar-prob">%78 Olasılık</div>
+                                </div>
+                                <div class="lock-overlay" onclick="event.stopPropagation(); openAuth('register')">
+                                    <button class="lock-btn"><i class="fa-solid fa-lock"></i> Görmek için Üye Olun</button>
+                                </div>
+                            </div>`;
+                        } else {
+                            const signalMinuteHtml = (m.signal_minute !== undefined && m.signal_minute !== null)
+                                ? `<div class="radar-signal-minute" style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-clock"></i> Tahmin Dakikası: ${m.signal_minute}'</div>`
+                                : '';
+
+                            radarHtml = `
+                            <div class="radar-panel">
+                                <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market} ${outcomeBadge}</div>
+                                <div class="radar-prob">%${Math.round(m.probability * 100)} Olasılık</div>
+                                ${signalMinuteHtml}
+                            </div>`;
+                        }
                     }
 
                     const isFinished = m.match_status === 'FINISHED';
@@ -759,7 +1126,14 @@
 
         async function openMatchDetails(matchId, homeName, awayName, homeLogo, awayLogo) {
             if(!matchId) return; // If ID is missing
-            
+
+            // Uye degilse detay analizini acmak yerine uyelik ekranini goster.
+            // (Sunucu da bu ucu kilitliyor; bu sadece kullanici deneyimi icin.)
+            if (!isMember) {
+                openAuth('register');
+                return;
+            }
+
             const modal = document.getElementById('matchModal');
             modal.classList.add('active');
             
@@ -864,6 +1238,11 @@
                         momentumContainer.innerHTML = momentumHtml;
                         
                     }
+                } else if (result.locked) {
+                    // Oturum bu arada dusmus olabilir
+                    closeModal();
+                    await checkAuth();
+                    openAuth('login');
                 } else {
                     momentumContainer.innerHTML = `<div style="color:var(--text-muted)">Veri bulunamadı.</div>`;
                 }
@@ -881,8 +1260,16 @@
             if(e.target === this) closeModal();
         });
 
-        // Init
-        fetchData();
+        // Auth modalini disina tiklayinca / Esc ile kapat
+        document.getElementById('authOverlay').addEventListener('click', function(e) {
+            if(e.target === this) closeAuth();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') { closeAuth(); closeModal(); }
+        });
+
+        // Init: once uyelik durumunu ogren, sonra veriyi cek
+        checkAuth().then(fetchData);
         setInterval(fetchData, 15000);
     </script>
 </body>

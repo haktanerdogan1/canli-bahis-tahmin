@@ -30,6 +30,22 @@ from app.schemas.bot_prediction import BotPrediction
 TABAN_IY = 0.616
 TABAN_MS15 = 0.737
 
+# KALICILIK KATSAYILARI - out-of-sample olculmus.
+#
+# Her takimin maclari kronolojik ikiye bolunup, ilk yarisindan cikan profilin
+# ikinci yarisini ne kadar tahmin ettigi olculdu (1.558 takim, >=20 mac):
+#
+#   ozellik                gecmiste gorunen fark -> gelecege tasinan   korelasyon
+#   ilk yari gol orani           42.6 puan            9.5 puan  (%22)     0.387
+#   mac sonu 1.5 ust             32.8 puan            4.7 puan  (%14)     0.150
+#   (2. yari gol egilimi         31.7 puan            2.9 puan  (%9)      0.110  -> GURULTU, kullanilmadi)
+#
+# Yani bir takimin gecmis profili gelecegi ZAYIF tahmin ediyor. Profildeki
+# sapmanin tamamini kullanmak ASIRI OZGUVEN uretir; bu yuzden sapma olculmus
+# kalicilik oraniyla carpilarak tabana dogru cekiliyor (shrinkage).
+KALICILIK_IY = 0.22
+KALICILIK_MS = 0.14
+
 
 class PrematchProphetBot(BaseGoalBot):
     def __init__(self):
@@ -72,10 +88,15 @@ class PrematchProphetBot(BaseGoalBot):
             taban, oran = TABAN_MS15, pre["over_15_rate"]
             hedef = "mac sonu ek gol"
 
-        # Guven dusukse tahmini tabana dogru cek (shrinkage).
-        # Az veriyle uc tahmin yapmak yerine ortalamaya yaklas.
+        # IKI KADEMELI KUCULTME:
+        #   1. kalicilik: profilin gelecegi ne kadar tahmin ettigi (olculmus)
+        #   2. guven     : elimizdeki mac sayisi (az macli takima az guven)
+        # Ikisi de sapmayi tabana dogru ceker. Bu olmadan bot asiri ozguvenli
+        # konusur - ornegin gecmiste %84 gorunen bir takima %84 der, oysa
+        # olculmus kalicilikla dogru cevap ~%66'dir.
+        kalicilik = KALICILIK_IY if (minute <= 45 and skor == 0) else KALICILIK_MS
         g = pre.get("guven", 0.5)
-        olasilik = taban + (oran - taban) * g
+        olasilik = taban + (oran - taban) * kalicilik * g
         olasilik = max(0.05, min(0.92, olasilik))
 
         karar = "goal" if olasilik >= 0.62 else "no_goal"
@@ -89,6 +110,7 @@ class PrematchProphetBot(BaseGoalBot):
             reasons=[
                 f"Mac oncesi profil ({n} mac): {hedef} beklentisi %{100*oran:.0f} "
                 f"(taban %{100*taban:.0f}).",
+                f"Olculmus kalicilik %{100*kalicilik:.0f} uygulandi -> %{100*olasilik:.0f}.",
                 f"Beklenen toplam gol: {pre['beklenen_gol']:.2f}.",
             ],
             warnings=[] if g >= 0.7 else [f"Dusuk veri guveni ({g}) - tahmin tabana cekildi."],

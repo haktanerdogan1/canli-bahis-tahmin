@@ -141,6 +141,47 @@ def _register_new_match():
     _daily_state["count"] += 1
 
 
+# --- Istatistik anahtari kesfi -------------------------------------------------
+# Halihazirda ISLEDIGIMIZ anahtarlar. Bunun disinda gelen her anahtar loglanir ve
+# bir tabloya yazilir; boylece API'nin sundugu ama kullanmadigimiz veriyi
+# tahmin yurutmeden, olcerek ogreniriz.
+BILINEN_ANAHTARLAR = {
+    "BallPossesion", "expected_goals", "total_shots", "ShotsOnTarget", "corners",
+}
+_gorulen_anahtarlar = {}
+
+
+def _bilinmeyen_anahtar_kaydet(key, vals):
+    if not key or key in BILINEN_ANAHTARLAR:
+        return
+    # Ilk gorusunde logla, sonra sadece sayaci artir (log kirliligi olmasin)
+    if key not in _gorulen_anahtarlar:
+        _gorulen_anahtarlar[key] = 0
+        print(f"🔍 YENI ISTATISTIK ANAHTARI: '{key}' -> ornek deger: {vals}", flush=True)
+    _gorulen_anahtarlar[key] += 1
+
+
+def _kesif_ozeti_yaz():
+    """Gorulen bilinmeyen anahtarlari veritabanina yazar (tek yerde birikir)."""
+    if not _gorulen_anahtarlar:
+        return
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS stat_key_discovery (
+            anahtar TEXT PRIMARY KEY, gorulme INTEGER, ilk_gorulme TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        for k, n in _gorulen_anahtarlar.items():
+            cur.execute("""INSERT INTO stat_key_discovery (anahtar, gorulme) VALUES (?,?)
+                           ON CONFLICT(anahtar) DO UPDATE SET gorulme = gorulme + excluded.gorulme""",
+                        (k, n))
+        conn.commit()
+        conn.close()
+        _gorulen_anahtarlar.clear()
+    except Exception as e:
+        print(f"⚠️  Kesif ozeti yazilamadi: {e}", flush=True)
+
+
 # Hafıza havuzu
 V4_HISTORY = {}
 
@@ -373,6 +414,14 @@ async def process_api_matches(session):
             for item in group.get("stats", []):
                 key = item.get("key")
                 vals = item.get("stats", [0, 0])
+
+                # KESIF: Tanimadigimiz istatistik anahtarlarini kaydet.
+                # Su an sadece 5 alan okuyoruz (topla oynama, xG, sut, isabetli sut,
+                # korner). Kirmizi kart, tehlikeli atak, buyuk sans gibi alanlar
+                # hic doldurulmuyor - bu yuzden o alanlara bakan botlar (bot_red_card,
+                # bot_attack_volume) HIC CALISAMIYOR. API'nin gercekte hangi anahtarlari
+                # gonderdigini tahmin etmek yerine BURADAN OGRENIYORUZ.
+                _bilinmeyen_anahtar_kaydet(key, vals)
                 
                 # Check if vals is valid
                 if isinstance(vals, list) and len(vals) >= 2 and vals[0] is not None and vals[1] is not None:
@@ -409,6 +458,8 @@ async def process_api_matches(session):
 
     conn.commit()
     conn.close()
+
+    _kesif_ozeti_yaz()
 
     print(
         f"📊 feed={stat_feed_total} islenen={stat_processed} "

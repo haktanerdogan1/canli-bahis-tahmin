@@ -1,7 +1,10 @@
+import os
 import aiohttp
 import asyncio
 
-API_KEY = "0621aca909msh11528db8e0c6d8ap14b8a4jsn5581eeb52cc9"
+API_KEY = os.environ.get("RAPIDAPI_KEY")
+if not API_KEY:
+    raise RuntimeError("RAPIDAPI_KEY ortam degiskeni tanimli degil.")
 HOST = "free-api-live-football-data.p.rapidapi.com"
 MATCH_ID = "5900866" # Parma vs Arezzo
 

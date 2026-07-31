@@ -7,6 +7,7 @@ import os
 import auth
 import settlement
 import odds as odds_mod
+import prematch
 
 app = FastAPI(title="Canlı Gol Olasılığı API")
 
@@ -20,10 +21,16 @@ def _ensure_prediction_schema():
     api.py bu sutunlari SORGULADIGI icin, orkestrator henuz hic calismamis olsa
     bile (ilk deploy / temiz veritabani) API'nin cokmemesi gerekiyor.
     """
-    try:
-        settlement.ensure_schema()
-    except Exception as e:
-        print(f"Sema kontrolu atlandi: {e}")
+    # API'nin SORGULADIGI her tablonun varligini API'nin KENDISI garanti etmeli.
+    # Aksi halde orkestrator henuz hic calismamissa (ilk deploy / temiz veritabani)
+    # uclar 500 veriyor. Daha once ayni hata signal_minute kolonunda yasandi.
+    for ad, fn in (("settlement", settlement.ensure_schema),
+                   ("prematch", prematch.ensure_schema),
+                   ("odds", odds_mod.ensure_schema)):
+        try:
+            fn()
+        except Exception as e:
+            print(f"Sema kontrolu atlandi ({ad}): {e}")
 
 SESSION_COOKIE = "jcode_session"
 
@@ -404,6 +411,91 @@ def get_metrics(request: Request):
         "piyasa_karsilastirmasi": piyasa_ozet,
         "seviyeye_gore": by_level,
         "uyari": note,
+    }
+
+@app.get("/api/monitor")
+def get_monitor(request: Request):
+    """Canli sistem durumu - izleme paneli icin.
+
+    Botlarin o an ne dusundugunu, hangi maclari taradigini ve son sinyallerde
+    hangi botun ne dedigini dondurur. Uyelere ozel.
+    """
+    if current_user_id(request) is None:
+        return {"success": False, "locked": True, "error": "Üyelere özel."}
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # --- Sistem nabzi ---
+    cur.execute("SELECT COUNT(*) FROM matches WHERE status IN ('LIVE','HT')")
+    canli_mac = cur.fetchone()[0]
+    cur.execute("SELECT MAX(captured_at) FROM live_snapshots")
+    son_veri = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal'")
+    toplam_sinyal = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome IS NULL")
+    acik = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM team_profiles")
+    profil = cur.fetchone()[0]
+
+    # --- Taranan canli maclar ---
+    cur.execute("""
+        SELECT m.id, m.home_team_id, m.away_team_id, m.home_score, m.away_score,
+               m.minute, m.status, m.league_name,
+               (SELECT COUNT(*) FROM live_snapshots s WHERE s.match_id=m.id)
+        FROM matches m WHERE m.status IN ('LIVE','HT')
+        ORDER BY m.minute DESC LIMIT 25
+    """)
+    maclar = [{
+        "match_id": r[0], "ev": r[1], "dep": r[2], "skor": f"{r[3]}-{r[4]}",
+        "dakika": r[5], "durum": r[6], "lig": r[7] or "-", "snapshot": r[8],
+    } for r in cur.fetchall()]
+
+    # --- Son sinyaller + o sinyalde botlarin oylari ---
+    cur.execute("""
+        SELECT p.id, p.match_id, p.snapshot_id, m.home_team_id, m.away_team_id,
+               p.signal_minute, p.market, p.weighted_probability, p.signal_level,
+               p.positive_bot_count, p.negative_bot_count, p.insufficient_data_count,
+               p.outcome, p.created_at
+        FROM consensus_predictions p JOIN matches m ON m.id=p.match_id
+        WHERE p.decision='signal' ORDER BY p.id DESC LIMIT 8
+    """)
+    sinyaller = []
+    for r in cur.fetchall():
+        cur.execute("""
+            SELECT bot_name, decision, probability FROM bot_predictions
+            WHERE match_id=? AND (snapshot_id=? OR ? IS NULL)
+            ORDER BY probability DESC
+        """, (r[1], r[2], r[2]))
+        oylar = [{"bot": b, "karar": d, "olasilik": pr} for b, d, pr in cur.fetchall()]
+        sinyaller.append({
+            "id": r[0], "mac": f"{r[3]} - {r[4]}", "dakika": r[5],
+            "market": r[6], "olasilik": r[7], "seviye": r[8],
+            "pozitif": r[9], "negatif": r[10], "cekilen": r[11],
+            "sonuc": r[12] or "BEKLIYOR", "zaman": r[13], "oylar": oylar,
+        })
+
+    # --- Bot bazli ozet (sonuclanmis sinyaller uzerinden) ---
+    cur.execute("""
+        SELECT b.bot_name, COUNT(*),
+               SUM(CASE WHEN c.outcome='WON' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN b.decision='insufficient_data' THEN 1 ELSE 0 END)
+        FROM bot_predictions b
+        LEFT JOIN consensus_predictions c
+               ON c.match_id=b.match_id AND c.snapshot_id=b.snapshot_id
+              AND c.outcome IN ('WON','LOST')
+        GROUP BY b.bot_name ORDER BY b.bot_name
+    """)
+    botlar = [{"bot": r[0], "kayit": r[1], "isabet": r[2] or 0, "cekildi": r[3] or 0}
+              for r in cur.fetchall()]
+
+    conn.close()
+    return {
+        "success": True,
+        "nabiz": {"canli_mac": canli_mac, "son_veri": son_veri,
+                  "toplam_sinyal": toplam_sinyal, "acik_sinyal": acik,
+                  "takim_profili": profil},
+        "maclar": maclar, "sinyaller": sinyaller, "botlar": botlar,
     }
 
 @app.get("/api/results")

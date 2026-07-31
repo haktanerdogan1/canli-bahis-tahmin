@@ -1221,9 +1221,12 @@
                     if (currentTab === 'pending') {
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'won') {
-                        dataToRender = dataToRender.filter(m => m.outcome === "WON");
+                        // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
+                        // kazandigi gorunsun, 1-2 gun oncesi dahil edilmesin - bugun
+                        // gercek kazanc yoksa sekme BOS kalir, eski sonuclarla doldurulmaz.
+                        dataToRender = dataToRender.filter(m => m.outcome === "WON" && m.signal_date === currentTodayTR);
                     } else if (currentTab === 'lost') {
-                        dataToRender = dataToRender.filter(m => m.outcome === "LOST");
+                        dataToRender = dataToRender.filter(m => m.outcome === "LOST" && m.signal_date === currentTodayTR);
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {

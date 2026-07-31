@@ -55,10 +55,21 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
     is_first_half_market = (signal_minute is not None and signal_minute <= 45)
 
     if is_first_half_market:
-        # Ilk yari kapandi mi?
         first_half_over = match_status in ("HT", "FINISHED") or (current_minute or 0) > 45
+
         if not first_half_over:
-            return None
+            # Ilk yari HALA DEVAM EDIYOR: bu asamada current_home/current_away
+            # zaten ilk yari skorunun ta kendisi (2. yari hic baslamadi), bu
+            # yuzden hedef gol gelir gelmez WON'a karar vermek GUVENLI - ilk
+            # yarinin bitmesini (HT) beklemeye gerek yok.
+            total_now = (current_home or 0) + (current_away or 0)
+            if total_now > initial_goals:
+                return "WON"
+            return None  # henuz hedef gol gelmedi, ilk yari surdukce belirsiz
+
+        # Ilk yari KAPANDI: artik SADECE ilk yari sonu skoruna (fh_end) bakiyoruz,
+        # current_home/current_away'e degil - aksi halde 2. yaride gelen bir gol
+        # bu ilk yari sinyalini yanlislikla WON yapardi (bkz. 2.3 nolu duzeltme).
         ref_home = fh_end_home if fh_end_home is not None else current_home
         ref_away = fh_end_away if fh_end_away is not None else current_away
         total_fh = (ref_home or 0) + (ref_away or 0)

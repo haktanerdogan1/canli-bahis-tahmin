@@ -82,7 +82,17 @@ def run_orchestrator():
                 match_id = match['id']
                 minute = match['minute']
                 aggregate_score = match['aggregate_score'] or ''
-                
+
+                # Dakika 0 ama skor 0 degil: API'nin dakika alani guvenilmez demektir
+                # (mac gercekte devam ediyor ama "henuz baslamamis gibi" gorunuyor).
+                # Boyle bir durumda "minute <= 45 -> Ilk Yari" varsayimi yanlis sinyal
+                # uretir (ornek: Balkani-Bohemian 1-1 iken dakika 0 geldi, sistem
+                # "mac yeni basladi" sanip "Ilk Yari 2.5 Ust" sinyali uretmisti).
+                home_score = match['home_score'] or 0
+                away_score = match['away_score'] or 0
+                if minute == 0 and (home_score > 0 or away_score > 0):
+                    continue
+
                 # Sinyal kuralı: İlk yarı 35'e kadar (35-45 arası riskli), maç sonu 80'e kadar (80-90 arası riskli) sinyal ara
                 if (35 < minute < 46) or (minute >= 80):
                     continue

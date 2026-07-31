@@ -227,6 +227,63 @@ async def fetch_stats(session, match_id):
         print(f"Stats fetch error for {match_id}: {e}")
     return []
 
+def _parse_stats(stats_groups):
+    """API'nin istatistik yanitini (h_pos, a_pos, ..., h_big, a_big) tuple'ina cevirir.
+
+    Saf fonksiyon - DB'ye dokunmaz, ag cagrisi yapmaz. Boylece bu parse islemi
+    yazma transaction'i disinda, gather sonuclari elde bekle bekle calistirilabilir.
+    """
+    h_pos, a_pos = 0, 0
+    h_xg, a_xg = 0.0, 0.0
+    h_shots, a_shots = 0, 0
+    h_sot, a_sot = 0, 0
+    h_cor, a_cor = 0, 0
+    # NOT: asagidaki alanlarin API anahtar eslesmesi henuz bilinmiyor
+    # (kesif Railway'de calisip "YENI ISTATISTIK ANAHTARI" loglari
+    # cikinca yapilacak). Simdilik hep 0 yazilir, kolonlar en azindan
+    # INSERT'te yer alsin diye eklendi.
+    h_sot_off, a_sot_off = 0, 0
+    h_danger, a_danger = 0, 0
+    h_atk, a_atk = 0, 0
+    h_red, a_red = 0, 0
+    h_big, a_big = 0, 0
+
+    for group in stats_groups:
+        for item in group.get("stats", []):
+            key = item.get("key")
+            vals = item.get("stats", [0, 0])
+
+            # KESIF: Tanimadigimiz istatistik anahtarlarini kaydet.
+            # Su an sadece 5 alan okuyoruz (topla oynama, xG, sut, isabetli sut,
+            # korner). Kirmizi kart, tehlikeli atak, buyuk sans gibi alanlar
+            # hic doldurulmuyor - bu yuzden o alanlara bakan botlar (bot_red_card,
+            # bot_attack_volume) HIC CALISAMIYOR. API'nin gercekte hangi anahtarlari
+            # gonderdigini tahmin etmek yerine BURADAN OGRENIYORUZ.
+            _bilinmeyen_anahtar_kaydet(key, vals)
+
+            # Check if vals is valid
+            if isinstance(vals, list) and len(vals) >= 2 and vals[0] is not None and vals[1] is not None:
+                if key == "BallPossesion":
+                    try: h_pos, a_pos = int(vals[0]), int(vals[1])
+                    except: pass
+                elif key == "expected_goals":
+                    try: h_xg, a_xg = float(vals[0]), float(vals[1])
+                    except: pass
+                elif key == "total_shots":
+                    try: h_shots, a_shots = int(vals[0]), int(vals[1])
+                    except: pass
+                elif key == "ShotsOnTarget":
+                    try: h_sot, a_sot = int(vals[0]), int(vals[1])
+                    except: pass
+                elif key == "corners":
+                    try: h_cor, a_cor = int(vals[0]), int(vals[1])
+                    except: pass
+
+    return (h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
+            h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
+            h_red, a_red, h_big, a_big)
+
+
 async def process_api_matches(session):
     url_live = f"https://{HOST}/football-current-live"
     try:
@@ -238,7 +295,7 @@ async def process_api_matches(session):
     except Exception as e:
         print(f"Error fetching live matches: {e}")
         return
-        
+
     matches = data.get("response", {})
     if isinstance(matches, dict) and "live" in matches:
         matches = matches["live"]
@@ -247,9 +304,6 @@ async def process_api_matches(session):
 
     if not matches:
         matches = []
-
-    conn = connect()
-    cursor = conn.cursor()
 
     # Extract all currently active match IDs
     active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]
@@ -260,8 +314,9 @@ async def process_api_matches(session):
         # ve asagidaki temizlik sorgusu HIC CALISMIYORDU; bu yuzden DB'deki tum maclar son
         # gorulen dakikalarinda (63', 64' gibi) SONSUZA KADAR 'LIVE' kaliyor, "Acik Bahisler"
         # sayfasindan hic dusmuyordu. Feed bossa, canli gorunen her mac bitmis demektir.
-        cursor.execute("UPDATE matches SET status = 'FINISHED' "
-                       "WHERE status NOT IN ('FINISHED','Ended','FT','Canceled')")
+        conn = connect()
+        conn.execute("UPDATE matches SET status = 'FINISHED' "
+                     "WHERE status NOT IN ('FINISHED','Ended','FT','Canceled')")
         conn.commit()
         conn.close()
         print("ℹ️  Canli mac yok - acik kalan tum maclar FINISHED yapildi.", flush=True)
@@ -274,33 +329,40 @@ async def process_api_matches(session):
     stat_skipped_cap = 0
     stat_processed = 0
 
-    if active_ids:
-        placeholders = ','.join('?' for _ in active_ids)
-        # Bu sorgu SADECE canli feed'den tamamen DUSMUS (artik hic donmeyen) maclari kapsar.
-        # Eskiden burada "dakika 40-50 arasindaysa HT yap" gibi bir kural vardi; bu, dakikasi
-        # 40-50 araliginda donup kalmis (ornegin API'nin bir daha hic donmedigi) bir maci
-        # SONSUZA KADAR 'HT' durumunda tutuyordu. 'HT' durumu "Mac Sonu" marketlerinde sonuc
-        # olarak sayilmadigindan (sadece 'FINISHED' terminal sayilir), o mac PENDING'de takili
-        # kaliyordu - hatta aylar/yillar sonra bile ("kiev macinin bir yil sonra hala acik
-        # gozukmesi" bugu buradan geliyordu). Feed'den dusen bir mac artik takip edilmiyor
-        # demektir, dogrudan FINISHED yapilmali.
-        # Terminal olmayan HER durumu kapsa - sadece LIVE/HT degil.
-        # Gecmiste ham metin durumlar ("2nd half", "Started") kaydedildigi icin
-        # o satirlar hicbir zaman temizlenemiyordu.
-        cursor.execute(f'''
-            UPDATE matches
-            SET status = 'FINISHED'
-            WHERE status NOT IN ('FINISHED', 'Ended', 'FT', 'Canceled')
-              AND source_match_id NOT IN ({placeholders})
-        ''', active_ids)
+    # --- ASAMA 1: KISA bir baglanti ile SADECE temizlik + okuma yap, hemen kapat. ---
+    # NOT: bu baglanti asagidaki asama 2'nin ag cagrilarindan (fetch_stats) ONCE
+    # commit edilip kapatiliyor - boylece yazma kilidi ag beklerken acik kalmiyor.
+    conn = connect()
+    cursor = conn.cursor()
+    placeholders = ','.join('?' for _ in active_ids)
+    # Bu sorgu SADECE canli feed'den tamamen DUSMUS (artik hic donmeyen) maclari kapsar.
+    # Eskiden burada "dakika 40-50 arasindaysa HT yap" gibi bir kural vardi; bu, dakikasi
+    # 40-50 araliginda donup kalmis (ornegin API'nin bir daha hic donmedigi) bir maci
+    # SONSUZA KADAR 'HT' durumunda tutuyordu. 'HT' durumu "Mac Sonu" marketlerinde sonuc
+    # olarak sayilmadigindan (sadece 'FINISHED' terminal sayilir), o mac PENDING'de takili
+    # kaliyordu - hatta aylar/yillar sonra bile ("kiev macinin bir yil sonra hala acik
+    # gozukmesi" bugu buradan geliyordu). Feed'den dusen bir mac artik takip edilmiyor
+    # demektir, dogrudan FINISHED yapilmali.
+    # Terminal olmayan HER durumu kapsa - sadece LIVE/HT degil.
+    # Gecmiste ham metin durumlar ("2nd half", "Started") kaydedildigi icin
+    # o satirlar hicbir zaman temizlenemiyordu.
+    cursor.execute(f'''
+        UPDATE matches
+        SET status = 'FINISHED'
+        WHERE status NOT IN ('FINISHED', 'Ended', 'FT', 'Canceled')
+          AND source_match_id NOT IN ({placeholders})
+    ''', active_ids)
 
-        # Bu ciklustaki maclardan hangileri DB'de zaten var (halihazirda takip ediliyor)?
-        # Zaten takip edilenler kota/filtre doldu diye BIRAKILMAZ - guncellenmeye devam eder.
-        cursor.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
-        existing_ids = set(row[0] for row in cursor.fetchall())
-    else:
-        existing_ids = set()
-    
+    # Bu ciklustaki maclardan hangileri DB'de zaten var (halihazirda takip ediliyor)?
+    # Zaten takip edilenler kota/filtre doldu diye BIRAKILMAZ - guncellenmeye devam eder.
+    cursor.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
+    existing_ids = set(row[0] for row in cursor.fetchall())
+    conn.commit()
+    conn.close()
+
+    # --- ASAMA 2: HANGI maclarin islenecegini belirle. Sadece bellekte calisir,
+    # DB baglantisi ACIK DEGIL - bu yuzden ag cagrilarindan once bitirmek guvenli. ---
+    to_process = []
     for match in matches:
         match_id_api = str(match["id"])
         event_id = "v4_" + match_id_api
@@ -308,14 +370,14 @@ async def process_api_matches(session):
         away_name = match.get("away", {}).get("name", "Unknown")
         home_id = match.get("home", {}).get("id")
         away_id = match.get("away", {}).get("id")
-        
+
         home_logo = f"https://images.fotmob.com/image_resources/logo/teamlogo/{home_id}.png" if home_id else f"https://ui-avatars.com/api/?name={home_name.replace(' ', '+')}&background=1f2937&color=00e5ff"
         away_logo = f"https://images.fotmob.com/image_resources/logo/teamlogo/{away_id}.png" if away_id else f"https://ui-avatars.com/api/?name={away_name.replace(' ', '+')}&background=1f2937&color=00e5ff"
-        
+
         score_h = match.get("home", {}).get("score", 0)
         score_a = match.get("away", {}).get("score", 0)
         total_goals = score_h + score_a
-        
+
         # Lig bilgilerini al
         league_id_api = str(match.get("leagueId", ""))
         league_info = LEAGUES_CACHE.get(league_id_api, {"name": "Unknown League", "ccode": "INT", "logo": ""})
@@ -345,10 +407,10 @@ async def process_api_matches(session):
             minute = int(num_str) if num_str else 0
         except:
             minute = 0
-            
+
         period_length = status_data.get("periodLength", 45)
         is_ongoing = status_data.get("ongoing", False)
-        
+
         # Determine actual status
         match_status = "LIVE"
         if not is_ongoing:
@@ -366,11 +428,44 @@ async def process_api_matches(session):
                 # kaliciolarak takili kaliyordu. Artik her sey bilinen uc durumdan
                 # birine indirgeniyor.
                 match_status = "LIVE"
-            
+
         target_market = f"İlk Yarı {total_goals + 0.5} Üst" if period_length == 45 and minute <= 45 else f"Maç Sonu {total_goals + 0.5} Üst"
-        
+
         aggregate_score = status_data.get("aggregatedStr", "")
-        
+
+        to_process.append({
+            "match_id_api": match_id_api,
+            "event_id": event_id,
+            "home_name": home_name,
+            "away_name": away_name,
+            "home_logo": home_logo,
+            "away_logo": away_logo,
+            "score_h": score_h,
+            "score_a": score_a,
+            "league_info": league_info,
+            "match_status": match_status,
+            "minute": minute,
+            "aggregate_score": aggregate_score,
+        })
+
+    # --- ASAMA 3: TUM istatistikleri ESZAMANLI cek. Burada HICBIR DB baglantisi
+    # acik degil - onceki halde tam da bu bekleme sirasinda (mac basina 10-20
+    # saniye surebiliyordu, 22 mac * ag gecikmesi) yazma kilidi acik kaliyordu. ---
+    stats_results = await asyncio.gather(
+        *[fetch_stats(session, m["match_id_api"]) for m in to_process],
+        return_exceptions=True,
+    )
+    for m, stats_groups in zip(to_process, stats_results):
+        if isinstance(stats_groups, Exception):
+            stats_groups = []
+        m["stats"] = _parse_stats(stats_groups)
+
+    # --- ASAMA 4: TEK KISA transaction'da hepsini yaz, hemen kapat. Ag cagrisi
+    # bitmis, elde sadece bellekteki sonuclar var - bu blokta hic "await" yok. ---
+    conn = connect()
+    cursor = conn.cursor()
+
+    for m in to_process:
         # NOT: Buraya bir ara "mac bir kere FINISHED olduysa bir daha asla guncellenmesin"
         # kilidi konulmustu. O kilit KALDIRILDI: yukaridaki "feed tamamen bos ise hepsini
         # FINISHED yap" temizligiyle birlesince, feed'de tek seferlik gecici bir bosluk
@@ -378,7 +473,7 @@ async def process_api_matches(session):
         # ve bir daha asla guncellenmeyeceklerdi. Gecici olarak yanlis FINISHED olmus bir mac
         # geri donebilmeli; nasil olsa bitince tekrar dogru sekilde sonuclanir.
         cursor.execute('''
-            INSERT INTO matches 
+            INSERT INTO matches
             (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_match_id) DO UPDATE SET
@@ -392,63 +487,20 @@ async def process_api_matches(session):
                 home_team_logo=excluded.home_team_logo,
                 away_team_logo=excluded.away_team_logo,
                 aggregate_score=excluded.aggregate_score
-        ''', (event_id, home_name, away_name, match_status, league_info["name"], league_info["ccode"], league_info["logo"], score_h, score_a, minute, home_logo, away_logo, aggregate_score))
-                       
-        cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (event_id,))
+        ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
+              m["league_info"]["name"], m["league_info"]["ccode"], m["league_info"]["logo"],
+              m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
+              m["aggregate_score"]))
+
+        cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))
         match_id_db_res = cursor.fetchone()
         if not match_id_db_res:
             continue
         match_id_db = match_id_db_res[0]
-        
-        # İstisnai analiz (İstatistikleri Çek)
-        stats_groups = await fetch_stats(session, match_id_api)
-        
-        # Detaylı istatistikler
-        h_pos, a_pos = 0, 0
-        h_xg, a_xg = 0.0, 0.0
-        h_shots, a_shots = 0, 0
-        h_sot, a_sot = 0, 0
-        h_cor, a_cor = 0, 0
-        # NOT: asagidaki alanlarin API anahtar eslesmesi henuz bilinmiyor
-        # (kesif Railway'de calisip "YENI ISTATISTIK ANAHTARI" loglari
-        # cikinca yapilacak). Simdilik hep 0 yazilir, kolonlar en azindan
-        # INSERT'te yer alsin diye eklendi.
-        h_sot_off, a_sot_off = 0, 0
-        h_danger, a_danger = 0, 0
-        h_atk, a_atk = 0, 0
-        h_red, a_red = 0, 0
-        h_big, a_big = 0, 0
 
-        for group in stats_groups:
-            for item in group.get("stats", []):
-                key = item.get("key")
-                vals = item.get("stats", [0, 0])
-
-                # KESIF: Tanimadigimiz istatistik anahtarlarini kaydet.
-                # Su an sadece 5 alan okuyoruz (topla oynama, xG, sut, isabetli sut,
-                # korner). Kirmizi kart, tehlikeli atak, buyuk sans gibi alanlar
-                # hic doldurulmuyor - bu yuzden o alanlara bakan botlar (bot_red_card,
-                # bot_attack_volume) HIC CALISAMIYOR. API'nin gercekte hangi anahtarlari
-                # gonderdigini tahmin etmek yerine BURADAN OGRENIYORUZ.
-                _bilinmeyen_anahtar_kaydet(key, vals)
-                
-                # Check if vals is valid
-                if isinstance(vals, list) and len(vals) >= 2 and vals[0] is not None and vals[1] is not None:
-                    if key == "BallPossesion":
-                        try: h_pos, a_pos = int(vals[0]), int(vals[1])
-                        except: pass
-                    elif key == "expected_goals":
-                        try: h_xg, a_xg = float(vals[0]), float(vals[1])
-                        except: pass
-                    elif key == "total_shots":
-                        try: h_shots, a_shots = int(vals[0]), int(vals[1])
-                        except: pass
-                    elif key == "ShotsOnTarget":
-                        try: h_sot, a_sot = int(vals[0]), int(vals[1])
-                        except: pass
-                    elif key == "corners":
-                        try: h_cor, a_cor = int(vals[0]), int(vals[1])
-                        except: pass
+        (h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
+         h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
+         h_red, a_red, h_big, a_big) = m["stats"]
 
         # Veritabanına canlı anlık görüntü (snapshot) kaydet
         cursor.execute('''
@@ -463,8 +515,8 @@ async def process_api_matches(session):
                 home_red_cards, away_red_cards,
                 home_big_chances, away_big_chances
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (match_id_db, minute, 'first_half' if minute <= 45 else 'second_half',
-              score_h, score_a, h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
+        ''', (match_id_db, m["minute"], 'first_half' if m["minute"] <= 45 else 'second_half',
+              m["score_h"], m["score_a"], h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
               h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
               h_red, a_red, h_big, a_big))
 

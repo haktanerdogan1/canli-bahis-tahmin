@@ -288,25 +288,27 @@ def get_daily_results(request: Request):
     days = {}
     for match in payload["data"]:
         outcome = match.get("outcome")
-        if outcome not in ("WON", "LOST", "VOID"):
+        # Gunluk test yalnizca o gun GERCEKTEN paylasilan takip edilebilir
+        # sinyallerdir. VOID/gozlem disi kayitlar test tablosuna girmez.
+        if outcome not in ("WON", "LOST", "PENDING"):
             continue
         day = match.get("signal_date") or "Tarihsiz"
         bucket = days.setdefault(day, {
-            "date": day, "won": 0, "lost": 0, "gozlem_disi": 0, "matches": []
+            "date": day, "won": 0, "lost": 0, "pending": 0, "matches": []
         })
         if outcome == "WON":
             bucket["won"] += 1
         elif outcome == "LOST":
             bucket["lost"] += 1
         else:
-            bucket["gozlem_disi"] += 1
+            bucket["pending"] += 1
         bucket["matches"].append(match)
 
     result = []
     for day in sorted(days, reverse=True):
         bucket = days[day]
         measured = bucket["won"] + bucket["lost"]
-        bucket["total"] = measured
+        bucket["total"] = measured + bucket["pending"]
         bucket["isabet_orani"] = round(bucket["won"] / measured, 3) if measured else None
         result.append(bucket)
     return {"success": True, "days": result, "today_tr": payload["today_tr"],

@@ -1157,7 +1157,7 @@
                             ? `<b style="color:var(--accent-success)">KAZANDI</b>`
                             : (m.outcome === 'LOST'
                                 ? `<b style="color:var(--accent-danger)">KAYBETTİ</b>`
-                                : `<b style="color:var(--accent-warning)">GÖZLEM DIŞI</b>`);
+                                : `<b style="color:var(--accent-brand)">AÇIK</b>`);
                         const market = m.locked ? 'Üyelere özel tahmin' : (m.market || '—');
                         return `<div class="daily-match">
                             <span>${result}</span>
@@ -1167,7 +1167,7 @@
                     }).join('');
                     return `<div class="daily-card">
                         <button class="daily-head" onclick="toggleDailyDay('daily-${index}')">
-                            <div><b>${dateLabel}</b><div class="daily-summary"><span>Toplam ${day.total}</span><span style="color:var(--accent-success)">Kazanan ${day.won}</span><span style="color:var(--accent-danger)">Kayıp ${day.lost}</span><span>İsabet ${rate}</span>${day.gozlem_disi ? `<span>Gözlem dışı ${day.gozlem_disi}</span>` : ''}</div></div>
+                            <div><b>${dateLabel}</b><div class="daily-summary"><span>Paylaşılan ${day.total}</span><span style="color:var(--accent-brand)">Açık ${day.pending}</span><span style="color:var(--accent-success)">Kazanan ${day.won}</span><span style="color:var(--accent-danger)">Kayıp ${day.lost}</span><span>İsabet ${rate}</span></div></div>
                             <i class="fa-solid fa-chevron-down"></i>
                         </button>
                         <div class="daily-matches" id="daily-${index}">${matches}</div>

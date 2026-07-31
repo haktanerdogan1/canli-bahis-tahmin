@@ -409,7 +409,16 @@ async def process_api_matches(session):
         h_shots, a_shots = 0, 0
         h_sot, a_sot = 0, 0
         h_cor, a_cor = 0, 0
-        
+        # NOT: asagidaki alanlarin API anahtar eslesmesi henuz bilinmiyor
+        # (kesif Railway'de calisip "YENI ISTATISTIK ANAHTARI" loglari
+        # cikinca yapilacak). Simdilik hep 0 yazilir, kolonlar en azindan
+        # INSERT'te yer alsin diye eklendi.
+        h_sot_off, a_sot_off = 0, 0
+        h_danger, a_danger = 0, 0
+        h_atk, a_atk = 0, 0
+        h_red, a_red = 0, 0
+        h_big, a_big = 0, 0
+
         for group in stats_groups:
             for item in group.get("stats", []):
                 key = item.get("key")
@@ -447,10 +456,17 @@ async def process_api_matches(session):
                 match_id, minute, period, home_score, away_score,
                 home_possession, away_possession, home_xg, away_xg,
                 home_shots, away_shots, home_shots_on_target, away_shots_on_target,
-                home_corners, away_corners
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (match_id_db, minute, 'first_half' if minute <= 45 else 'second_half', 
-              score_h, score_a, h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot, h_cor, a_cor))
+                home_shots_off_target, away_shots_off_target,
+                home_dangerous_attacks, away_dangerous_attacks,
+                home_attacks, away_attacks,
+                home_corners, away_corners,
+                home_red_cards, away_red_cards,
+                home_big_chances, away_big_chances
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (match_id_db, minute, 'first_half' if minute <= 45 else 'second_half',
+              score_h, score_a, h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
+              h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
+              h_red, a_red, h_big, a_big))
 
     cursor.execute("SELECT COUNT(*) FROM matches "
                    "WHERE status NOT IN ('FINISHED','Ended','FT','Canceled')")

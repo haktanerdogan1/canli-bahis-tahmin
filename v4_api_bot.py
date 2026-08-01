@@ -44,6 +44,59 @@ LEAGUES_CACHE["251"] = {"name": "Ykkösliiga (Finlandiya)", "ccode": "FIN", "log
 # sonsuza kadar "PENDING" takılma bugu geri gelir.
 DAILY_MATCH_CAP = 60
 MISSING_GRACE_MINUTES = 5
+MAX_PLAUSIBLE_LIVE_AGE_SECONDS = 4 * 60 * 60
+
+# RapidAPI'nin current-live cevabi bazen bir onceki gunden donup kalmis maclari
+# da tasiyor. Servis yeniden baslayinca bunlar yeni canli mac sanilip tekrar
+# sinyal uretiyordu. Baslangic zamani olmayan kayitlar icin iki sorgu arasinda
+# dakika/skor ilerlemesi gorene kadar bekleyerek bunu genel olarak engelliyoruz.
+_feed_observations = {}
+
+
+def _plausibly_current_live_match(match, now=None):
+    """Feed kaydi gercekten su an canli olabilir mi?
+
+    API'nin ``halfs.firstHalfStarted`` alani varsa kesin zaman kontrolu yapilir.
+    Alan yoksa yeni bir kayit tek goruntusune bakilarak canli sayilmaz; dakika,
+    skor veya durum ikinci bir sorguda ilerlerse kabul edilir. Boylece servis
+    restartinda donmus dünkü maclar yeniden sinyal uretemez.
+    """
+    now = time.time() if now is None else now
+    status = match.get("status", {}) or {}
+    halfs = status.get("halfs", {}) or {}
+    started = halfs.get("firstHalfStarted")
+
+    if started is not None:
+        try:
+            started = float(started)
+            if started > 10_000_000_000:  # milisaniye timestamp
+                started /= 1000
+            age = now - started
+            return -15 * 60 <= age <= MAX_PLAUSIBLE_LIVE_AGE_SECONDS
+        except (TypeError, ValueError):
+            pass
+
+    event_id = str(match.get("id", ""))
+    if not event_id:
+        return False
+
+    live_time = status.get("liveTime", {}) or {}
+    signature = (
+        live_time.get("short"),
+        live_time.get("shortKey"),
+        (match.get("home", {}) or {}).get("score"),
+        (match.get("away", {}) or {}).get("score"),
+        status.get("ongoing"),
+    )
+    previous = _feed_observations.get(event_id)
+    if previous is None:
+        _feed_observations[event_id] = {"signature": signature, "confirmed": False}
+        return False
+
+    if signature != previous["signature"]:
+        previous["signature"] = signature
+        previous["confirmed"] = True
+    return previous["confirmed"]
 
 KNOWN_LEAGUE_NAMES = {
     "champions league", "europa league", "conference league",
@@ -341,6 +394,16 @@ async def process_api_matches(session):
 
     if not matches:
         matches = []
+
+    raw_match_count = len(matches)
+    matches = [m for m in matches if _plausibly_current_live_match(m)]
+    stale_or_unconfirmed = raw_match_count - len(matches)
+    if stale_or_unconfirmed:
+        print(
+            f"🧹 Feed tazelik filtresi: {stale_or_unconfirmed} eski/ilerlemeyen "
+            "kayit canli kabul edilmedi.",
+            flush=True,
+        )
 
     # Extract all currently active match IDs
     active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]

@@ -76,6 +76,28 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.get("/api/admin/db-backup")
+def db_backup(request: Request):
+    """Canli SQLite dosyasinin salt-okunur yedegini indirir.
+
+    NEDEN GEREKLI: Volume kalici olsa bile tek kopya - yanlislikla silinen bir
+    Volume, hatali bir restore ya da baska bir felaket senaryosuna karsi
+    veritabaninin Railway disinda da bir kopyasi bulunmali. SECRET_KEY zaten
+    var olan bir gizli anahtar (auth.py'de token imzalamak icin kullaniliyor);
+    yeni bir sir eklemek yerine onu yeniden kullaniyoruz. Query string yerine
+    header'da tasiniyor - aksi halde Railway erisim loglarinda acik metin
+    olarak gorunurdu.
+    """
+    from fastapi.responses import FileResponse, JSONResponse
+    expected = os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    from db_config import DB_PATH
+    return FileResponse(DB_PATH, filename="fh_goal_predictor_backup.db",
+                         media_type="application/octet-stream")
+
+
 # ---------------------------------------------------------------------------
 # Kimlik dogrulama uclari
 # ---------------------------------------------------------------------------

@@ -412,10 +412,15 @@ async def process_api_matches(session):
     conn.close()
 
     raw_match_count = len(matches)
-    matches = [
-        m for m in matches
-        if ("v4_" + str(m.get("id", ""))) in tracked_ids or _plausibly_current_live_match(m)
-    ]
+    excluded_sample = []
+    filtered_matches = []
+    for m in matches:
+        mid = "v4_" + str(m.get("id", ""))
+        if mid in tracked_ids or _plausibly_current_live_match(m):
+            filtered_matches.append(m)
+        elif len(excluded_sample) < 5:
+            excluded_sample.append(mid)
+    matches = filtered_matches
     stale_or_unconfirmed = raw_match_count - len(matches)
     if stale_or_unconfirmed:
         print(
@@ -423,6 +428,16 @@ async def process_api_matches(session):
             "kayit canli kabul edilmedi.",
             flush=True,
         )
+        # GECICI TESHIS: kitlesel disllama (restart sonrasi supheli) oluyorsa
+        # tracked_ids'in gercekten dolu olup olmadigini ve disliananlarin
+        # orada olup olmadigini goster. Sorun netlesince kaldirilacak.
+        if stale_or_unconfirmed > 10:
+            print(
+                f"🔎 TESHIS: tracked_ids boyutu={len(tracked_ids)} "
+                f"ornek tracked_ids={list(tracked_ids)[:5]} "
+                f"ornek dislanan={excluded_sample}",
+                flush=True,
+            )
 
     # Extract all currently active match IDs
     active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]

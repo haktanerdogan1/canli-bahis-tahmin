@@ -89,7 +89,7 @@ def db_backup(request: Request):
     olarak gorunurdu.
     """
     from fastapi.responses import FileResponse, JSONResponse
-    expected = os.environ.get("SECRET_KEY")
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
     provided = request.headers.get("x-backup-secret")
     if not expected or provided != expected:
         return JSONResponse({"error": "yetkisiz"}, status_code=403)

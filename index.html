@@ -908,10 +908,6 @@
         let currentTab = 'pending';
         let refreshTimer = null;
         let currentTodayTR = null;
-        // Basarili cevaplarda gordugumuz sinyalleri mac+yari anahtariyla tutariz.
-        // Bir sonraki API cevabi gecici olarak eksik gelirse ekrandaki mevcut
-        // sinyaller silinmez; ayni sinyalin sonucu/skoru gelirse yerinde guncellenir.
-        const signalCache = new Map();
 
         // --- Kimlik dogrulama durumu ---------------------------------------
         let isMember = false;
@@ -1195,7 +1191,7 @@
                 return;
             }
 
-            const container = document.getElementById('content-area');
+            const container = document.getElementById('matchListContainer');
 
             try {
                 let url = currentTab === 'all' ? '/api/all-live' : '/api/live-matches';
@@ -1205,19 +1201,10 @@
 
                 if(result.success) {
                     currentTodayTR = result.today_tr || currentTodayTR;
-                    // Kalici tarayici cache'i sadece ACIK sinyaller icindir.
-                    // Sonuc sekmeleri her zaman DB'nin canli WON/LOST cevabini
-                    // dogrudan cizer; eski bir cache sonucu gizleyemez.
-                    if (currentTab === 'pending') {
-                        (result.data || []).forEach(m => {
-                            const key = `${m.match_id}:${m.signal_period || 'H?'}`;
-                            signalCache.set(key, m);
-                        });
-                    }
-
-                    let dataToRender = currentTab === 'pending'
-                        ? Array.from(signalCache.values())
-                        : (result.data || []);
+                    // API/DB tek gercek kaynaktir. Tarayici tarafinda PENDING
+                    // kaydi biriktirmek, sonucu VOID/WON/LOST olan eski maclarin
+                    // farkli anahtarla Acik Bahisler'e geri sizmasina yol aciyordu.
+                    let dataToRender = result.data || [];
                     if (currentTab === 'pending') {
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'won') {
@@ -1230,10 +1217,17 @@
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {
-                    container.innerHTML = `<div class="loader"><i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning)"></i><p>Veri çekilemedi.</p></div>`;
+                    // Gecici API hatasinda mevcut listeyi silme. Ilk yuklemede
+                    // veri yoksa hata mesaji goster; sonraki yenilemelerde son
+                    // basarili goruntu ekranda kalsin.
+                    if (!container.querySelector('.league-group')) {
+                        container.innerHTML = `<div class="loader"><i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning)"></i><p>Veri çekilemedi.</p></div>`;
+                    }
                 }
             } catch(e) {
-                container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Sunucuya bağlanılamadı. API açık mı?</p></div>`;
+                if (!container.querySelector('.league-group')) {
+                    container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Sunucuya bağlanılamadı. API açık mı?</p></div>`;
+                }
             }
 
             // Auto refresh

@@ -172,29 +172,28 @@ def void_timed_out_signals(verbose=True):
 
 
 STUCK_SIGNAL_MINUTES = 30
-STUCK_PROGRESS_BUFFER = 5
 
 
 def void_stuck_signals(verbose=True):
-    """GUVENLIK AGI 2: last_progress_at'in KOSULLU CASE guncellemesine hicbir
-    sekilde BAGIMLI OLMADAN calisan, en basit mumkun kontrol.
+    """GUVENLIK AGI 2: last_progress_at'in KOSULLU CASE guncellemesine VE
+    consensus_predictions.signal_minute'un dolu olmasina hicbir sekilde
+    BAGIMLI OLMADAN calisan kontrol.
 
     NEDEN GEREKLI: _close_stale_progress() (v4_api_bot.py) matches.last_progress_at
     sutununa dayaniyor - bu sutun sadece "dakika gercekten degisti" algilandiginda
-    guncelleniyor, koşullu bir CASE ifadesiyle. Bu zincirde herhangi bir yerde
-    (henuz tespit edilememis) bir sorun olursa, mac saatlerce ayni dakikada
-    "canli" gorunmeye devam edebiliyor ve sinyal hic sonuclanmiyor. Bu fonksiyon
-    o zincire hic girmiyor: sadece SIGNAL'IN NE ZAMAN OLUSTURULDUGUNU (created_at)
-    ve MACIN O ANKI dakika DEGERINI (matches.minute, dogrudan okuma - hicbir
-    kosullu guncelleme mantigina tabi degil) karsilastiriyor.
+    guncelleniyor, koşullu bir CASE ifadesiyle. Bu zincirde bir sorun cikarsa
+    mac saatlerce ayni dakikada "canli" gorunmeye devam edebiliyor. Ilk
+    versiyonum (signal_minute'e gore ilerleme kontrolu) bu 5 mac icin dahi
+    calismadi cunku bu satirlar signal_minute kolonu eklenmeden ONCE atilmis
+    olabilir (ALTER TABLE ADD COLUMN mevcut satirlarda NULL birakir) - o
+    yuzden signal_minute IS NOT NULL sartina takilip hic tetiklenmediler.
 
-    ONEMLI: sabit bir dakika esigi (orn. "hep <20 ise") KULLANMIYORUZ - cunku
-    donuk kalinan dakika 0 da olabilir, 22 de, 52 de (bkz. Koper dk=7,
-    Katowice dk=22, Ludogorets dk=52 - hepsi ayni bug'in farkli anlik
-    goruntuleri). Bunun yerine sinyalin OLUSTUGU ANDAKI dakikayi (signal_minute)
-    referans aliyoruz: 30+ gercek dakika gecmis olmasina ragmen macin guncel
-    dakikasi hala o referansin (+5 dakikalik tolerans) UZERINE CIKMAMISSA,
-    feed bu fikstur icin donmus demektir - mutlak degeri onemli degil.
+    Bu versiyon hicbir saklanan/kosullu sutuna guvenmiyor: live_snapshots
+    tablosundaki HAM captured_at zaman damgalarina bakarak "son 30 gercek
+    dakikada bu macin dakikasi GERCEKTEN degisti mi" sorusunu HER SEFERINDE
+    yeniden hesapliyor. matches.minute (kosullu guncellenen bir sutun) ile
+    degil, o anki matches.minute degerine kiyasla farkli bir minute tasiyan
+    bir snapshot son 30 dakikada var mi diye bakiyor - yoksa donuk demektir.
     """
     conn = _connect()
     cur = conn.cursor()
@@ -206,8 +205,12 @@ def void_stuck_signals(verbose=True):
             JOIN matches m ON m.id = p.match_id
             WHERE p.decision='signal' AND p.outcome IS NULL
               AND p.created_at <= datetime('now', '-{STUCK_SIGNAL_MINUTES} minutes')
-              AND p.signal_minute IS NOT NULL
-              AND COALESCE(m.minute, 0) <= p.signal_minute + {STUCK_PROGRESS_BUFFER}
+              AND NOT EXISTS (
+                  SELECT 1 FROM live_snapshots ls
+                  WHERE ls.match_id = m.id
+                    AND ls.captured_at >= datetime('now', '-{STUCK_SIGNAL_MINUTES} minutes')
+                    AND COALESCE(ls.minute, -999) <> COALESCE(m.minute, -999)
+              )
         )
     ''')
     affected = cur.rowcount
@@ -215,8 +218,8 @@ def void_stuck_signals(verbose=True):
     conn.close()
     if verbose and affected:
         print(f"[settlement] guvenlik agi 2: {affected} sinyal {STUCK_SIGNAL_MINUTES}dk+ once "
-              "olusturuldu ama macin dakikasi o zamandan beri ilerlemedigi icin "
-              "VOID yapildi", flush=True)
+              "olusturuldu ama son snapshot gecmisine gore macin dakikasi hic "
+              "degismedigi icin VOID yapildi", flush=True)
     return affected
 
 

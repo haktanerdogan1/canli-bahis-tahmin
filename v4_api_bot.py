@@ -395,54 +395,56 @@ async def process_api_matches(session):
     if not matches:
         matches = []
 
+    # HAM feed'de gorunen TUM mac id'leri - onay/guven durumundan BAGIMSIZ.
+    # Asagidaki plausibilite filtresi bir maci "henuz onaylanmadi" diye bir
+    # kac tur disarida biraksa bile, mac feed'de GORUNMEYE devam ediyorsa
+    # last_seen_at'ini tazelemek icin bunu kullaniyoruz - yoksa gercekten
+    # canli ama imzasi birkac tur degismeyen (ornek: uzun sure ayni dakikada
+    # gorunen bir mac) bir mac, sirf onay bekledigi icin grace-period'a
+    # (MISSING_GRACE_MINUTES) yakalanip yanlislikla ABANDONED/FINISHED
+    # olabiliyordu (bkz. Wuhan Three Towns vakasi).
+    raw_active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]
+
     # Halihazirda LIVE/HT olarak takip ettigimiz maclar icin "iki ardisik
     # sorguda imza degisti mi" onayi GEREKMEZ - DB'deki varliklari zaten
     # kalici bir kanit. Bu istisna olmadan, _feed_observations bellek-ici
     # oldugu icin her deploy/restart'ta TUM canli maclar aninda "yeni ve
     # onaysiz" sayiliyor, feed disina dusup last_seen_at'i donduruyor ve
-    # grace-period saati (MISSING_GRACE_MINUTES) gereksiz yere isliyordu -
-    # restart aninda ilerlemis (85+ dakika) bir mac boylece yanlislikla
-    # erken FINISHED/ABANDONED olabiliyordu.
+    # grace-period saati gereksiz yere isliyordu.
     conn = connect()
     tracked_ids = {
         row[0] for row in conn.execute(
             "SELECT source_match_id FROM matches WHERE status IN ('LIVE','HT')"
         ).fetchall()
     }
+    # last_seen_at'i SADECE feed'de gorunmeye devam eden maclar icin tazele -
+    # onay durumundan bagimsiz. Bu, yukaridaki plausibilite filtresinin asil
+    # amacini (stale/carried-over bir maci YENIDEN canli gibi ISLEMEYELIM)
+    # bozmaz - o filtre hala matches listesini (asagida) daraltiyor, sadece
+    # grace-period saatini "hala gorunuyor" bilgisiyle besliyoruz.
+    if raw_active_ids:
+        placeholders_raw = ','.join('?' for _ in raw_active_ids)
+        conn.execute(f'''
+            UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
+            WHERE status IN ('LIVE','HT') AND source_match_id IN ({placeholders_raw})
+        ''', raw_active_ids)
+        conn.commit()
     conn.close()
 
     raw_match_count = len(matches)
-    excluded_sample = []
-    filtered_matches = []
-    for m in matches:
-        mid = "v4_" + str(m.get("id", ""))
-        if mid in tracked_ids or _plausibly_current_live_match(m):
-            filtered_matches.append(m)
-        elif len(excluded_sample) < 5:
-            excluded_sample.append(mid)
-    matches = filtered_matches
+    matches = [
+        m for m in matches
+        if ("v4_" + str(m.get("id", ""))) in tracked_ids or _plausibly_current_live_match(m)
+    ]
     stale_or_unconfirmed = raw_match_count - len(matches)
     if stale_or_unconfirmed:
         print(
             f"🧹 Feed tazelik filtresi: {stale_or_unconfirmed} eski/ilerlemeyen "
-            "kayit canli kabul edilmedi.",
+            "kayit canli kabul edilmedi (last_seen_at yine de tazelendi).",
             flush=True,
         )
-        # GECICI TESHIS: kitlesel disllama (restart sonrasi supheli) oluyorsa
-        # tracked_ids'in gercekten dolu olup olmadigini ve disliananlarin
-        # orada olup olmadigini goster. Sorun netlesince kaldirilacak.
-        if stale_or_unconfirmed > 10:
-            print(
-                f"🔎 TESHIS: tracked_ids boyutu={len(tracked_ids)} "
-                f"ornek tracked_ids={list(tracked_ids)[:5]} "
-                f"ornek dislanan={excluded_sample}",
-                flush=True,
-            )
 
-    # Extract all currently active match IDs
-    active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]
-
-    if not active_ids:
+    if not raw_active_ids:
         # KRITIK: Canli feed TAMAMEN BOS (o an oynanan hicbir mac yok - orn. gece yarisi
         # Konferans Ligi maclari bittiginde). Eskiden fonksiyon burada "return" ile cikiyordu
         # ve asagidaki temizlik sorgusu HIC CALISMIYORDU; bu yuzden DB'deki tum maclar son
@@ -455,6 +457,10 @@ async def process_api_matches(session):
         conn.close()
         print(f"ℹ️  Canli feed bos - grace suresi dolan {closed} mac kapatildi.", flush=True)
         return
+
+    # Onaylanmis/guvenilir maclarin id listesi - ASAMA 2+'deki islem hattinda
+    # (yeni mac kaydi, istatistik cekme, sinyal uretimi) SADECE bunlar kullanilir.
+    active_ids = ["v4_" + str(m["id"]) for m in matches if "id" in m]
 
     # Teshis sayaclari: her ciklusta feed'den kac mac geldi, kaci filtreye takildi,
     # kaci gercekten islendi -> Railway loglarindan net gorulsun diye.
@@ -480,7 +486,11 @@ async def process_api_matches(session):
     # Terminal olmayan HER durumu kapsa - sadece LIVE/HT degil.
     # Gecmiste ham metin durumlar ("2nd half", "Started") kaydedildigi icin
     # o satirlar hicbir zaman temizlenemiyordu.
-    _close_stale_missing(cursor, active_ids)
+    # raw_active_ids kullanilir (confirmed active_ids DEGIL): feed'de hala
+    # gorunen ama henuz onaylanmamis bir mac burada YANLISLIKLA "dustu"
+    # sayilip kapatilmasin - last_seen_at zaten yukarida tazelendigi icin
+    # bu sorgu zaten onu es gececek, ama exception clause'u da tutarli olsun.
+    _close_stale_missing(cursor, raw_active_ids)
 
     # Bu ciklustaki maclardan hangileri DB'de zaten var (halihazirda takip ediliyor)?
     # Zaten takip edilenler kota/filtre doldu diye BIRAKILMAZ - guncellenmeye devam eder.

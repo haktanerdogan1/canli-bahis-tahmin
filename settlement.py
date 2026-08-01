@@ -171,6 +171,55 @@ def void_timed_out_signals(verbose=True):
     return affected
 
 
+STUCK_SIGNAL_MINUTES = 30
+STUCK_PROGRESS_BUFFER = 5
+
+
+def void_stuck_signals(verbose=True):
+    """GUVENLIK AGI 2: last_progress_at'in KOSULLU CASE guncellemesine hicbir
+    sekilde BAGIMLI OLMADAN calisan, en basit mumkun kontrol.
+
+    NEDEN GEREKLI: _close_stale_progress() (v4_api_bot.py) matches.last_progress_at
+    sutununa dayaniyor - bu sutun sadece "dakika gercekten degisti" algilandiginda
+    guncelleniyor, koşullu bir CASE ifadesiyle. Bu zincirde herhangi bir yerde
+    (henuz tespit edilememis) bir sorun olursa, mac saatlerce ayni dakikada
+    "canli" gorunmeye devam edebiliyor ve sinyal hic sonuclanmiyor. Bu fonksiyon
+    o zincire hic girmiyor: sadece SIGNAL'IN NE ZAMAN OLUSTURULDUGUNU (created_at)
+    ve MACIN O ANKI dakika DEGERINI (matches.minute, dogrudan okuma - hicbir
+    kosullu guncelleme mantigina tabi degil) karsilastiriyor.
+
+    ONEMLI: sabit bir dakika esigi (orn. "hep <20 ise") KULLANMIYORUZ - cunku
+    donuk kalinan dakika 0 da olabilir, 22 de, 52 de (bkz. Koper dk=7,
+    Katowice dk=22, Ludogorets dk=52 - hepsi ayni bug'in farkli anlik
+    goruntuleri). Bunun yerine sinyalin OLUSTUGU ANDAKI dakikayi (signal_minute)
+    referans aliyoruz: 30+ gercek dakika gecmis olmasina ragmen macin guncel
+    dakikasi hala o referansin (+5 dakikalik tolerans) UZERINE CIKMAMISSA,
+    feed bu fikstur icin donmus demektir - mutlak degeri onemli degil.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute(f'''
+        UPDATE consensus_predictions
+        SET outcome='VOID', settled_at=CURRENT_TIMESTAMP
+        WHERE id IN (
+            SELECT p.id FROM consensus_predictions p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.decision='signal' AND p.outcome IS NULL
+              AND p.created_at <= datetime('now', '-{STUCK_SIGNAL_MINUTES} minutes')
+              AND p.signal_minute IS NOT NULL
+              AND COALESCE(m.minute, 0) <= p.signal_minute + {STUCK_PROGRESS_BUFFER}
+        )
+    ''')
+    affected = cur.rowcount
+    conn.commit()
+    conn.close()
+    if verbose and affected:
+        print(f"[settlement] guvenlik agi 2: {affected} sinyal {STUCK_SIGNAL_MINUTES}dk+ once "
+              "olusturuldu ama macin dakikasi o zamandan beri ilerlemedigi icin "
+              "VOID yapildi", flush=True)
+    return affected
+
+
 def compute_outcome(signal_minute, initial_goals, current_home, current_away,
                     match_status, current_minute, fh_end_home, fh_end_away):
     """Tek bir sinyalin sonucunu hesaplar: 'WON', 'LOST' veya None (henuz belirsiz).

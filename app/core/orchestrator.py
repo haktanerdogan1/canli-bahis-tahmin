@@ -278,6 +278,14 @@ def run_orchestrator():
             except Exception as ve:
                 print(f"⚠️  Zaman asimi guvenlik agi hatasi: {ve}")
 
+            # GUVENLIK AGI 2: last_progress_at zincirinden BAGIMSIZ, daha hizli
+            # tetiklenen kontrol - 30dk+ PENDING VE macin dakikasi hala <20 ise
+            # feed'in bu mac icin donmus/kesilmis oldugu kesindir.
+            try:
+                settlement.void_stuck_signals()
+            except Exception as se2:
+                print(f"⚠️  Takilma guvenlik agi hatasi: {se2}")
+
         except Exception as e:
             print(f"❌ Orkestratör Hatası: {e}")
             

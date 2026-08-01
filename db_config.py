@@ -26,17 +26,24 @@ def get_db_path() -> str:
 
     if not target:
         # Yerel gelistirme: depodaki dosyayi kullan
-        return SEED_DB
+        target = SEED_DB
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
 
     # Kalici disk bos ise depodaki veritabanini bir kereligine kopyala
-    if not os.path.exists(target) and os.path.exists(SEED_DB):
+    if not os.path.exists(target) and os.path.exists(SEED_DB) and target != SEED_DB:
         try:
             shutil.copy2(SEED_DB, target)
             print(f"[db_config] Kalici diske ilk kurulum: {SEED_DB} -> {target}", flush=True)
         except Exception as e:
             print(f"[db_config] Tohum kopyalama basarisiz: {e}", flush=True)
+
+    # Eger veritabani yoksa (ilk kurulumda veya depodan silindiyse) tablolari olustur
+    if not os.path.exists(target) or os.path.getsize(target) == 0:
+        import init_db
+        init_db.DB_PATH = target
+        init_db.init_db()
+        print(f"[db_config] Yeni veritabani basariyla olusturuldu: {target}", flush=True)
 
     return target
 

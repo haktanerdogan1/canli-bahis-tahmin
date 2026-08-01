@@ -147,7 +147,8 @@ def get_live_matches(request: Request):
                m.home_team_logo, m.away_team_logo, s.home_score, s.away_score, m.status, s.minute,
                fh.fh_end_home, fh.fh_end_away, p.created_at, p.signal_minute, p.market, p.outcome,
                date(p.created_at, '+3 hours') AS signal_date,
-               date(COALESCE(p.settled_at, p.created_at), '+3 hours') AS result_date
+               date(COALESCE(p.settled_at, p.created_at), '+3 hours') AS result_date,
+               lb.lead_bot
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
@@ -161,6 +162,20 @@ def get_live_matches(request: Request):
                 GROUP BY match_id
             ) ls2 ON ls1.match_id = ls2.match_id AND ls1.minute = ls2.max_min
         ) fh ON fh.match_id = m.id
+        LEFT JOIN (
+            -- Konsensuse "goal" diyen botlar arasinda en yuksek olasilik veren
+            -- (yani sinyali en cok sahiplenen) bot - karta "hangi bot" etiketi
+            -- icin. Esitlik durumunda GROUP BY rastgele birini secer, sorun degil.
+            SELECT match_id, snapshot_id, bot_name AS lead_bot
+            FROM bot_predictions b1
+            WHERE decision = 'goal'
+              AND probability = (
+                  SELECT MAX(probability) FROM bot_predictions b2
+                  WHERE b2.match_id = b1.match_id AND b2.snapshot_id = b1.snapshot_id
+                    AND b2.decision = 'goal'
+              )
+            GROUP BY match_id, snapshot_id
+        ) lb ON lb.match_id = p.match_id AND lb.snapshot_id = p.snapshot_id
         ORDER BY p.created_at DESC
         LIMIT 5000
     ''')
@@ -232,6 +247,7 @@ def get_live_matches(request: Request):
             "signal_period": "H1" if signal_minute <= 45 else "H2",
             "signal_date": r[23] if len(r) > 23 else None,
             "result_date": r[24] if len(r) > 24 else None,
+            "lead_bot": r[25] if len(r) > 25 else None,
             "created_at": r[19] if len(r) > 19 else None
         }
         
@@ -272,6 +288,7 @@ def get_live_matches(request: Request):
             chosen["probability"] = None
             chosen["confidence"] = None
             chosen["signal_minute"] = None
+            chosen["lead_bot"] = None
             chosen["locked"] = True
 
         results.append(chosen)

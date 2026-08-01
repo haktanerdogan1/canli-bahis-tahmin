@@ -275,6 +275,7 @@
 
         /* --- Radar Extra Data --- */
         .radar-panel {
+            position: relative;
             grid-column: 1 / -1;
             background: rgba(239, 68, 68, 0.05);
             border-top: 1px dashed rgba(239, 68, 68, 0.3);
@@ -283,6 +284,18 @@
             justify-content: space-between;
             align-items: center;
             font-size: 0.9rem;
+        }
+
+        .radar-bot-tag {
+            position: absolute;
+            top: 4px;
+            right: 10px;
+            font-size: 0.66rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            opacity: 0.85;
         }
 
         .radar-target {
@@ -1370,6 +1383,16 @@
             }
         }
 
+        // "bot_tempo_scanner" -> "Tempo Scanner" - karttaki "hangi bot" etiketi icin
+        function formatBotName(name) {
+            if (!name) return '';
+            return name
+                .replace(/^bot_/, '')
+                .split('_')
+                .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' ');
+        }
+
         function renderGroups(matches, type) {
             const container = document.getElementById('matchListContainer');
 
@@ -1461,9 +1484,15 @@
                             const signalMinuteHtml = (m.signal_minute !== undefined && m.signal_minute !== null)
                                 ? `<div class="radar-signal-minute" style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-clock"></i> Tahmin Dakikası: ${m.signal_minute}'</div>`
                                 : '';
+                            // Konsensuse en cok katki veren (en yuksek olasilikli "goal"
+                            // diyen) bot - seffaflik icin karta iliştiriliyor.
+                            const botTagHtml = m.lead_bot
+                                ? `<div class="radar-bot-tag" title="Sinyale en cok katki veren bot"><i class="fa-solid fa-robot"></i> ${formatBotName(m.lead_bot)}</div>`
+                                : '';
 
                             radarHtml = `
                             <div class="radar-panel">
+                                ${botTagHtml}
                                 <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market} ${outcomeBadge}${dateBadge}</div>
                                 <div class="radar-prob">%${Math.round(m.probability * 100)} Olasılık</div>
                                 ${signalMinuteHtml}

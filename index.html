@@ -676,6 +676,23 @@
 
         .btn-logout:hover { border-color: var(--accent-danger); color: var(--accent-danger); }
 
+        .btn-notif {
+            background: transparent;
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.95rem;
+        }
+
+        .btn-notif:hover { border-color: var(--accent-brand); color: var(--accent-brand); }
+
         @media (max-width: 720px) {
             .navbar-content { flex-wrap: wrap; gap: 0.75rem; }
             .user-area { order: 3; }
@@ -787,6 +804,9 @@
                     <i class="fa-solid fa-calendar-days"></i> Günlük Test
                 </button>
             </div>
+            <button class="btn-notif" id="notifToggle" onclick="toggleNotifications()" title="Kazanma bildirimlerini aç">
+                <i class="fa-solid fa-bell-slash"></i>
+            </button>
             <div class="user-area" id="userArea">
                 <button class="btn-auth-nav" onclick="openAuth('register')">Üye Ol</button>
             </div>
@@ -908,6 +928,105 @@
         let currentTab = 'pending';
         let refreshTimer = null;
         let currentTodayTR = null;
+
+        // --- Kazanma bildirimleri (tarayici bildirimi + ses) ----------------
+        // Hangi sinyallerin (match_id:signal_period) icin daha once bildirim
+        // gonderdigimizi localStorage'da kalici tutuyoruz - sayfa yenilense
+        // veya tarayici kapatilip acilsa bile ayni kazanc iki kez bildirilmez.
+        let notificationsEnabled = ('Notification' in window)
+            && Notification.permission === 'granted'
+            && localStorage.getItem('jcode_notif_enabled') === 'true';
+        let notifiedWinKeys = new Set(JSON.parse(localStorage.getItem('jcode_notified_wins') || '[]'));
+
+        function updateNotifButton() {
+            const btn = document.getElementById('notifToggle');
+            if (!btn) return;
+            if (!('Notification' in window)) { btn.style.display = 'none'; return; }
+            if (notificationsEnabled) {
+                btn.innerHTML = '<i class="fa-solid fa-bell" style="color:var(--accent-brand)"></i>';
+                btn.title = 'Kazanma bildirimleri açık';
+            } else {
+                btn.innerHTML = '<i class="fa-solid fa-bell-slash"></i>';
+                btn.title = 'Kazanma bildirimlerini aç';
+            }
+        }
+
+        function toggleNotifications() {
+            if (!('Notification' in window)) return;
+            if (notificationsEnabled) {
+                notificationsEnabled = false;
+                localStorage.setItem('jcode_notif_enabled', 'false');
+                updateNotifButton();
+                return;
+            }
+            Notification.requestPermission().then(perm => {
+                notificationsEnabled = (perm === 'granted');
+                localStorage.setItem('jcode_notif_enabled', notificationsEnabled ? 'true' : 'false');
+                updateNotifButton();
+            });
+        }
+
+        // Ek pip/dosya olmadan, Web Audio API ile kisa iki tonlu bir "kazandi"
+        // sesi uretir - harici bir ses dosyasina bagimli olmadan calisir.
+        function playWinSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const now = ctx.currentTime;
+                [660, 990].forEach((freq, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    const t0 = now + i * 0.15;
+                    gain.gain.setValueAtTime(0.0001, t0);
+                    gain.gain.exponentialRampToValueAtTime(0.3, t0 + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+                    osc.connect(gain).connect(ctx.destination);
+                    osc.start(t0);
+                    osc.stop(t0 + 0.4);
+                });
+            } catch (e) { /* Web Audio desteklenmiyorsa sessizce gec */ }
+        }
+
+        function notifyWin(m) {
+            playWinSound();
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
+            const body = `${m.home_team} ${m.home_score}-${m.away_score} ${m.away_team}`
+                + (m.market ? ` · ${m.market}` : '');
+            const n = new Notification('🎉 Kazandı!', {
+                body,
+                tag: `win-${m.match_id}-${m.signal_period}`,
+            });
+            n.onclick = () => { window.focus(); n.close(); };
+        }
+
+        // Hangi sekmede olursa olsun, her 15 saniyede bir tum acik/kazanan
+        // sinyalleri kontrol eder; yeni bir WON gorursen bildirim+ses tetikler.
+        // Ilk hic calistigi an (localStorage bombosken) mevcut tum kazananlari
+        // SESSIZCE taban olarak kaydeder - siteye ilk giriste gecmis 10-20
+        // kazanc birden bildirim olarak patlamasin diye.
+        async function checkForNewWins() {
+            if (!('Notification' in window)) return;
+            try {
+                const res = await fetch('/api/live-matches');
+                const result = await res.json();
+                if (!result.success) return;
+                const isBaselineRun = !localStorage.getItem('jcode_notif_baseline_done');
+                let changed = false;
+                (result.data || []).forEach(m => {
+                    if (m.outcome !== 'WON') return;
+                    const key = `${m.match_id}:${m.signal_period || 'H?'}`;
+                    if (notifiedWinKeys.has(key)) return;
+                    notifiedWinKeys.add(key);
+                    changed = true;
+                    if (!isBaselineRun && notificationsEnabled) {
+                        notifyWin(m);
+                    }
+                });
+                if (isBaselineRun) localStorage.setItem('jcode_notif_baseline_done', '1');
+                if (changed) localStorage.setItem('jcode_notified_wins', JSON.stringify(Array.from(notifiedWinKeys)));
+            } catch (e) { /* sessizce gec - bildirim ikincil bir ozellik */ }
+        }
 
         // --- Kimlik dogrulama durumu ---------------------------------------
         let isMember = false;
@@ -1176,6 +1295,7 @@
 
         async function fetchData() {
             fetchOzet();
+            checkForNewWins();
 
             if (currentTab === 'stats') {
                 await renderStatsTab();
@@ -1569,6 +1689,7 @@
         });
 
         // Init: once uyelik durumunu ogren, sonra veriyi cek
+        updateNotifButton();
         checkAuth().then(fetchData);
         setInterval(fetchData, 15000);
     </script>

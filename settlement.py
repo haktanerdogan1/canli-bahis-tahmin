@@ -104,6 +104,44 @@ def backfill_ghost_losses(verbose=True):
     return affected
 
 
+def finalize_fully_settled_matches(verbose=True):
+    """Butun sinyalleri sonuclanmis (hic PENDING kalmayan) maclarin durumunu
+    FINISHED yapar - v4_api_bot'un o an ne rapor ettiginden BAGIMSIZ.
+
+    NEDEN GEREKLI: bir sinyalin outcome'u KALICI yazildiktan sonra bile,
+    o sinyalin bagli oldugu matches satirinin 'status' alani LIVE/HT'de
+    TAKILI kalabiliyordu (v4_api_bot RapidAPI'nin o an ne dondugune gore
+    surekli yeniden yaziyor). RapidAPI ara sira BIR ONCEKI GUNDEN kalma
+    maclari feed'e tasiyor (bkz. _plausibly_current_live_match docstring);
+    boyle bir mac hala status='LIVE' oldugu icin restart-guvenlik bypass'i
+    (tracked_ids) onu her deploy'da "zaten canli, onaya gerek yok" diye
+    ANINDA guvenip taze tutuyordu - dunku bir Konferans Ligi maci boylece
+    her restart'ta ekrana geri donuyordu.
+
+    Butun sinyalleri sonuclanmis bir macin GERCEKTE hala oynanip oynanmadigi
+    onemsiz - hicbir PENDING sinyal onun 'live' durumuna bagli degil. Statusu
+    FINISHED yaparak onu tracked_ids bypass'inin disina cikariyoruz.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE matches SET status='FINISHED'
+        WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+          AND id IN (SELECT DISTINCT match_id FROM consensus_predictions WHERE decision='signal')
+          AND NOT EXISTS (
+              SELECT 1 FROM consensus_predictions p2
+              WHERE p2.match_id = matches.id AND p2.decision='signal' AND p2.outcome IS NULL
+          )
+    """)
+    affected = cur.rowcount
+    conn.commit()
+    conn.close()
+    if verbose and affected:
+        print(f"[settlement] {affected} mac tum sinyalleri sonuclandigi icin FINISHED yapildi "
+              "(restart-bypass'ten cikarildi)", flush=True)
+    return affected
+
+
 def void_timed_out_signals(verbose=True):
     """GUVENLIK AGI: SIGNAL_TIMEOUT_HOURS'tan uzun sure PENDING kalan her sinyali
     VOID yapar - matches tablosuna, JOIN'e veya baska hicbir seye BAGIMLI DEGIL.

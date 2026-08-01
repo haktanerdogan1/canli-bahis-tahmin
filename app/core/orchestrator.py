@@ -261,6 +261,15 @@ def run_orchestrator():
             except Exception as se:
                 print(f"⚠️  Sonuclandirma hatasi: {se}")
 
+            # Tum sinyalleri sonuclanmis maclari FINISHED'e kilitle - aksi
+            # halde RapidAPI'nin bir onceki gunden tasidigi stale kayitlar,
+            # sirf status='LIVE' oldugu icin restart-bypass'tan (tracked_ids)
+            # sonsuza kadar yararlanip her deploy'da ekrana geri donuyordu.
+            try:
+                settlement.finalize_fully_settled_matches()
+            except Exception as fe:
+                print(f"⚠️  Mac kilitleme hatasi: {fe}")
+
             # GUVENLIK AGI: match tracking katmaninda ne olursa olsun, hicbir
             # sinyal 3 saatten uzun PENDING kalamaz. Ayri try/except - biri
             # patlarsa digeri yine de calissin.

@@ -45,6 +45,11 @@ LEAGUES_CACHE["251"] = {"name": "Ykkösliiga (Finlandiya)", "ccode": "FIN", "log
 DAILY_MATCH_CAP = 60
 MISSING_GRACE_MINUTES = 5
 MAX_PLAUSIBLE_LIVE_AGE_SECONDS = 4 * 60 * 60
+# Feed'de gorunmeye devam etse bile DAKIKASI ilerlemeyen bir mac, RapidAPI'nin
+# o fikstur icin bayat/donmus veri dondurdugunun isaretidir (gercek bir canli
+# macin dakikasi ~60 saniyede bir artar). MISSING_GRACE_MINUTES'ten (feed'den
+# tamamen dusme) BAGIMSIZ bir esik - "gorunuyor ama ilerlemiyor" durumunu yakalar.
+STALE_PROGRESS_MINUTES = 15
 
 # RapidAPI'nin current-live cevabi bazen bir onceki gunden donup kalmis maclari
 # da tasiyor. Servis yeniden baslayinca bunlar yeni canli mac sanilip tekrar
@@ -345,9 +350,23 @@ def _ensure_match_tracking_schema():
         conn.execute("ALTER TABLE matches ADD COLUMN last_seen_at TIMESTAMP")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE matches ADD COLUMN last_progress_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass
     conn.execute("""
         UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
         WHERE last_seen_at IS NULL
+          AND status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+    """)
+    # last_progress_at'i simdi (deploy ani) ile baslatiyoruz - gecmise donuk
+    # tahmin yapmiyoruz (hangi macin gercekten donuk oldugunu bilemeyiz, yanlis
+    # damgalarsak duzgun ilerleyen bir maci da yanlislikla kapatiriz). Bu yuzden
+    # halihazirda donmus maclar bu deploy'dan itibaren STALE_PROGRESS_MINUTES
+    # sonra temizlenir - geriye degil, ileriye donuk bir koruma.
+    conn.execute("""
+        UPDATE matches SET last_progress_at=CURRENT_TIMESTAMP
+        WHERE last_progress_at IS NULL
           AND status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
     """)
     conn.commit()
@@ -372,6 +391,39 @@ def _close_stale_missing(cursor, active_ids):
           {active_clause}
     ''', params)
     return cursor.rowcount
+
+
+def _close_stale_progress(cursor):
+    """Feed'de GORUNMEYE DEVAM ETSE bile dakikasi ilerlemeyen maclari kapatir.
+
+    _close_stale_missing feed'den tamamen dusen maclari yakalar; bu fonksiyon
+    FARKLI bir sorunu yakalar - RapidAPI'nin bir fikstur icin surekli AYNI
+    (bayat) veriyi dondurmesi. Boyle bir mac feed'de "goruluyor" oldugu icin
+    last_seen_at hep tazelenir ve _close_stale_missing hicbir zaman devreye
+    girmez; last_progress_at (SADECE dakika gercekten degistiginde tazelenir)
+    burada devreye giriyor.
+
+    Doner: kapatilan maclarin source_match_id listesi. Cagiran taraf bunlari
+    bu ciklustaki 'matches' listesinden CIKARMALI - aksi halde ASAMA 4'teki
+    upsert, API hala "ongoing: true" dedigi icin statusu hemen LIVE'a geri
+    ceviriyordu (ayni ciklus icinde acilip kapanan bug buradan geliyordu).
+    """
+    cursor.execute(f'''
+        SELECT source_match_id FROM matches
+        WHERE status IN ('LIVE','HT')
+          AND last_progress_at IS NOT NULL
+          AND last_progress_at <= datetime('now', '-{STALE_PROGRESS_MINUTES} minutes')
+    ''')
+    stale_ids = [row[0] for row in cursor.fetchall()]
+    if stale_ids:
+        placeholders = ','.join('?' for _ in stale_ids)
+        cursor.execute(f'''
+            UPDATE matches
+            SET status = CASE WHEN COALESCE(minute, 0) >= 85
+                              THEN 'FINISHED' ELSE 'ABANDONED' END
+            WHERE source_match_id IN ({placeholders})
+        ''', stale_ids)
+    return stale_ids
 
 
 async def process_api_matches(session):
@@ -452,10 +504,12 @@ async def process_api_matches(session):
         # sayfasindan hic dusmuyordu. Feed bossa acik kayitlari kapat; ancak erken
         # dakikada kaybolanlari gercek mac sonu gibi gostermeyip ABANDONED yap.
         conn = connect()
-        closed = _close_stale_missing(conn.cursor(), [])
+        cur0 = conn.cursor()
+        closed = _close_stale_missing(cur0, [])
+        closed_stale = _close_stale_progress(cur0)
         conn.commit()
         conn.close()
-        print(f"ℹ️  Canli feed bos - grace suresi dolan {closed} mac kapatildi.", flush=True)
+        print(f"ℹ️  Canli feed bos - grace suresi dolan {closed} mac, ilerlemeyen {len(closed_stale)} mac kapatildi.", flush=True)
         return
 
     # Onaylanmis/guvenilir maclarin id listesi - ASAMA 2+'deki islem hattinda
@@ -491,6 +545,28 @@ async def process_api_matches(session):
     # sayilip kapatilmasin - last_seen_at zaten yukarida tazelendigi icin
     # bu sorgu zaten onu es gececek, ama exception clause'u da tutarli olsun.
     _close_stale_missing(cursor, raw_active_ids)
+    # Feed'de gorunmeye devam etse bile dakikasi ilerlemeyen (bayat veri
+    # donen) maclari da kapat - _close_stale_missing bunlari YAKALAYAMAZ,
+    # cunku feed'den "dusmus" sayilmazlar.
+    closed_stale = _close_stale_progress(cursor)
+    if closed_stale:
+        print(f"🧊 {len(closed_stale)} mac dakikasi ilerlemedigi icin kapatildi (bayat feed verisi).", flush=True)
+        # Az once kapattigimiz maclari BU CIKLUSTAKI matches listesinden de
+        # cikar - yoksa asagidaki ASAMA 2-4, API hala "ongoing: true" dedigi
+        # icin statusu upsert'te aninda LIVE'a geri cevirir (ayni ciklus
+        # icinde acilip-kapanan bug tam olarak buradan geliyordu).
+        closed_stale_set = set(closed_stale)
+        matches = [m for m in matches if ("v4_" + str(m.get("id", ""))) not in closed_stale_set]
+        # _feed_observations'taki "confirmed" hafizasini da sil - aksi halde
+        # bir SONRAKI ciklusta ayni (hala donuk) veriyle geldiginde tracked_ids
+        # bypass'i artik gecerli olmadigi icin (status artik LIVE/HT degil)
+        # plausibilite kontrolune dusuyor ama ESKI "confirmed=True" hafizasi
+        # sinyal degismeden onu tekrar iceri aliyordu - mac hicbir zaman
+        # gercekten kapali KALMIYORDU. Hafiza silinince tekrar iceri girmek
+        # icin GERCEK bir imza degisikligi (dakika ilerlemesi) sart olacak.
+        for sid in closed_stale_set:
+            raw_id = sid[3:] if sid.startswith("v4_") else sid
+            _feed_observations.pop(raw_id, None)
 
     # Bu ciklustaki maclardan hangileri DB'de zaten var (halihazirda takip ediliyor)?
     # Zaten takip edilenler kota/filtre doldu diye BIRAKILMAZ - guncellenmeye devam eder.
@@ -661,8 +737,8 @@ async def process_api_matches(session):
         # geri donebilmeli; nasil olsa bitince tekrar dogru sekilde sonuclanir.
         cursor.execute('''
             INSERT INTO matches
-            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT(source_match_id) DO UPDATE SET
                 minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
                 status=excluded.status,
@@ -674,11 +750,20 @@ async def process_api_matches(session):
                 home_team_logo=excluded.home_team_logo,
                 away_team_logo=excluded.away_team_logo,
                 aggregate_score=excluded.aggregate_score,
-                last_seen_at=CURRENT_TIMESTAMP
+                last_seen_at=CURRENT_TIMESTAMP,
+                -- last_progress_at SADECE dakika GERCEKTEN degistiyse tazelenir.
+                -- Feed'de gorunmeye devam edip dakikasi hic ilerlemeyen bir mac
+                -- (RapidAPI'nin bayat veri dondurdugu fikstur), last_seen_at surekli
+                -- tazelense bile burada eskiyip _close_stale_progress'e yakalanir.
+                last_progress_at=CASE
+                    WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
+                    THEN CURRENT_TIMESTAMP
+                    ELSE matches.last_progress_at
+                END
         ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
               m["league_info"]["name"], m["league_info"]["ccode"], m["league_info"]["logo"],
               m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
-              m["aggregate_score"], m["minute_parsed_ok"]))
+              m["aggregate_score"], m["minute_parsed_ok"], m["minute_parsed_ok"]))
 
         cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))
         match_id_db_res = cursor.fetchone()

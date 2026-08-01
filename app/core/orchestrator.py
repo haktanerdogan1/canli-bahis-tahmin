@@ -261,6 +261,14 @@ def run_orchestrator():
             except Exception as se:
                 print(f"⚠️  Sonuclandirma hatasi: {se}")
 
+            # GUVENLIK AGI: match tracking katmaninda ne olursa olsun, hicbir
+            # sinyal 3 saatten uzun PENDING kalamaz. Ayri try/except - biri
+            # patlarsa digeri yine de calissin.
+            try:
+                settlement.void_timed_out_signals()
+            except Exception as ve:
+                print(f"⚠️  Zaman asimi guvenlik agi hatasi: {ve}")
+
         except Exception as e:
             print(f"❌ Orkestratör Hatası: {e}")
             

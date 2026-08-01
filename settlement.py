@@ -22,6 +22,14 @@ import sqlite3
 from db_config import DB_PATH, connect
 
 GHOST_LOSS_MIGRATION = "2026_07_31_early_finished_losses_to_void"
+# Bir sinyal hicbir zaman sonsuza kadar PENDING kalamaz - KOK NEDENDEN BAGIMSIZ
+# mutlak bir zaman siniri. Normal akiste her sinyal match tracking (last_seen_at/
+# last_progress_at/grace-period) uzerinden cok daha erken WON/LOST/VOID'e ulasir;
+# bu sadece o katmanda HENUZ BULUNAMAMIS bir bug (restart zamanlamasi, orphan
+# kayit, RapidAPI kesintisi vb.) sinyali askida biraktiginda devreye giren bir
+# son care. 3 saat, en uzun mac (uzatmalar+penaltilar) suresinin bile kat kat
+# uzerinde - gercek bir mac hala oynaniyor olamayacak kadar cok.
+SIGNAL_TIMEOUT_HOURS = 3
 
 
 def _connect():
@@ -96,6 +104,35 @@ def backfill_ghost_losses(verbose=True):
     return affected
 
 
+def void_timed_out_signals(verbose=True):
+    """GUVENLIK AGI: SIGNAL_TIMEOUT_HOURS'tan uzun sure PENDING kalan her sinyali
+    VOID yapar - matches tablosuna, JOIN'e veya baska hicbir seye BAGIMLI DEGIL.
+
+    NEDEN GEREKLI: settle_pending() consensus_predictions'i matches ile JOIN
+    ederek calisir; o katmanda (restart zamanlamasi, feed kesintisi, henuz
+    bulunamamis bir baska bug) sinyalin sonsuza kadar PENDING kalmasina yol
+    acan bir sorun cikarsa, kullanici o sinyali ASLA bir sonuca ulasmis
+    gormez - ekrandan sessizce kaybolur. Bu fonksiyon KOK NEDENDEN BAGIMSIZ
+    calisir: sadece consensus_predictions.created_at'e bakar, hicbir JOIN
+    yapmaz - o yuzden matches tablosunda ne olursa olsun calismaya devam eder.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute(f'''
+        UPDATE consensus_predictions
+        SET outcome='VOID', settled_at=CURRENT_TIMESTAMP
+        WHERE decision='signal' AND outcome IS NULL
+          AND created_at <= datetime('now', '-{SIGNAL_TIMEOUT_HOURS} hours')
+    ''')
+    affected = cur.rowcount
+    conn.commit()
+    conn.close()
+    if verbose and affected:
+        print(f"[settlement] guvenlik agi: {affected} sinyal {SIGNAL_TIMEOUT_HOURS} saatten "
+              "uzun PENDING kaldigi icin VOID yapildi", flush=True)
+    return affected
+
+
 def compute_outcome(signal_minute, initial_goals, current_home, current_away,
                     match_status, current_minute, fh_end_home, fh_end_away):
     """Tek bir sinyalin sonucunu hesaplar: 'WON', 'LOST' veya None (henuz belirsiz).
@@ -157,7 +194,7 @@ def settle_pending(verbose=True):
                m.home_score, m.away_score, m.status, m.minute,
                fh.fh_end_home, fh.fh_end_away, p.initial_goals
         FROM consensus_predictions p
-        JOIN matches m ON m.id = p.match_id
+        LEFT JOIN matches m ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON s.id = p.snapshot_id
         LEFT JOIN (
             SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away

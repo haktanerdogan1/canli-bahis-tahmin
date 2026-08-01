@@ -395,8 +395,27 @@ async def process_api_matches(session):
     if not matches:
         matches = []
 
+    # Halihazirda LIVE/HT olarak takip ettigimiz maclar icin "iki ardisik
+    # sorguda imza degisti mi" onayi GEREKMEZ - DB'deki varliklari zaten
+    # kalici bir kanit. Bu istisna olmadan, _feed_observations bellek-ici
+    # oldugu icin her deploy/restart'ta TUM canli maclar aninda "yeni ve
+    # onaysiz" sayiliyor, feed disina dusup last_seen_at'i donduruyor ve
+    # grace-period saati (MISSING_GRACE_MINUTES) gereksiz yere isliyordu -
+    # restart aninda ilerlemis (85+ dakika) bir mac boylece yanlislikla
+    # erken FINISHED/ABANDONED olabiliyordu.
+    conn = connect()
+    tracked_ids = {
+        row[0] for row in conn.execute(
+            "SELECT source_match_id FROM matches WHERE status IN ('LIVE','HT')"
+        ).fetchall()
+    }
+    conn.close()
+
     raw_match_count = len(matches)
-    matches = [m for m in matches if _plausibly_current_live_match(m)]
+    matches = [
+        m for m in matches
+        if ("v4_" + str(m.get("id", ""))) in tracked_ids or _plausibly_current_live_match(m)
+    ]
     stale_or_unconfirmed = raw_match_count - len(matches)
     if stale_or_unconfirmed:
         print(

@@ -465,10 +465,30 @@ async def process_api_matches(session):
     # grace-period saati gereksiz yere isliyordu.
     conn = connect()
     tracked_ids = {
-        row[0] for row in conn.execute(
-            "SELECT source_match_id FROM matches WHERE status IN ('LIVE','HT')"
-        ).fetchall()
+        row[0] for row in conn.execute('''
+            SELECT source_match_id FROM matches m
+            WHERE status IN ('LIVE','HT')
+              AND (
+                  NOT EXISTS (
+                      SELECT 1 FROM consensus_predictions p
+                      WHERE p.match_id = m.id AND p.decision='signal'
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM consensus_predictions p
+                      WHERE p.match_id = m.id AND p.decision='signal' AND p.outcome IS NULL
+                  )
+              )
+        ''').fetchall()
     }
+    # NOT: status='LIVE/HT' olsa bile TUM sinyalleri zaten sonuclanmis (hic
+    # PENDING kalmamis) bir mac tracked_ids'e DAHIL EDILMEZ. Bu, orchestrator
+    # tarafindaki settlement.finalize_fully_settled_matches() ile ayni kurali
+    # KAYNAGINDA da uygular - restart aninda iki surec (v4_api_bot, orchestrator)
+    # BAGIMSIZ calistigi icin, finalize_fully_settled_matches() henuz calismadan
+    # v4_api_bot bu tur bir maci "zaten canli, guven" diyip RapidAPI'nin
+    # tasidigi stale/carried-over veriyle bir aninlığına yeniden canlandirabiliyordu
+    # (dunku bir Konferans Ligi macinin her push'ta ekrana geri donmesi buradan
+    # geliyordu). Kural artik HER IKI yerde de aninda gecerli.
     # last_seen_at'i SADECE feed'de gorunmeye devam eden maclar icin tazele -
     # onay durumundan bagimsiz. Bu, yukaridaki plausibilite filtresinin asil
     # amacini (stale/carried-over bir maci YENIDEN canli gibi ISLEMEYELIM)

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JCode Bahis Yardımcısı
 // @namespace    https://web-production-f1dba.up.railway.app/
-// @version      1.1.0
+// @version      1.2.0
 // @description  JCode sinyalindeki maci acar ve marketi vurgular; bahsi gondermez.
 // @match        https://inagaming696.com/*
 // @grant        GM_xmlhttpRequest
@@ -77,12 +77,16 @@
     return new Promise((resolve, reject) => GM_xmlhttpRequest({
       method: "GET",
       url: API_URL,
-      headers: { "X-Bet-Assistant-Token": token },
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "X-Bet-Assistant-Token": token,
+      },
       timeout: 12_000,
       onload: (response) => {
         try {
-          if (response.status !== 200) throw new Error(response.status === 403 ? "Anahtar reddedildi" : `API ${response.status}`);
-          resolve(JSON.parse(response.responseText));
+          const payload = JSON.parse(response.responseText);
+          if (response.status !== 200) throw new Error(payload.error || `API ${response.status}`);
+          resolve(payload);
         } catch (error) { reject(error); }
       },
       onerror: () => reject(new Error("API bağlantı hatası")),
@@ -201,7 +205,7 @@
       if (!response.data) return status("Henüz açık sinyal yok.", "#cbd5e1");
       highlight(response.data);
     } catch (error) {
-      if (String(error.message).includes("reddedildi")) localStorage.removeItem(TOKEN_KEY);
+      if (String(error.message).includes("eslesmiyor")) localStorage.removeItem(TOKEN_KEY);
       status(error.message, "#fb7185");
     }
   }

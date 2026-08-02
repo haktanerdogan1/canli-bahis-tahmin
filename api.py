@@ -333,9 +333,24 @@ def get_bet_assistant_latest(request: Request):
     import hmac
 
     expected = os.environ.get("BET_ASSISTANT_TOKEN", "")
-    provided = request.headers.get("x-bet-assistant-token", "")
-    if not expected or not provided or not hmac.compare_digest(provided, expected):
-        return JSONResponse({"success": False, "error": "yetkisiz"}, status_code=403)
+    authorization = request.headers.get("authorization", "")
+    bearer = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    provided = bearer or request.headers.get("x-bet-assistant-token", "").strip()
+    if not expected:
+        return JSONResponse(
+            {"success": False, "error": "BET_ASSISTANT_TOKEN Railway servisinde tanimli degil"},
+            status_code=503,
+        )
+    if not provided:
+        return JSONResponse(
+            {"success": False, "error": "Safari yetkilendirme basligini gondermedi"},
+            status_code=401,
+        )
+    if not hmac.compare_digest(provided, expected.strip()):
+        return JSONResponse(
+            {"success": False, "error": "Safari ve Railway anahtarlari eslesmiyor"},
+            status_code=403,
+        )
 
     conn = connect()
     conn.row_factory = sqlite3.Row

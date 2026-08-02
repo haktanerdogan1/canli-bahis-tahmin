@@ -42,7 +42,7 @@ LEAGUES_CACHE["251"] = {"name": "Ykkösliiga (Finlandiya)", "ccode": "FIN", "log
 # maçlarını takibe al, günde en fazla DAILY_MATCH_CAP kadar YENİ maç ekle. Zaten takip
 # edilmekte olan bir maç, kota dolsa bile GÜNCELLENMEYE devam eder - yoksa yarım kalıp
 # sonsuza kadar "PENDING" takılma bugu geri gelir.
-DAILY_MATCH_CAP = 60
+DAILY_MATCH_CAP = 150
 MISSING_GRACE_MINUTES = 5
 MAX_PLAUSIBLE_LIVE_AGE_SECONDS = 4 * 60 * 60
 # Feed'de gorunmeye devam etse bile DAKIKASI ilerlemeyen bir mac, RapidAPI'nin
@@ -692,6 +692,14 @@ async def process_api_matches(session):
 
         period_length = status_data.get("periodLength", 45)
         is_ongoing = status_data.get("ongoing", False)
+
+        # 2. Yari Saati Bastan Baslayan Ligler Icin Duzeltme (Orn: MTK Budapeste)
+        # API statusId: 3 (2. yari) dondurdugunde eger dakika 1-45 arasindaysa
+        # uzerine 45 dakika ekle.
+        status_id = match.get("statusId", 0)
+        if status_id == 3 and 0 < minute <= 45 and period_length == 45:
+            minute += 45
+            minute_parsed_ok = True
 
         # Determine actual status
         match_status = "LIVE"

@@ -203,13 +203,13 @@ def get_live_matches(request: Request):
     ''')
     rows = cursor.fetchall()
     conn.close()
-    
+
     # Bir mac artik her yarida en fazla bir sinyal uretiyor. Ilk yari sinyali
     # sonuclandiktan sonra ikinci yarida yeni bir sinyal acilabilir; bunlari yalnizca
     # match_id ile gruplarsak eski WON kaydi yeni PENDING kaydini gizler. Bu nedenle
     # gorunurluk birimi mac + yari: H1 sonucu gecmiste kalir, H2 acik sinyali kaybolmaz.
     by_match_half = {}
-    
+
     for r in rows:
         minute = r[4]
         current_home = r[2]
@@ -228,12 +228,12 @@ def get_live_matches(request: Request):
         signal_minute = stored_signal_minute if stored_signal_minute is not None else (
             r[16] if (len(r) > 16 and r[16] is not None) else minute
         )
-        
+
         total_goals_now = current_home + current_away
         total_goals_initial = initial_home + initial_away
-        
+
         is_first_half_market = signal_minute <= 45
-        
+
         # ONCE KALICI SONUCA BAK. Sinyal bir kez sonuclandiysa (settlement.py) o sonuc
         # degismez - mac verisi sonradan degisse/eskise bile gecmis bozulmaz.
         # Sadece henuz sonuclanmamis (mac devam eden) sinyaller anlik hesaplanir.
@@ -246,9 +246,9 @@ def get_live_matches(request: Request):
                 signal_minute, total_goals_initial, current_home, current_away,
                 match_status, minute, fh_end_home, fh_end_away,
             ) or "PENDING"
-            
+
         market = stored_market if stored_market else (f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market else f"Maç Sonu {total_goals_initial + 0.5} Üst")
-        
+
         entry = {
             "home_team": r[0],
             "away_team": r[1],
@@ -258,7 +258,7 @@ def get_live_matches(request: Request):
             "match_status": match_status,
             "market": market,
             "probability": round(r[6], 3),
-            "confidence": f"Seviye: {r[5]}", 
+            "confidence": f"Seviye: {r[5]}",
             "league_name": r[8] if r[8] else "Canlı Alarmlar",
             "league_logo": r[9] if r[9] else "",
             "match_id": match_id,
@@ -272,7 +272,7 @@ def get_live_matches(request: Request):
             "lead_bot": r[25] if len(r) > 25 else None,
             "created_at": r[19] if len(r) > 19 else None
         }
-        
+
         # rows p.created_at DESC sirali; mac+yari icin ilk gordugumuz kayit
         # ilgili sonuc kategorisinin en guncel kaydidir.
         half_key = "H1" if signal_minute <= 45 else "H2"
@@ -288,7 +288,7 @@ def get_live_matches(request: Request):
             bucket["lost"] = entry
         elif entry["outcome"] == "VOID" and bucket["void"] is None:
             bucket["void"] = entry
-    
+
     results = []
     for (_match_id, _half), bucket in by_match_half.items():
         if bucket["won"] is not None:
@@ -320,6 +320,62 @@ def get_live_matches(request: Request):
     conn.close()
     return {"success": True, "data": results, "is_member": is_member,
             "today_tr": today_tr}
+
+
+@app.get("/api/bet-assistant/latest")
+def get_bet_assistant_latest(request: Request):
+    """Kisisel tarayici yardimcisi icin en yeni acik sinyali dondurur.
+
+    Uyelik cookie'si ucuncu taraf bir siteden guvenle kullanilamayacagi icin bu
+    uc ayri bir ortam degiskeniyle korunur. Anahtar yoksa uc tamamen kapalidir.
+    """
+    from fastapi.responses import JSONResponse
+    import hmac
+
+    expected = os.environ.get("BET_ASSISTANT_TOKEN", "")
+    provided = request.headers.get("x-bet-assistant-token", "")
+    if not expected or not provided or not hmac.compare_digest(provided, expected):
+        return JSONResponse({"success": False, "error": "yetkisiz"}, status_code=403)
+
+    conn = connect()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute('''
+        SELECT m.id AS match_id, m.home_team_id AS home_team,
+               m.away_team_id AS away_team, m.home_score, m.away_score,
+               m.minute, m.status AS match_status, p.market,
+               p.weighted_probability AS probability,
+               p.signal_level, p.signal_minute, p.created_at
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        WHERE p.decision = 'signal'
+          AND p.outcome IS NULL
+          AND m.status = 'LIVE'
+          AND p.market IS NOT NULL
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT 1
+    ''').fetchone()
+    conn.close()
+
+    if row is None:
+        return {"success": True, "data": None}
+
+    return {
+        "success": True,
+        "data": {
+            "match_id": row["match_id"],
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "home_score": row["home_score"],
+            "away_score": row["away_score"],
+            "minute": row["minute"],
+            "match_status": row["match_status"],
+            "market": row["market"],
+            "probability": round(row["probability"], 3),
+            "confidence": f"Seviye: {row['signal_level']}",
+            "signal_minute": row["signal_minute"],
+            "created_at": row["created_at"],
+        },
+    }
 
 
 @app.get("/api/daily-results")
@@ -661,7 +717,7 @@ def get_results():
     ''')
     rows = cursor.fetchall()
     conn.close()
-    
+
     results = []
     for r in rows:
         results.append({
@@ -677,7 +733,7 @@ def get_results():
             "league_name": r[9] if r[9] else "Geçmiş Alarmlar",
             "league_logo": r[10] if r[10] else ""
         })
-        
+
     return {"success": True, "data": results}
 
 @app.get("/api/all-live")
@@ -693,7 +749,7 @@ def get_all_live():
     ''')
     rows = cursor.fetchall()
     conn.close()
-    
+
     results = []
     for r in rows:
         results.append({
@@ -712,7 +768,7 @@ def get_all_live():
             "probability": 0.0,
             "confidence": "Analiz Ediliyor"
         })
-        
+
     return {"success": True, "data": results}
 
 @app.get("/api/match/{match_id}")
@@ -724,7 +780,7 @@ def get_match_detail(match_id: int, request: Request):
 
     conn = connect()
     cursor = conn.cursor()
-    
+
     cursor.execute('''
         SELECT home_team_id, away_team_id
         FROM matches WHERE id = ?
@@ -736,7 +792,7 @@ def get_match_detail(match_id: int, request: Request):
 
     home_team = row[0]
     away_team = row[1]
-    
+
     # Canlı istatistikleri (live_snapshots) tablosundan en güncel veriyi çek
     cursor.execute('''
         SELECT home_possession, away_possession,
@@ -744,21 +800,21 @@ def get_match_detail(match_id: int, request: Request):
                home_shots, away_shots,
                home_shots_on_target, away_shots_on_target,
                home_corners, away_corners
-        FROM live_snapshots 
-        WHERE match_id = ? 
+        FROM live_snapshots
+        WHERE match_id = ?
         ORDER BY minute DESC LIMIT 1
     ''', (match_id,))
     snap_row = cursor.fetchone()
     d = {}
     for team_type, team_name in [("home_form", home_team), ("away_form", away_team)]:
         cursor.execute('''
-            SELECT fh_goals_scored, fh_goals_conceded 
-            FROM team_match_history 
+            SELECT fh_goals_scored, fh_goals_conceded
+            FROM team_match_history
             WHERE team_id = ? COLLATE NOCASE
             ORDER BY match_date DESC LIMIT 10
         ''', (team_name,))
         history_rows = cursor.fetchall()
-        
+
         if len(history_rows) > 0:
             total_matches = len(history_rows)
             fh_goals = 0
@@ -769,10 +825,10 @@ def get_match_detail(match_id: int, request: Request):
                 if (scored + conceded) > 0:
                     fh_goal_matches += 1
                 fh_goals += scored
-            
+
             fh_rate = fh_goal_matches / total_matches
             avg_scored = fh_goals / total_matches
-            
+
             d[team_type] = {
                 "avg_goals_scored": f"{avg_scored:.2f}",
                 "fh_goal_rate": f"%{int(fh_rate * 100)}",
@@ -784,9 +840,9 @@ def get_match_detail(match_id: int, request: Request):
                 "fh_goal_rate": "Veri Bekleniyor",
                 "win_rate": "Veri Bekleniyor"
             }
-    
+
     conn.close()
-    
+
     return {
         "success": True,
         "data": {

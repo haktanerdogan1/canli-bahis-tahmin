@@ -104,6 +104,63 @@ def backfill_ghost_losses(verbose=True):
     return affected
 
 
+PREMATURE_FH_LOSS_MIGRATION = "2026_08_02_premature_fh_losses_to_won"
+
+
+def backfill_premature_fh_losses(verbose=True):
+    """Erken ilk-yari kapanisi yuzunden yanlislikla LOST yazilmis kayitlari
+    bir kez WON'a cevirir.
+
+    Bu, outcome degismezligi kuralinin genel bir istisnasi degildir - sadece
+    KANITLANMIS, dar bir bug deseninin duzeltilmesidir (bkz. compute_outcome
+    icindeki first_half_over aciklamasi): bazi API fiksturlerinde canli
+    dakika sayaci gercek devre arasindan (status='HT') ONCE 45'i asiyor,
+    eski kod bunu "ilk yari bitti" saniyor ve o anki eksik/gecici skorla
+    LOST'a karar veriyordu - oysa API birkac dakika sonra "resmi" (dakika=45'e
+    sabitlenmis) devre arasi skorunu daha yuksek golle gonderiyordu.
+
+    Sadece SOMUT KANITI olan kayitlar duzeltiliyor: settled_at'ten SONRA
+    gelen, dakika<=45 bir snapshot, o an kullanilan initial_goals esiginden
+    DAHA YUKSEK toplam gol gosteriyorsa. Migration anahtari sayesinde ayni
+    veritabaninda ikinci kez calismaz.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS data_migrations (
+            migration_key TEXT PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            affected_rows INTEGER NOT NULL DEFAULT 0
+        )
+    ''')
+    if cur.execute("SELECT 1 FROM data_migrations WHERE migration_key=?",
+                   (PREMATURE_FH_LOSS_MIGRATION,)).fetchone():
+        conn.close()
+        return 0
+
+    cur.execute('''
+        UPDATE consensus_predictions
+        SET outcome='WON'
+        WHERE decision='signal' AND outcome='LOST' AND signal_minute <= 45
+          AND EXISTS (
+              SELECT 1 FROM live_snapshots ls
+              WHERE ls.match_id = consensus_predictions.match_id
+                AND ls.minute <= 45
+                AND ls.captured_at > consensus_predictions.settled_at
+                AND (COALESCE(ls.home_score,0) + COALESCE(ls.away_score,0))
+                    > consensus_predictions.initial_goals
+          )
+    ''')
+    affected = cur.rowcount
+    cur.execute("INSERT INTO data_migrations(migration_key, affected_rows) VALUES(?,?)",
+                (PREMATURE_FH_LOSS_MIGRATION, affected))
+    conn.commit()
+    conn.close()
+    if verbose:
+        print(f"[settlement] erken IY kapanisi backfill: {affected} kayit WON yapildi", flush=True)
+    return affected
+
+
 def finalize_fully_settled_matches(verbose=True):
     """Butun sinyalleri sonuclanmis (hic PENDING kalmayan) maclarin durumunu
     FINISHED yapar - v4_api_bot'un o an ne rapor ettiginden BAGIMSIZ.
@@ -240,7 +297,18 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
     is_first_half_market = (signal_minute is not None and signal_minute <= 45)
 
     if is_first_half_market:
-        first_half_over = match_status in ("HT", "FINISHED") or (current_minute or 0) > 45
+        # NOT: eskiden "(current_minute or 0) > 45" da ilk yarinin bittigine
+        # kanit sayiliyordu. Bazi fiksturlerde API canli dakika sayacini 45'in
+        # UZERINE cikariyor (46, 47, 48...) - gercek devre arasi (status='HT')
+        # onaylanmadan ONCE - ve gecikmeli olarak "resmi" devre arasi skorunu
+        # (dakika=45'e geri sabitlenmis) birkac dakika sonra gonderiyor. Erken
+        # "minute>45" varsayimi, o resmi skor gelmeden fh_end'i erken/eksik
+        # bir anlik goruntuyle kilitleyip yanlislikla LOST'a karar veriyordu
+        # (bkz. Ludogorets-Botev Vratsa: gercek IY sonu 2-0 iken sistem
+        # dakika 46'da hala 1-0 olan eski veriyle LOST yazmisti). Artik SADECE
+        # acik status='HT'/'FINISHED' sinyaline guveniliyor; boyle bir sinyal
+        # hic gelmezse zaten void_stuck_signals() 30dk sonra devreye girer.
+        first_half_over = match_status in ("HT", "FINISHED")
 
         if not first_half_over:
             # Ilk yari HALA DEVAM EDIYOR: bu asamada current_home/current_away
@@ -287,12 +355,19 @@ def settle_pending(verbose=True):
         LEFT JOIN matches m ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON s.id = p.snapshot_id
         LEFT JOIN (
+            -- Ayni dakikada (orn. API'nin gecikmeli "resmi" HT skorunu
+            -- gonderdigi durumda) birden fazla satir varsa EN SON eklenen
+            -- (en yuksek id) tercih edilir - aksi halde match_id basina
+            -- birden fazla satir donup disaridaki sorguda satir cogalmasina
+            -- (fan-out) yol acardi.
             SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away
             FROM live_snapshots ls1
-            INNER JOIN (
-                SELECT match_id, MAX(minute) AS max_min
-                FROM live_snapshots WHERE minute <= 45 GROUP BY match_id
-            ) ls2 ON ls1.match_id = ls2.match_id AND ls1.minute = ls2.max_min
+            WHERE ls1.id = (
+                SELECT ls2.id FROM live_snapshots ls2
+                WHERE ls2.match_id = ls1.match_id AND ls2.minute <= 45
+                ORDER BY ls2.minute DESC, ls2.id DESC
+                LIMIT 1
+            )
         ) fh ON fh.match_id = m.id
         WHERE p.decision = 'signal' AND p.outcome IS NULL
     ''')

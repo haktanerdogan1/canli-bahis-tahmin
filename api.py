@@ -688,7 +688,7 @@ def get_all_live():
     cursor.execute('''
         SELECT id, home_team_id, away_team_id, home_score, away_score, minute, status, league_name, league_logo, home_team_logo, away_team_logo
         FROM matches
-        WHERE status NOT IN ('Ended', 'FT', 'Canceled', 'FINISHED')
+        WHERE status NOT IN ('Ended', 'FT', 'Canceled', 'FINISHED', 'ABANDONED')
         ORDER BY league_name ASC, minute DESC
     ''')
     rows = cursor.fetchall()

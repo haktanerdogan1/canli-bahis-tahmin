@@ -36,13 +36,11 @@ LEAGUES_CACHE["937351"] = {"name": "UEFA Conference League", "ccode": "INT", "lo
 LEAGUES_CACHE["915708"] = {"name": "Club Friendlies", "ccode": "INT", "logo": ""}
 LEAGUES_CACHE["251"] = {"name": "Ykkösliiga (Finlandiya)", "ccode": "FIN", "logo": ""}
 
-# --- "Bilindik" lig/takım filtresi + günlük kota -----------------------------------------
+# --- "Bilindik" lig/takım filtresi -------------------------------------------------------
 # Amaç: RapidAPI sorgu kotasını, özellikle sezon dışı dönemde (çok sayıda alt lig / rezerv /
 # altyapı maçı aynı anda oynanıyor) israf etmemek. Sadece tanınan büyük liglerin/takımların
-# maçlarını takibe al, günde en fazla DAILY_MATCH_CAP kadar YENİ maç ekle. Zaten takip
-# edilmekte olan bir maç, kota dolsa bile GÜNCELLENMEYE devam eder - yoksa yarım kalıp
-# sonsuza kadar "PENDING" takılma bugu geri gelir.
-DAILY_MATCH_CAP = 150
+# maçlarını takibe al. Gunluk YENI mac sayisina sabit bir tavan (DAILY_MATCH_CAP) eskiden
+# vardi; kullanici istegiyle kaldirildi (yogun saatlerde canli mac akisini bogdugu icin).
 MISSING_GRACE_MINUTES = 5
 MAX_PLAUSIBLE_LIVE_AGE_SECONDS = 4 * 60 * 60
 # Feed'de gorunmeye devam etse bile DAKIKASI ilerlemeyen bir mac, RapidAPI'nin
@@ -177,27 +175,6 @@ def _is_known_match(league_name, home_name, away_name):
 
     # Arsiv kontrolu - en genis ag. Iki takimdan biri yetiyor.
     return _arsivde_var_mi(home_name) or _arsivde_var_mi(away_name)
-
-
-_daily_state = {"date": None, "count": 0}
-
-
-def _daily_cap_available():
-    """Gunluk YENI mac kotasini kontrol eder, gun degisince otomatik resetler (TR saatine gore)."""
-    import datetime
-    try:
-        from zoneinfo import ZoneInfo
-        today = datetime.datetime.now(ZoneInfo("Europe/Istanbul")).date()
-    except Exception:
-        today = datetime.date.today()
-    if _daily_state["date"] != today:
-        _daily_state["date"] = today
-        _daily_state["count"] = 0
-    return _daily_state["count"] < DAILY_MATCH_CAP
-
-
-def _register_new_match():
-    _daily_state["count"] += 1
 
 
 # --- Istatistik anahtari kesfi -------------------------------------------------
@@ -619,17 +596,13 @@ async def process_api_matches(session):
 
         # --- Bilindik mac / gunluk kota filtresi ---
         # Zaten takip edilen bir mac ise (existing_ids icinde) her zaman guncellenir.
-        # YENI bir mac ise: bilinen bir ligden/takimdan degilse VEYA gunluk 30 mac kotasi
-        # dolmussa, bu maci hic isleme almadan atla (DB'ye yazma, stats sorgusu da atma -
-        # boylece RapidAPI kotasi sadece anlamli maclarda harcanir).
+        # YENI bir mac ise ve bilinen bir ligden/takimdan degilse, bu maci hic
+        # isleme almadan atla (DB'ye yazma, stats sorgusu da atma - boylece
+        # RapidAPI kotasi sadece anlamli maclarda harcanir).
         if event_id not in existing_ids:
             if not _is_known_match(league_info["name"], home_name, away_name):
                 stat_skipped_unknown += 1
                 continue
-            if not _daily_cap_available():
-                stat_skipped_cap += 1
-                continue
-            _register_new_match()
 
         stat_processed += 1
 

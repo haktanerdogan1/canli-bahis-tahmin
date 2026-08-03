@@ -11,6 +11,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.rootViewController = CAPBridgeViewController()
         window?.makeKeyAndVisible()
 
+        if let window = window {
+            let splash = MatchrixSplashView(frame: window.bounds)
+            splash.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            window.addSubview(splash)
+            splash.layoutIfNeeded()
+            splash.playIntro { }
+        }
+
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 

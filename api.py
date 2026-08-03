@@ -71,6 +71,11 @@ def serve_index():
     from fastapi.responses import FileResponse
     return FileResponse(os.path.join(os.path.dirname(__file__), 'index.html'))
 
+@app.get("/apple-touch-icon.png")
+def serve_apple_touch_icon():
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(os.path.dirname(__file__), 'static', 'apple-touch-icon.png'))
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}

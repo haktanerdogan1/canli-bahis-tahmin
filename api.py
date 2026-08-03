@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 import os
+import secrets
+from urllib.parse import urlencode
+
+import requests
 
 import auth
 import settlement
@@ -162,6 +166,90 @@ def me(request: Request):
         # Kullanici silinmis ama cookie duruyorsa oturumu gecersiz say
         return {"authenticated": False}
     return {"authenticated": True, "email": email}
+
+
+# --- Google ile giris (OAuth 2.0 authorization code akisi) -----------------
+# NEDEN: e-posta/sifreye ek, tek tikla giris. GOOGLE_CLIENT_ID/SECRET Railway
+# Variables'ta tanimli olmali (bkz. CLAUDE_DEPLOYMENT_HANDOVER.md) - Google
+# Cloud Console'da bir OAuth Client (Web application) olusturulup, "Authorized
+# redirect URI" olarak <SITE_URL>/api/auth/google/callback eklenmeli. Bu iki
+# adim sadece hesap sahibi tarafindan yapilabilir, kod tarafinda otomatiklestirilemez.
+GOOGLE_STATE_COOKIE = "jcode_oauth_state"
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+
+def _google_redirect_uri(request: Request) -> str:
+    return str(request.base_url).rstrip("/") + "/api/auth/google/callback"
+
+
+@app.get("/api/auth/google/login")
+def google_login(request: Request):
+    from fastapi.responses import RedirectResponse, JSONResponse
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    if not client_id:
+        return JSONResponse(
+            {"error": "Google ile giriş henüz yapılandırılmadı."}, status_code=503)
+
+    state = secrets.token_urlsafe(24)
+    params = {
+        "client_id": client_id,
+        "redirect_uri": _google_redirect_uri(request),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "prompt": "select_account",
+    }
+    redirect_response = RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+    is_https = request.url.scheme == "https" or \
+        request.headers.get("x-forwarded-proto", "") == "https"
+    redirect_response.set_cookie(
+        key=GOOGLE_STATE_COOKIE, value=state, max_age=600,
+        httponly=True, secure=is_https, samesite="lax", path="/",
+    )
+    return redirect_response
+
+
+@app.get("/api/auth/google/callback")
+def google_callback(request: Request, code: str = None, state: str = None, error: str = None):
+    from fastapi.responses import RedirectResponse
+
+    expected_state = request.cookies.get(GOOGLE_STATE_COOKIE)
+    if error or not code or not expected_state or state != expected_state:
+        return RedirectResponse("/?auth_error=1")
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return RedirectResponse("/?auth_error=1")
+
+    try:
+        token_res = requests.post(GOOGLE_TOKEN_URL, data={
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": _google_redirect_uri(request),
+            "grant_type": "authorization_code",
+        }, timeout=10)
+        access_token = token_res.json().get("access_token") if token_res.ok else None
+        if not access_token:
+            return RedirectResponse("/?auth_error=1")
+
+        userinfo_res = requests.get(
+            GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        email = userinfo_res.json().get("email") if userinfo_res.ok else None
+        if not email:
+            return RedirectResponse("/?auth_error=1")
+    except requests.RequestException:
+        return RedirectResponse("/?auth_error=1")
+
+    user_id = auth.get_or_create_oauth_user(email)
+    redirect_response = RedirectResponse("/")
+    _set_session_cookie(redirect_response, user_id, request)
+    redirect_response.delete_cookie(GOOGLE_STATE_COOKIE, path="/")
+    return redirect_response
 
 @app.get("/api/live-matches")
 def get_live_matches(request: Request):

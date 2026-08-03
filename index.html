@@ -544,6 +544,45 @@
             line-height: 1.5;
         }
 
+        .btn-google {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            background: #fff;
+            color: #1f2937;
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: var(--radius-md);
+            padding: 11px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 0.92rem;
+            text-decoration: none;
+            cursor: pointer;
+            transition: box-shadow 0.2s, transform 0.1s;
+            margin-bottom: 1.25rem;
+        }
+
+        .btn-google:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+        .btn-google:active { transform: scale(0.98); }
+
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .auth-divider::before, .auth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-strong);
+        }
+
         .auth-tabs {
             display: flex;
             gap: 6px;
@@ -748,7 +787,7 @@
     <!-- Bottom Navigation -->
     <nav class="bottom-nav">
         <button class="bnav-btn active" onclick="switchTab('pending', this)">
-            <i class="fa-solid fa-radar"></i><span>Açık Bahisler</span>
+            <i class="fa-solid fa-satellite-dish"></i><span>Açık Bahisler</span>
         </button>
         <button class="bnav-btn" onclick="switchTab('results', this)">
             <i class="fa-solid fa-list-check"></i><span>Sonuçlar</span>
@@ -763,24 +802,27 @@
 
     <!-- Main Content -->
     <main class="container" id="content-area">
-        <!-- Hero Banner -->
-        <div style="background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(0,0,0,0.8)); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 2rem; margin-bottom: 2rem; text-align: center; box-shadow: var(--shadow-glow); position: relative; overflow: hidden;">
-            <div style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(0,229,255,0.05) 0%, transparent 50%); animation: spin 10s linear infinite; pointer-events: none;"></div>
-            <h2 style="font-family: 'Outfit', sans-serif; font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">
-                <span style="color: #fff;">AI'nin gücüyle</span> <span style="color: var(--accent-brand);">herkesten önde ol</span>
-            </h2>
-            <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto 1.5rem auto; line-height: 1.6;">
-                Matchrix destekli 16 farklı Yapay Zeka Botu, +500 veri kaynağını kesintisiz tarar ve saniyeler içinde gizli gol fırsatlarını (Sinyal) bulur.
-            </p>
-            <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-                <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-robot" style="color:var(--accent-brand);"></i> 16 AI Uzman Bot</span>
-                <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
+        <!-- Sadece Acik Bahisler (ana sayfa) sekmesinde gorunur, bkz. switchTab() -->
+        <div id="homeIntro">
+            <!-- Hero Banner -->
+            <div style="background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(0,0,0,0.8)); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 2rem; margin-bottom: 2rem; text-align: center; box-shadow: var(--shadow-glow); position: relative; overflow: hidden;">
+                <div style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(0,229,255,0.05) 0%, transparent 50%); animation: spin 10s linear infinite; pointer-events: none;"></div>
+                <h2 style="font-family: 'Outfit', sans-serif; font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">
+                    <span style="color: #fff;">AI'nin gücüyle</span> <span style="color: var(--accent-brand);">herkesten önde ol</span>
+                </h2>
+                <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto 1.5rem auto; line-height: 1.6;">
+                    Matchrix destekli 16 farklı Yapay Zeka Botu, +500 veri kaynağını kesintisiz tarar ve saniyeler içinde gizli gol fırsatlarını (Sinyal) bulur.
+                </p>
+                <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+                    <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-robot" style="color:var(--accent-brand);"></i> 16 AI Uzman Bot</span>
+                    <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
+                </div>
             </div>
-        </div>
 
-        <!-- Olculmus sonuc ozeti -->
-        <div class="ozet-strip" id="ozetStrip">
-            <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
+            <!-- Olculmus sonuc ozeti -->
+            <div class="ozet-strip" id="ozetStrip">
+                <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
+            </div>
         </div>
 
         <div id="matchListContainer">
@@ -1043,6 +1085,8 @@
             document.querySelectorAll('.bnav-btn').forEach(btn => btn.classList.remove('active'));
             if (btnElement) btnElement.classList.add('active');
 
+            document.getElementById('homeIntro').style.display = (tab === 'pending') ? '' : 'none';
+
             fetchData();
         }
 
@@ -1170,6 +1214,18 @@
                         <div class="auth-title" id="authTitle">Üye Ol</div>
                         <div class="auth-sub" id="authSub">Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.</div>
 
+                        <a href="/api/auth/google/login" class="btn-google">
+                            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+                                <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.87 2.69-6.64z"/>
+                                <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33C2.44 15.98 5.48 18 9 18z"/>
+                                <path fill="#FBBC05" d="M3.96 10.7c-.18-.54-.28-1.11-.28-1.7s.1-1.16.28-1.7V4.97H.96C.35 6.19 0 7.56 0 9s.35 2.81.96 4.03l3-2.33z"/>
+                                <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l3 2.33C4.67 5.16 6.66 3.58 9 3.58z"/>
+                            </svg>
+                            Google ile devam et
+                        </a>
+
+                        <div class="auth-divider"><span>veya e-posta ile</span></div>
+
                         <div class="auth-tabs">
                             <button class="auth-tab active" id="tabRegister" onclick="switchAuthMode('register')">Üye Ol</button>
                             <button class="auth-tab" id="tabLogin" onclick="switchAuthMode('login')">Giriş Yap</button>
@@ -1194,7 +1250,7 @@
         }
 
         async function fetchData() {
-            fetchOzet();
+            if (currentTab === 'pending') fetchOzet();
             checkForNewWins();
 
             if (currentTab === 'stats') {
@@ -1595,6 +1651,13 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeModal();
         });
+
+        // Google girisi basarisiz donerse (/?auth_error=1) Giris sekmesini acip uyar
+        if (new URLSearchParams(location.search).get('auth_error')) {
+            history.replaceState(null, '', location.pathname);
+            openAuth('login');
+            setTimeout(() => showAuthError('Google ile giriş başarısız oldu, tekrar deneyin.'), 150);
+        }
 
         // Init: once uyelik durumunu ogren, sonra veriyi cek
         updateNotifButton();

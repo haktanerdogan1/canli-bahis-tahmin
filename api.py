@@ -181,7 +181,18 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 
 def _google_redirect_uri(request: Request) -> str:
-    return str(request.base_url).rstrip("/") + "/api/auth/google/callback"
+    # Railway, TLS'i proxy'de sonlandirip uygulamaya duz HTTP ile iletiyor -
+    # request.base_url bu yuzden "http://" doner. Google Cloud Console'a
+    # kayitli URI "https://" oldugu icin, sema burada X-Forwarded-Proto'ya
+    # gore duzeltilmezse Google "redirect_uri_mismatch" hatasi verir.
+    is_https = request.url.scheme == "https" or \
+        request.headers.get("x-forwarded-proto", "") == "https"
+    scheme = "https" if is_https else request.url.scheme
+    host = request.url.hostname
+    port = request.url.port
+    if port and port not in (80, 443):
+        host = f"{host}:{port}"
+    return f"{scheme}://{host}/api/auth/google/callback"
 
 
 @app.get("/api/auth/google/login")

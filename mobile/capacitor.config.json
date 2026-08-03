@@ -1,0 +1,20 @@
+{
+  "appId": "com.jcodeanalytics.app",
+  "appName": "JCode Analytics",
+  "webDir": "www",
+  "server": {
+    "url": "https://web-production-f1dba.up.railway.app",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 800,
+      "backgroundColor": "#0f172a",
+      "showSpinner": false
+    }
+  }
+}

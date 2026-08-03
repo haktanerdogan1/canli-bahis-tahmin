@@ -89,64 +89,60 @@
             letter-spacing: -0.5px;
         }
 
-        .brand i {
-            color: var(--accent-brand);
-            font-size: 1.3rem;
-        }
-
         .brand span {
             background: linear-gradient(135deg, #fff, #94a3b8);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        .nav-tabs {
+        /* --- Bottom Navigation --- */
+        .bottom-nav {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 60;
             display: flex;
-            gap: 0.5rem;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 6px;
-            border-radius: var(--radius-full);
-            border: 1px solid var(--border-light);
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-top: 1px solid var(--border-light);
+            padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
         }
 
-        .nav-btn {
-            background: transparent;
-            color: var(--text-secondary);
-            border: none;
-            padding: 8px 20px;
-            border-radius: var(--radius-full);
-            font-family: 'Inter', sans-serif;
-            font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
+        .bnav-btn {
+            flex: 1;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 8px;
+            justify-content: center;
+            gap: 4px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 8px 4px 6px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s ease;
         }
 
-        .nav-btn:hover {
-            color: var(--text-primary);
-            background: rgba(255, 255, 255, 0.05);
-        }
+        .bnav-btn i { font-size: 1.2rem; }
 
-        .nav-btn.active {
-            background: var(--accent-brand);
-            color: #000;
-            box-shadow: var(--shadow-glow);
-        }
+        .bnav-btn:hover { color: var(--text-primary); }
 
-        .nav-btn.active-radar {
-            background: var(--accent-danger);
-            color: #fff;
-            box-shadow: var(--shadow-danger);
+        .bnav-btn.active {
+            color: var(--accent-brand);
+            background: rgba(0, 229, 255, 0.08);
         }
 
         /* --- Main Container --- */
         .container {
             max-width: 1000px;
             margin: 0 auto;
-            padding: 0 1.5rem 3rem 1.5rem;
+            padding: 0 1.5rem calc(6rem + env(safe-area-inset-bottom)) 1.5rem;
         }
 
         /* --- League Grouping --- */
@@ -524,21 +520,6 @@
         .lock-btn:hover { transform: translateY(-1px); }
 
         /* --- Auth modal --- */
-        .auth-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(3, 7, 18, 0.85);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            z-index: 200;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 1rem;
-        }
-
-        .auth-overlay.active { display: flex; }
-
         .auth-card {
             background: var(--bg-surface);
             border: 1px solid var(--border-strong);
@@ -646,40 +627,6 @@
             display: none;
         }
 
-        .auth-close {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            cursor: pointer;
-            display: block;
-            margin: 1rem auto 0 auto;
-        }
-
-        .auth-close:hover { color: var(--text-secondary); }
-
-        /* Navbar user area */
-        .user-area {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-        }
-
-        .btn-auth-nav {
-            background: var(--accent-brand);
-            color: #001014;
-            border: none;
-            padding: 8px 18px;
-            border-radius: var(--radius-full);
-            font-family: 'Inter', sans-serif;
-            font-weight: 700;
-            font-size: 0.85rem;
-            cursor: pointer;
-            box-shadow: var(--shadow-glow);
-        }
-
         .btn-logout {
             background: transparent;
             border: 1px solid var(--border-strong);
@@ -713,7 +660,6 @@
 
         @media (max-width: 720px) {
             .navbar-content { flex-wrap: wrap; gap: 0.75rem; }
-            .user-area { order: 3; }
         }
 
         /* --- Olculmus sonuc ozeti seridi --- */
@@ -782,15 +728,6 @@
 
         .stats-table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
 
-        .daily-card { margin-bottom: 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-surface); }
-        .daily-head { width: 100%; border: 0; color: var(--text-primary); background: transparent; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; text-align: left; }
-        .daily-head:hover { background: rgba(255,255,255,0.03); }
-        .daily-summary { display: flex; gap: 12px; flex-wrap: wrap; color: var(--text-secondary); font-size: .88rem; }
-        .daily-matches { display: none; border-top: 1px solid var(--border-light); }
-        .daily-matches.open { display: block; }
-        .daily-match { display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border-light); align-items: center; }
-        .daily-match:last-child { border-bottom: 0; }
-
     </style>
 </head>
 <body>
@@ -802,33 +739,26 @@
                 <img src="/apple-touch-icon.png" alt="Matchrix" style="width: 28px; height: 28px; border-radius: 8px;">
                 <span style="color: #fff;">MATCHRIX</span>
             </div>
-            <div class="nav-tabs">
-                <button class="nav-btn active" onclick="switchTab('pending', this)">
-                    <i class="fa-solid fa-radar"></i> Açık Bahisler
-                </button>
-                <button class="nav-btn" onclick="switchTab('won', this)">
-                    <i class="fa-solid fa-check-circle" style="color:var(--accent-success)"></i> Kazananlar
-                </button>
-                <button class="nav-btn" onclick="switchTab('lost', this)">
-                    <i class="fa-solid fa-times-circle" style="color:var(--text-muted)"></i> Kayıplar
-                </button>
-                <button class="nav-btn" onclick="switchTab('all', this)">
-                    <i class="fa-solid fa-futbol"></i> Tüm Canlılar
-                </button>
-                <button class="nav-btn" onclick="switchTab('stats', this)">
-                    <i class="fa-solid fa-chart-simple"></i> İstatistik
-                </button>
-                <button class="nav-btn" onclick="switchTab('test', this)">
-                    <i class="fa-solid fa-calendar-days"></i> Günlük Test
-                </button>
-            </div>
             <button class="btn-notif" id="notifToggle" onclick="toggleNotifications()" title="Kazanma bildirimlerini aç">
                 <i class="fa-solid fa-bell-slash"></i>
             </button>
-            <div class="user-area" id="userArea">
-                <button class="btn-auth-nav" onclick="openAuth('register')">Üye Ol</button>
-            </div>
         </div>
+    </nav>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <button class="bnav-btn active" onclick="switchTab('pending', this)">
+            <i class="fa-solid fa-radar"></i><span>Açık Bahisler</span>
+        </button>
+        <button class="bnav-btn" onclick="switchTab('results', this)">
+            <i class="fa-solid fa-list-check"></i><span>Sonuçlar</span>
+        </button>
+        <button class="bnav-btn" onclick="switchTab('stats', this)">
+            <i class="fa-solid fa-chart-simple"></i><span>İstatistik</span>
+        </button>
+        <button class="bnav-btn" id="bnavLogin" onclick="switchTab('login', this)">
+            <i class="fa-solid fa-right-to-bracket" id="bnavAuthIcon"></i><span id="bnavAuthLabel">Giriş</span>
+        </button>
     </nav>
 
     <!-- Main Content -->
@@ -860,35 +790,6 @@
             </div>
         </div>
     </main>
-
-    <!-- Auth Modal (Uye Ol / Giris Yap) -->
-    <div class="auth-overlay" id="authOverlay">
-        <div class="auth-card">
-            <div class="auth-title" id="authTitle">Üye Ol</div>
-            <div class="auth-sub" id="authSub">Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.</div>
-
-            <div class="auth-tabs">
-                <button class="auth-tab active" id="tabRegister" onclick="switchAuthMode('register')">Üye Ol</button>
-                <button class="auth-tab" id="tabLogin" onclick="switchAuthMode('login')">Giriş Yap</button>
-            </div>
-
-            <div class="auth-error" id="authError"></div>
-
-            <form id="authForm" onsubmit="submitAuth(event)">
-                <div class="auth-field">
-                    <label for="authEmail">E-posta</label>
-                    <input type="email" id="authEmail" autocomplete="email" required placeholder="ornek@mail.com">
-                </div>
-                <div class="auth-field">
-                    <label for="authPassword">Şifre</label>
-                    <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" placeholder="En az 6 karakter">
-                </div>
-                <button type="submit" class="auth-submit" id="authSubmit">Hesap Oluştur</button>
-            </form>
-
-            <button class="auth-close" onclick="closeAuth()">Kapat</button>
-        </div>
-    </div>
 
     <!-- Match Detail Modal -->
     <div class="modal-overlay" id="matchModal">
@@ -946,6 +847,7 @@
         let currentTab = 'pending';
         let refreshTimer = null;
         let currentTodayTR = null;
+        let currentUserEmail = null;
 
         // --- Kazanma bildirimleri (tarayici bildirimi + ses) ----------------
         // Hangi sinyallerin (match_id:signal_period) icin daha once bildirim
@@ -1063,26 +965,17 @@
         }
 
         function renderUserArea(email) {
-            const el = document.getElementById('userArea');
-            if (!el) return;
-            if (isMember) {
-                el.innerHTML = `
-                    <span title="${email || ''}"><i class="fa-solid fa-circle-check" style="color:var(--accent-success)"></i> Üye</span>
-                    <button class="btn-logout" onclick="doLogout()">Çıkış</button>`;
-            } else {
-                el.innerHTML = `<button class="btn-auth-nav" onclick="openAuth('register')">Üye Ol</button>`;
-            }
+            currentUserEmail = email || null;
+            const icon = document.getElementById('bnavAuthIcon');
+            const label = document.getElementById('bnavAuthLabel');
+            if (!icon || !label) return;
+            icon.className = isMember ? 'fa-solid fa-circle-user' : 'fa-solid fa-right-to-bracket';
+            label.innerText = isMember ? 'Hesabım' : 'Giriş';
         }
 
         function openAuth(mode) {
-            switchAuthMode(mode || 'register');
-            document.getElementById('authOverlay').classList.add('active');
-            setTimeout(() => document.getElementById('authEmail').focus(), 50);
-        }
-
-        function closeAuth() {
-            document.getElementById('authOverlay').classList.remove('active');
-            document.getElementById('authError').style.display = 'none';
+            authMode = mode || 'register';
+            switchTab('login', document.getElementById('bnavLogin'));
         }
 
         function switchAuthMode(mode) {
@@ -1125,8 +1018,6 @@
                 const d = await res.json();
 
                 if (d.success) {
-                    closeAuth();
-                    document.getElementById('authForm').reset();
                     await checkAuth();
                     fetchData();
                 } else {
@@ -1148,17 +1039,9 @@
 
         function switchTab(tab, btnElement) {
             currentTab = tab;
-            
-            // Update buttons
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('active', 'active-radar');
-            });
-            
-            if (tab === 'all' || tab === 'stats' || tab === 'test') {
-                btnElement.classList.add('active');
-            } else {
-                btnElement.classList.add('active-radar');
-            }
+
+            document.querySelectorAll('.bnav-btn').forEach(btn => btn.classList.remove('active'));
+            if (btnElement) btnElement.classList.add('active');
 
             fetchData();
         }
@@ -1266,49 +1149,48 @@
             }
         }
 
-        function toggleDailyDay(id) {
-            const el = document.getElementById(id);
-            if (el) el.classList.toggle('open');
-        }
-
-        async function renderDailyTestTab() {
+        function renderLoginTab() {
             const container = document.getElementById('matchListContainer');
-            try {
-                const res = await fetch('/api/daily-results');
-                const d = await res.json();
-                if (!d.success) throw new Error('daily results failed');
-                currentTodayTR = d.today_tr;
-                if (!d.days || d.days.length === 0) {
-                    container.innerHTML = `<div class="loader"><p>Henüz sonuçlanmış günlük test yok.</p></div>`;
-                    return;
-                }
-                container.innerHTML = d.days.map((day, index) => {
-                    const rate = day.isabet_orani === null ? '—' : `%${Math.round(day.isabet_orani * 100)}`;
-                    const dateLabel = day.date === d.today_tr ? `Bugün · ${day.date}` : day.date;
-                    const matches = (day.matches || []).map(m => {
-                        const result = m.outcome === 'WON'
-                            ? `<b style="color:var(--accent-success)">KAZANDI</b>`
-                            : (m.outcome === 'LOST'
-                                ? `<b style="color:var(--accent-danger)">KAYBETTİ</b>`
-                                : `<b style="color:var(--accent-brand)">AÇIK</b>`);
-                        const market = m.locked ? 'Üyelere özel tahmin' : (m.market || '—');
-                        return `<div class="daily-match">
-                            <span>${result}</span>
-                            <span><b>${m.home_team} – ${m.away_team}</b><br><small style="color:var(--text-muted)">${market} · ${m.home_score}-${m.away_score}</small></span>
-                            <span style="color:var(--text-muted)">${m.signal_minute !== null ? `${m.signal_minute}'` : ''}</span>
-                        </div>`;
-                    }).join('');
-                    return `<div class="daily-card">
-                        <button class="daily-head" onclick="toggleDailyDay('daily-${index}')">
-                            <div><b>${dateLabel}</b><div class="daily-summary"><span>Paylaşılan ${day.total}</span><span style="color:var(--accent-brand)">Açık ${day.pending}</span><span style="color:var(--accent-success)">Kazanan ${day.won}</span><span style="color:var(--accent-danger)">Kayıp ${day.lost}</span><span>İsabet ${rate}</span></div></div>
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </button>
-                        <div class="daily-matches" id="daily-${index}">${matches}</div>
+
+            if (isMember) {
+                container.innerHTML = `
+                    <div style="display:flex; justify-content:center; padding: 2rem 0;">
+                        <div class="auth-card" style="max-width:400px; width:100%; text-align:center;">
+                            <div class="auth-title"><i class="fa-solid fa-circle-check" style="color:var(--accent-success)"></i> Üyesiniz</div>
+                            <div class="auth-sub">${currentUserEmail || ''}</div>
+                            <button class="btn-logout" style="width:100%; padding:12px;" onclick="doLogout()">Çıkış Yap</button>
+                        </div>
                     </div>`;
-                }).join('');
-            } catch (e) {
-                container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Günlük sonuçlar alınamadı.</p></div>`;
+                return;
             }
+
+            container.innerHTML = `
+                <div style="display:flex; justify-content:center; padding: 2rem 0;">
+                    <div class="auth-card" style="max-width:400px; width:100%;">
+                        <div class="auth-title" id="authTitle">Üye Ol</div>
+                        <div class="auth-sub" id="authSub">Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.</div>
+
+                        <div class="auth-tabs">
+                            <button class="auth-tab active" id="tabRegister" onclick="switchAuthMode('register')">Üye Ol</button>
+                            <button class="auth-tab" id="tabLogin" onclick="switchAuthMode('login')">Giriş Yap</button>
+                        </div>
+
+                        <div class="auth-error" id="authError"></div>
+
+                        <form id="authForm" onsubmit="submitAuth(event)">
+                            <div class="auth-field">
+                                <label for="authEmail">E-posta</label>
+                                <input type="email" id="authEmail" autocomplete="email" required placeholder="ornek@mail.com">
+                            </div>
+                            <div class="auth-field">
+                                <label for="authPassword">Şifre</label>
+                                <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" placeholder="En az 6 karakter">
+                            </div>
+                            <button type="submit" class="auth-submit" id="authSubmit">Hesap Oluştur</button>
+                        </form>
+                    </div>
+                </div>`;
+            switchAuthMode(authMode);
         }
 
         async function fetchData() {
@@ -1322,19 +1204,16 @@
                 return;
             }
 
-            if (currentTab === 'test') {
-                await renderDailyTestTab();
+            if (currentTab === 'login') {
+                renderLoginTab();
                 clearTimeout(refreshTimer);
-                refreshTimer = setTimeout(fetchData, 15000);
                 return;
             }
 
             const container = document.getElementById('matchListContainer');
 
             try {
-                let url = currentTab === 'all' ? '/api/all-live' : '/api/live-matches';
-
-                const res = await fetch(url);
+                const res = await fetch('/api/live-matches');
                 const result = await res.json();
 
                 if(result.success) {
@@ -1345,13 +1224,12 @@
                     let dataToRender = result.data || [];
                     if (currentTab === 'pending') {
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
-                    } else if (currentTab === 'won') {
+                    } else if (currentTab === 'results') {
                         // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
-                        // kazandigi gorunsun, 1-2 gun oncesi dahil edilmesin - bugun
-                        // gercek kazanc yoksa sekme BOS kalir, eski sonuclarla doldurulmaz.
-                        dataToRender = dataToRender.filter(m => m.outcome === "WON" && m.signal_date === currentTodayTR);
-                    } else if (currentTab === 'lost') {
-                        dataToRender = dataToRender.filter(m => m.outcome === "LOST" && m.signal_date === currentTodayTR);
+                        // kazanc/kayip sonucu gorunsun, 1-2 gun oncesi dahil edilmesin -
+                        // bugun gercek sonuc yoksa sekme BOS kalir, eskilerle doldurulmaz.
+                        dataToRender = dataToRender.filter(m =>
+                            (m.outcome === "WON" || m.outcome === "LOST") && m.signal_date === currentTodayTR);
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {
@@ -1419,11 +1297,11 @@
             });
 
             let sortedLeagues;
-            if (type === 'won' || type === 'lost') {
-                // GUNCELLIK ESAS: Kazananlar/Kayiplar'da hicbir lig sabitlenmez.
-                // Her lig grubu, o gruptaki EN YENI sinyalin tarihine gore siralanir -
-                // boylece dunku Konferans Ligi sonuclari bugunku taze bir sonucun
-                // onune gecemez. Grup ici maclar da kendi icinde en yeniden eskiye dizilir.
+            if (type === 'results') {
+                // GUNCELLIK ESAS: Sonuclar'da hicbir lig sabitlenmez. Her lig grubu,
+                // o gruptaki EN YENI sinyalin tarihine gore siralanir - boylece dunku
+                // Konferans Ligi sonuclari bugunku taze bir sonucun onune gecemez.
+                // Grup ici maclar da kendi icinde en yeniden eskiye dizilir.
                 const mostRecent = {};
                 Object.keys(groups).forEach(lg => {
                     groups[lg].sort((a, b) => (b.signal_date || '').localeCompare(a.signal_date || ''));
@@ -1431,7 +1309,7 @@
                 });
                 sortedLeagues = Object.keys(groups).sort((a, b) => mostRecent[b].localeCompare(mostRecent[a]));
             } else {
-                // Diger sekmelerde (Acik Bahisler, Tum Canlilar) eski davranis korunur.
+                // Diger sekmede (Acik Bahisler) eski davranis korunur.
                 sortedLeagues = Object.keys(groups).sort((a,b) => {
                     if(a === "Canlı Alarmlar" || a === "UEFA Conference League" || a === "UEFA Champions League") return -1;
                     if(a === "Diğer Ligler") return 1;
@@ -1463,11 +1341,11 @@
                         else if (m.outcome === 'LOST') outcomeBadge = '<span style="color:var(--accent-danger); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-times"></i> KAYBETTİ</span>';
                         else if (m.outcome === 'VOID') outcomeBadge = '<span style="color:var(--accent-warning); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-circle-minus"></i> GEÇERSİZ</span>';
 
-                        // GUNCELLIK: Kazananlar/Kayiplar'da her karta ne zaman paylasildigi
-                        // yazilir - kullanici hangi sonucun bugune, hangisinin gecmise ait
-                        // oldugunu her zaman gorsun, gizli bir tarih filtresine bagli kalmasin.
+                        // GUNCELLIK: Sonuclar'da her karta ne zaman paylasildigi yazilir -
+                        // kullanici hangi sonucun bugune, hangisinin gecmise ait oldugunu
+                        // her zaman gorsun, gizli bir tarih filtresine bagli kalmasin.
                         let dateBadge = '';
-                        if ((type === 'won' || type === 'lost') && m.signal_date) {
+                        if (type === 'results' && m.signal_date) {
                             dateBadge = `<span style="color:var(--text-muted); margin-left:8px; font-weight:500; font-size:0.82rem;"><i class="fa-solid fa-calendar-day"></i> ${formatSignalDate(m.signal_date)}</span>`;
                         }
 
@@ -1714,12 +1592,8 @@
             if(e.target === this) closeModal();
         });
 
-        // Auth modalini disina tiklayinca / Esc ile kapat
-        document.getElementById('authOverlay').addEventListener('click', function(e) {
-            if(e.target === this) closeAuth();
-        });
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') { closeAuth(); closeModal(); }
+            if (e.key === 'Escape') closeModal();
         });
 
         // Init: once uyelik durumunu ogren, sonra veriyi cek

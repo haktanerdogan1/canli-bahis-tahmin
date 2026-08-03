@@ -1,6 +1,6 @@
 {
   "appId": "com.jcodeanalytics.app",
-  "appName": "JCode Analytics",
+  "appName": "Matchrix",
   "webDir": "www",
   "server": {
     "url": "https://web-production-f1dba.up.railway.app",

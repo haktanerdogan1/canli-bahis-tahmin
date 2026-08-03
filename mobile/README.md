@@ -1,4 +1,4 @@
-# JCode Analytics — Mobil Uygulama (iOS + Android)
+# Matchrix — Mobil Uygulama (iOS + Android)
 
 Bu klasör, mevcut web sistemine (backend, API, `index.html`) **hiç dokunmadan**
 onu native bir mağaza uygulamasına saran ayrı bir [Capacitor](https://capacitorjs.com)

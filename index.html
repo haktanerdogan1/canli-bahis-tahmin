@@ -1253,31 +1253,6 @@
     </div>
 
     <script>
-        // GECICI - video/screenshot cekimi icin. Cekim bitince DEMO_MODE'u false
-        // yapip push et; gercek veritabanina hicbir sekilde dokunmuyor.
-        const DEMO_MODE = true;
-        function getDemoMatches() {
-            const teams = [
-                ["Takım A", "Takım B"], ["Takım C", "Takım D"],
-                ["Takım E", "Takım F"], ["Takım G", "Takım H"],
-            ];
-            const markets = ["Maç Sonu 2.5 Üst", "İlk Yarı 1.5 Üst", "Maç Sonu 1.5 Üst", "İlk Yarı Gol Var"];
-            const minutes = [23, 61, 38, 74];
-            const probs = [0.81, 0.76, 0.69, 0.88];
-            return teams.map((t, i) => ({
-                home_team: t[0], away_team: t[1],
-                home_score: i % 2, away_score: 0,
-                minute: minutes[i], match_status: "",
-                market: markets[i], probability: probs[i],
-                confidence: "Seviye: Yüksek", league_name: "Örnek Lig",
-                league_logo: "", match_id: -(i + 1),
-                home_logo: "", away_logo: "",
-                outcome: "PENDING", signal_minute: minutes[i] - 2,
-                signal_period: minutes[i] <= 45 ? "H1" : "H2",
-                signal_date: currentTodayTR, lead_bot: "bot_momentum", locked: false,
-            }));
-        }
-
         let currentTab = 'today';
         let refreshTimer = null;
         let currentTodayTR = null;
@@ -1852,7 +1827,6 @@
                         // Ilk 3'u sunucu zaten herkese acik gonderiyor (bkz. api.py).
                         dataToRender = dataToRender.filter(m =>
                             m.outcome === "PENDING" && m.signal_date === currentTodayTR);
-                        if (DEMO_MODE) dataToRender = getDemoMatches();
                         const counterEl = document.getElementById('todayCounter');
                         if (counterEl) {
                             counterEl.innerText = dataToRender.length

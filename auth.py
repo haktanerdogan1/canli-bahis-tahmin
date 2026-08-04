@@ -177,6 +177,31 @@ def authenticate(email: str, password: str):
     return row[0], None
 
 
+def get_or_create_oauth_user(email: str) -> int:
+    """Google gibi bir OAuth saglayicisindan dogrulanmis e-posta icin kullanici
+    id'si doner. Kayit yoksa, sema degismesin diye (password_hash NOT NULL),
+    asla kimseye soylenmeyen/kullanilamayan rastgele bir sifre hash'iyle yeni
+    bir kullanici olusturulur - bu kullanici sadece OAuth ile giris yapabilir.
+    """
+    email = normalize_email(email)
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+    row = cur.fetchone()
+    if row:
+        conn.close()
+        return row[0]
+
+    cur.execute(
+        "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+        (email, hash_password(secrets.token_hex(32))),
+    )
+    conn.commit()
+    user_id = cur.lastrowid
+    conn.close()
+    return user_id
+
+
 def get_user_email(user_id: int):
     conn = _connect()
     cur = conn.cursor()

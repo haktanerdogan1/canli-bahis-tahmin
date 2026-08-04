@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 import os
+import secrets
+from urllib.parse import urlencode
+
+import requests
 
 import auth
 import settlement
@@ -163,6 +167,101 @@ def me(request: Request):
         return {"authenticated": False}
     return {"authenticated": True, "email": email}
 
+
+# --- Google ile giris (OAuth 2.0 authorization code akisi) -----------------
+# NEDEN: e-posta/sifreye ek, tek tikla giris. GOOGLE_CLIENT_ID/SECRET Railway
+# Variables'ta tanimli olmali (bkz. CLAUDE_DEPLOYMENT_HANDOVER.md) - Google
+# Cloud Console'da bir OAuth Client (Web application) olusturulup, "Authorized
+# redirect URI" olarak <SITE_URL>/api/auth/google/callback eklenmeli. Bu iki
+# adim sadece hesap sahibi tarafindan yapilabilir, kod tarafinda otomatiklestirilemez.
+GOOGLE_STATE_COOKIE = "jcode_oauth_state"
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+
+def _google_redirect_uri(request: Request) -> str:
+    # Railway, TLS'i proxy'de sonlandirip uygulamaya duz HTTP ile iletiyor -
+    # request.base_url bu yuzden "http://" doner. Google Cloud Console'a
+    # kayitli URI "https://" oldugu icin, sema burada X-Forwarded-Proto'ya
+    # gore duzeltilmezse Google "redirect_uri_mismatch" hatasi verir.
+    is_https = request.url.scheme == "https" or \
+        request.headers.get("x-forwarded-proto", "") == "https"
+    scheme = "https" if is_https else request.url.scheme
+    host = request.url.hostname
+    port = request.url.port
+    if port and port not in (80, 443):
+        host = f"{host}:{port}"
+    return f"{scheme}://{host}/api/auth/google/callback"
+
+
+@app.get("/api/auth/google/login")
+def google_login(request: Request):
+    from fastapi.responses import RedirectResponse, JSONResponse
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    if not client_id:
+        return JSONResponse(
+            {"error": "Google ile giriş henüz yapılandırılmadı."}, status_code=503)
+
+    state = secrets.token_urlsafe(24)
+    params = {
+        "client_id": client_id,
+        "redirect_uri": _google_redirect_uri(request),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "prompt": "select_account",
+    }
+    redirect_response = RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+    is_https = request.url.scheme == "https" or \
+        request.headers.get("x-forwarded-proto", "") == "https"
+    redirect_response.set_cookie(
+        key=GOOGLE_STATE_COOKIE, value=state, max_age=600,
+        httponly=True, secure=is_https, samesite="lax", path="/",
+    )
+    return redirect_response
+
+
+@app.get("/api/auth/google/callback")
+def google_callback(request: Request, code: str = None, state: str = None, error: str = None):
+    from fastapi.responses import RedirectResponse
+
+    expected_state = request.cookies.get(GOOGLE_STATE_COOKIE)
+    if error or not code or not expected_state or state != expected_state:
+        return RedirectResponse("/?auth_error=1")
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return RedirectResponse("/?auth_error=1")
+
+    try:
+        token_res = requests.post(GOOGLE_TOKEN_URL, data={
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": _google_redirect_uri(request),
+            "grant_type": "authorization_code",
+        }, timeout=10)
+        access_token = token_res.json().get("access_token") if token_res.ok else None
+        if not access_token:
+            return RedirectResponse("/?auth_error=1")
+
+        userinfo_res = requests.get(
+            GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        email = userinfo_res.json().get("email") if userinfo_res.ok else None
+        if not email:
+            return RedirectResponse("/?auth_error=1")
+    except requests.RequestException:
+        return RedirectResponse("/?auth_error=1")
+
+    user_id = auth.get_or_create_oauth_user(email)
+    redirect_response = RedirectResponse("/")
+    _set_session_cookie(redirect_response, user_id, request)
+    redirect_response.delete_cookie(GOOGLE_STATE_COOKIE, path="/")
+    return redirect_response
+
 @app.get("/api/live-matches")
 def get_live_matches(request: Request):
     is_member = current_user_id(request) is not None
@@ -304,13 +403,32 @@ def get_live_matches(request: Request):
             chosen = bucket["lost"]
         else:
             chosen = bucket["void"]
-        chosen.pop("created_at", None)
+        results.append(chosen)
 
-        if not is_member:
-            # UYE DEGILSE tahmin verisi hic gonderilmez. Sadece ekrani CSS ile
-            # bulaniklastirmak koruma SAGLAMAZ (kullanici sayfa kaynagina veya
-            # gelistirici konsoluna bakip veriyi okur). Bu yuzden hassas alanlar
-            # sunucuda siliniyor; on yuzdeki bulanik gorunum yalnizca dekoratif.
+    conn = connect()
+    today_tr = conn.execute("SELECT date('now', '+3 hours')").fetchone()[0]
+    conn.close()
+
+    # Urun plani: giris yapmamis ziyaretci bile "bugunun" ilk 3 acik tahminini
+    # tam icerikle gorur (bkz. Tahmin_Uygulamasi_Urun_ve_Lansman_Plani.pdf, "Temel
+    # kullanici yolculugu"). En erken yayinlanan 3 PENDING sinyal secilir.
+    # NOT: Pro/ucretsiz uye ayrimi henuz yok - odeme entegrasyonu (StoreKit) gelene
+    # kadar mevcut uyelik (is_member) "Pro" icin gecici vekil olarak kullaniliyor.
+    todays_pending = [e for e in results if e["outcome"] == "PENDING" and e["signal_date"] == today_tr]
+    todays_pending.sort(key=lambda e: e["created_at"] or "")
+    for e in todays_pending[:3]:
+        e["_free_today"] = True
+
+    for chosen in results:
+        chosen.pop("created_at", None)
+        is_free_today_pick = chosen.pop("_free_today", False)
+
+        if not is_member and not is_free_today_pick:
+            # UYE DEGILSE VE gunun ucretsiz 3'unden biri DEGILSE tahmin verisi hic
+            # gonderilmez. Sadece ekrani CSS ile bulaniklastirmak koruma SAGLAMAZ
+            # (kullanici sayfa kaynagina veya gelistirici konsoluna bakip veriyi
+            # okur). Bu yuzden hassas alanlar sunucuda siliniyor; on yuzdeki
+            # bulanik gorunum yalnizca dekoratif.
             chosen["market"] = None
             chosen["probability"] = None
             chosen["confidence"] = None
@@ -318,11 +436,6 @@ def get_live_matches(request: Request):
             chosen["lead_bot"] = None
             chosen["locked"] = True
 
-        results.append(chosen)
-
-    conn = connect()
-    today_tr = conn.execute("SELECT date('now', '+3 hours')").fetchone()[0]
-    conn.close()
     return {"success": True, "data": results, "is_member": is_member,
             "today_tr": today_tr}
 

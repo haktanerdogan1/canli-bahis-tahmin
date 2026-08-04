@@ -263,6 +263,11 @@ async def fetch_stats(session, match_id):
         print(f"Stats fetch error for {match_id}: {e}")
     return []
 
+async def _no_stats():
+    """MAX_STATS_PER_CYCLE butcesi disinda kalan maclar icin - ag istegi
+    ATMADAN bos sonuc doner, boylece asyncio.gather ayni sekle sahip olur."""
+    return []
+
 def _parse_stats(stats_groups):
     """API'nin istatistik yanitini (h_pos, a_pos, ..., h_big, a_big) tuple'ina cevirir.
 
@@ -699,6 +704,7 @@ async def process_api_matches(session):
         to_process.append({
             "match_id_api": match_id_api,
             "event_id": event_id,
+            "already_tracked": event_id in existing_ids,
             "home_name": home_name,
             "away_name": away_name,
             "home_logo": home_logo,
@@ -714,9 +720,25 @@ async def process_api_matches(session):
 
     # --- ASAMA 3: TUM istatistikleri ESZAMANLI cek. Burada HICBIR DB baglantisi
     # acik degil - onceki halde tam da bu bekleme sirasinda (mac basina 10-20
-    # saniye surebiliyordu, 22 mac * ag gecikmesi) yazma kilidi acik kaliyordu. ---
+    # saniye surebiliyordu, 22 mac * ag gecikmesi) yazma kilidi acik kaliyordu.
+    #
+    # NEDEN SINIRLANDIRILIYOR: gunluk YENI mac kotasi kaldirildiktan sonra
+    # (kullanici istegiyle) es zamanli takip edilen mac sayisi sinirsiz
+    # buyuyebiliyordu - her biri icin ayri bir istatistik istegi atildigindan
+    # (bu dongu), yogun saatlerde RapidAPI'nin hesap genelindeki hiz/kota
+    # sinirina carpip TUM istekler (temel canli-mac cekme dahil) 429 donmeye
+    # basladi - sistem saatlerce hicbir mac cekemedi, sifir sinyal uretti.
+    # Zaten takip edilen maclar ONCELIKLI (aktif sinyalleri var, guncel
+    # kalmalari sart); kalan butce YENI maclara ayriliyor. Oncelik disi
+    # kalanlar DB'den ve ekrandan DUSMEZ - sadece bu dongude detayli
+    # istatistik cekilmez, temel skor/dakika guncellemesi yine olur.
+    MAX_STATS_PER_CYCLE = 40
+    prioritized = sorted(to_process, key=lambda m: not m["already_tracked"])
+    stats_targets = set(id(m) for m in prioritized[:MAX_STATS_PER_CYCLE])
+
     stats_results = await asyncio.gather(
-        *[fetch_stats(session, m["match_id_api"]) for m in to_process],
+        *[fetch_stats(session, m["match_id_api"]) if id(m) in stats_targets
+          else _no_stats() for m in to_process],
         return_exceptions=True,
     )
     for m, stats_groups in zip(to_process, stats_results):

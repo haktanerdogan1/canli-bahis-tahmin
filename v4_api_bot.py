@@ -409,16 +409,17 @@ def _close_stale_progress(cursor):
 
 
 async def process_api_matches(session):
+    """Doner: HTTP durum kodu (basarili=200), yoksa None (ag hatasi)."""
     url_live = f"https://{HOST}/football-current-live"
     try:
         async with session.get(url_live, headers=HEADERS, timeout=10) as resp:
             if resp.status != 200:
                 print(f"Failed to fetch live matches: {resp.status}")
-                return
+                return resp.status
             data = await resp.json()
     except Exception as e:
         print(f"Error fetching live matches: {e}")
-        return
+        return None
 
     matches = data.get("response", {})
     if isinstance(matches, dict) and "live" in matches:
@@ -831,6 +832,7 @@ async def process_api_matches(session):
         f"| DB'de hala acik(LIVE/HT)={still_open}",
         flush=True,
     )
+    return 200
 
 def _ensure_team_profiles():
     """team_profiles bossa hemen kurar - orchestrator'in acilisini beklemez.
@@ -857,18 +859,41 @@ def _table_exists(conn, name):
     return row is not None
 
 
+NORMAL_CYCLE_SECONDS = 15
+# RapidAPI 429 (kota/hiz siniri) dondugunde HER 15 saniyede tekrar denemek
+# hem kotayi (eger basarisiz istekler de sayiliyorsa) bosa harciyor hem de
+# kota gercekten tukenmisse iyilesmeyi geciktirebiliyor. Ardisik 429'larda
+# bekleme suresi katlanarak artiyor (15sn -> 30 -> 60 -> ... -> 10dk tavan),
+# ilk basarili cevapta hemen normale donuyor.
+MAX_BACKOFF_SECONDS = 600
+
+
 async def main():
     print("🚀 Starting V4 OFFICIAL API Radar Bot...", flush=True)
     _ensure_match_tracking_schema()
     _ensure_team_profiles()
+    consecutive_429s = 0
     async with aiohttp.ClientSession() as session:
         while True:
             start_time = time.time()
             print("📡 Fetching RapidAPI Live matches...", flush=True)
-            await process_api_matches(session)
+            status = await process_api_matches(session)
             elapsed = time.time() - start_time
-            print(f"✅ V4 Cycle completed in {elapsed:.2f} seconds. Waiting 15s...", flush=True)
-            await asyncio.sleep(15)
+
+            if status == 429:
+                consecutive_429s += 1
+                wait = min(NORMAL_CYCLE_SECONDS * (2 ** consecutive_429s), MAX_BACKOFF_SECONDS)
+                print(f"⏳ RapidAPI 429 (kota/hiz siniri) - {consecutive_429s}. ardisik hata, "
+                      f"{wait}sn bekleniyor (kotayi bosa harcamamak icin geri cekiliyor)", flush=True)
+            else:
+                if consecutive_429s > 0:
+                    print(f"✅ RapidAPI tekrar cevap veriyor ({consecutive_429s} ardisik 429'dan sonra), "
+                          "normal 15sn dongusune donuluyor", flush=True)
+                consecutive_429s = 0
+                wait = NORMAL_CYCLE_SECONDS
+
+            print(f"✅ V4 Cycle completed in {elapsed:.2f} seconds. Waiting {wait}s...", flush=True)
+            await asyncio.sleep(wait)
 
 if __name__ == '__main__':
     asyncio.run(main())

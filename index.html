@@ -567,6 +567,187 @@
         .btn-google:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
         .btn-google:active { transform: scale(0.98); }
 
+        .pro-price-card {
+            background: linear-gradient(135deg, #0f3d3a, #0a2a28);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            text-align: center;
+            margin-bottom: 1.25rem;
+        }
+
+        .pro-price-label {
+            color: var(--accent-brand);
+            font-weight: 700;
+            font-size: 0.82rem;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.4rem;
+        }
+
+        .pro-price-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .pro-price-value span {
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .pro-feature-list {
+            list-style: none;
+            margin-bottom: 1.25rem;
+        }
+
+        .pro-feature-list li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--border-light);
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+        }
+
+        .pro-feature-list li:last-child { border-bottom: none; }
+        .pro-feature-list li i { color: var(--accent-success); }
+
+        /* --- Hesabim (account settings) --- */
+        .account-page {
+            max-width: 480px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 1.5rem 0 2rem;
+        }
+
+        .account-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 0 1.5rem 1.5rem;
+        }
+
+        .account-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: rgba(0,229,255,0.1);
+            border: 1px solid rgba(0,229,255,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            color: var(--accent-brand);
+            flex-shrink: 0;
+        }
+
+        .account-email {
+            font-weight: 700;
+            font-size: 1rem;
+            color: #fff;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+
+        .account-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.06);
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            padding: 3px 9px;
+            border-radius: var(--radius-full);
+        }
+
+        .account-badge.is-pro {
+            background: rgba(0,229,255,0.15);
+            color: var(--accent-brand);
+        }
+
+        .settings-group {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-md);
+            margin: 0 1.5rem 1.25rem;
+            overflow: hidden;
+        }
+
+        .settings-group-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            padding: 12px 16px 6px;
+        }
+
+        .settings-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            background: transparent;
+            border: none;
+            border-top: 1px solid var(--border-light);
+            color: var(--text-primary);
+            padding: 13px 16px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.92rem;
+            cursor: pointer;
+            text-align: left;
+            text-decoration: none;
+        }
+
+        .settings-group-title + .settings-row { border-top: none; }
+        .settings-row:hover { background: rgba(255,255,255,0.03); }
+        .settings-row i:first-child { width: 18px; text-align: center; flex-shrink: 0; }
+
+        .settings-row-text {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .settings-row-text small { color: var(--text-muted); font-size: 0.78rem; }
+        .settings-chevron { color: var(--text-muted); font-size: 0.8rem; transition: transform 0.2s; }
+
+        .settings-toggle { position: relative; width: 44px; height: 26px; flex-shrink: 0; }
+        .settings-toggle input { opacity: 0; width: 0; height: 0; }
+        .settings-toggle-track {
+            position: absolute; inset: 0;
+            background: rgba(255,255,255,0.15);
+            border-radius: var(--radius-full);
+            transition: background 0.2s;
+        }
+        .settings-toggle-track::after {
+            content: '';
+            position: absolute;
+            top: 3px; left: 3px;
+            width: 20px; height: 20px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .settings-toggle input:checked + .settings-toggle-track { background: var(--accent-brand); }
+        .settings-toggle input:checked + .settings-toggle-track::after { transform: translateX(18px); }
+
+        .policy-text {
+            display: none;
+            padding: 0 16px 14px;
+            margin-top: -4px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            border-top: 1px solid var(--border-light);
+        }
+        .policy-text.open { display: block; padding-top: 12px; }
+
+        .account-page > .btn-logout { margin: 0 1.5rem; width: calc(100% - 3rem); }
+
         .auth-divider {
             display: flex;
             align-items: center;
@@ -786,17 +967,17 @@
 
     <!-- Bottom Navigation -->
     <nav class="bottom-nav">
-        <button class="bnav-btn active" onclick="switchTab('pending', this)">
-            <i class="fa-solid fa-satellite-dish"></i><span>Açık Bahisler</span>
+        <button class="bnav-btn active" onclick="switchTab('today', this)">
+            <i class="fa-solid fa-star"></i><span>Bugün</span>
+        </button>
+        <button class="bnav-btn" onclick="switchTab('open', this)">
+            <i class="fa-solid fa-layer-group"></i><span>Açık Tahminler</span>
         </button>
         <button class="bnav-btn" onclick="switchTab('results', this)">
             <i class="fa-solid fa-list-check"></i><span>Sonuçlar</span>
         </button>
-        <button class="bnav-btn" onclick="switchTab('stats', this)">
-            <i class="fa-solid fa-chart-simple"></i><span>İstatistik</span>
-        </button>
         <button class="bnav-btn" id="bnavLogin" onclick="switchTab('login', this)">
-            <i class="fa-solid fa-right-to-bracket" id="bnavAuthIcon"></i><span id="bnavAuthLabel">Giriş</span>
+            <i class="fa-solid fa-right-to-bracket" id="bnavAuthIcon"></i><span id="bnavAuthLabel">Hesabım</span>
         </button>
     </nav>
 
@@ -818,6 +999,8 @@
                     <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
                 </div>
             </div>
+
+            <div id="todayCounter" style="text-align:center; color:var(--text-secondary); font-weight:600; margin-bottom:1rem;"></div>
 
             <!-- Olculmus sonuc ozeti -->
             <div class="ozet-strip" id="ozetStrip">
@@ -886,7 +1069,7 @@
     </div>
 
     <script>
-        let currentTab = 'pending';
+        let currentTab = 'today';
         let refreshTimer = null;
         let currentTodayTR = null;
         let currentUserEmail = null;
@@ -902,6 +1085,8 @@
 
         function updateNotifButton() {
             const btn = document.getElementById('notifToggle');
+            const hesabimToggle = document.getElementById('hesabimNotifToggle');
+            if (hesabimToggle) hesabimToggle.checked = notificationsEnabled;
             if (!btn) return;
             if (!('Notification' in window)) { btn.style.display = 'none'; return; }
             if (notificationsEnabled) {
@@ -1009,10 +1194,8 @@
         function renderUserArea(email) {
             currentUserEmail = email || null;
             const icon = document.getElementById('bnavAuthIcon');
-            const label = document.getElementById('bnavAuthLabel');
-            if (!icon || !label) return;
+            if (!icon) return;
             icon.className = isMember ? 'fa-solid fa-circle-user' : 'fa-solid fa-right-to-bracket';
-            label.innerText = isMember ? 'Hesabım' : 'Giriş';
         }
 
         function openAuth(mode) {
@@ -1085,7 +1268,7 @@
             document.querySelectorAll('.bnav-btn').forEach(btn => btn.classList.remove('active'));
             if (btnElement) btnElement.classList.add('active');
 
-            document.getElementById('homeIntro').style.display = (tab === 'pending') ? '' : 'none';
+            document.getElementById('homeIntro').style.display = (tab === 'today') ? '' : 'none';
 
             fetchData();
         }
@@ -1197,13 +1380,106 @@
             const container = document.getElementById('matchListContainer');
 
             if (isMember) {
+                const isPro = window.isProMember === true; // gercek odeme entegre olunca guncellenecek
                 container.innerHTML = `
-                    <div style="display:flex; justify-content:center; padding: 2rem 0;">
-                        <div class="auth-card" style="max-width:400px; width:100%; text-align:center;">
-                            <div class="auth-title"><i class="fa-solid fa-circle-check" style="color:var(--accent-success)"></i> Üyesiniz</div>
-                            <div class="auth-sub">${currentUserEmail || ''}</div>
-                            <button class="btn-logout" style="width:100%; padding:12px;" onclick="doLogout()">Çıkış Yap</button>
+                    <div class="account-page">
+                        <div class="account-header">
+                            <div class="account-avatar"><i class="fa-solid fa-user"></i></div>
+                            <div>
+                                <div class="account-email">${currentUserEmail || ''}</div>
+                                <div class="account-badge ${isPro ? 'is-pro' : ''}">${isPro ? 'PRO ÜYE' : 'ÜCRETSİZ ÜYE'}</div>
+                            </div>
                         </div>
+
+                        <div class="settings-group">
+                            <div class="settings-group-title">Abonelik</div>
+                            <button class="settings-row" onclick="showPaywall()">
+                                <i class="fa-solid fa-crown" style="color:var(--accent-brand);"></i>
+                                <span class="settings-row-text">
+                                    ${isPro ? 'Pro Üyelik' : "Pro'ya Geç"}
+                                    <small>${isPro ? 'Haftalık 129,99 TL · otomatik yenilenir' : 'Tüm açık tahminlere sınırsız erişim'}</small>
+                                </span>
+                                <i class="fa-solid fa-chevron-right settings-chevron"></i>
+                            </button>
+                        </div>
+
+                        <div class="settings-group">
+                            <div class="settings-group-title">Bildirimler</div>
+                            <label class="settings-row" for="hesabimNotifToggle">
+                                <i class="fa-solid fa-bell" style="color:var(--accent-brand);"></i>
+                                <span class="settings-row-text">
+                                    Kazanma bildirimleri
+                                    <small>Yeni tahmin ve sonuç anında haber ver</small>
+                                </span>
+                                <span class="settings-toggle">
+                                    <input type="checkbox" id="hesabimNotifToggle" onchange="toggleNotifications()" ${notificationsEnabled ? 'checked' : ''}>
+                                    <span class="settings-toggle-track"></span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="settings-group">
+                            <div class="settings-group-title">Performans</div>
+                            <button class="settings-row" onclick="switchTab('stats', null)">
+                                <i class="fa-solid fa-chart-simple" style="color:var(--accent-brand);"></i>
+                                <span class="settings-row-text">Bot Performans Detayları</span>
+                                <i class="fa-solid fa-chevron-right settings-chevron"></i>
+                            </button>
+                        </div>
+
+                        <div class="settings-group">
+                            <div class="settings-group-title">Politikalar ve Bilgilendirme</div>
+                            <button class="settings-row" onclick="togglePolicy('legal')">
+                                <i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning);"></i>
+                                <span class="settings-row-text">Yasal Uyarı</span>
+                                <i class="fa-solid fa-chevron-down settings-chevron" id="chev-legal"></i>
+                            </button>
+                            <div class="policy-text" id="policy-legal">
+                                Bu uygulama yalnızca spor karşılaşmalarına ilişkin tahmin içerikleri sunar.
+                                Bahis kabul etmez, kullanıcı fonu tutmaz, kullanıcı adına bahis işlemi
+                                gerçekleştirmez ve kazanç garantisi vermez. Geçmiş performans gelecekteki
+                                sonuçları garanti etmez. 18 yaşından küçük kullanıcılar için uygun değildir.
+                            </div>
+
+                            <button class="settings-row" onclick="togglePolicy('privacy')">
+                                <i class="fa-solid fa-lock" style="color:var(--accent-brand);"></i>
+                                <span class="settings-row-text">Gizlilik Politikası</span>
+                                <i class="fa-solid fa-chevron-down settings-chevron" id="chev-privacy"></i>
+                            </button>
+                            <div class="policy-text" id="policy-privacy">
+                                Hesap oluştururken yalnızca e-posta adresin ve şifren (geri döndürülemez
+                                biçimde hash'lenerek) saklanır. Google ile giriş yaptığında Google'ın verdiği
+                                e-posta adresi dışında bir bilgi alınmaz. Ödeme bilgilerin sunucularımızda
+                                tutulmaz; abonelik işlemleri Apple App Store üzerinden yürütülür. Verilerin
+                                üçüncü taraflarla paylaşılmaz veya satılmaz. Hesabının silinmesini istersen
+                                destek@matchrix.app adresinden bize ulaşabilirsin.
+                            </div>
+
+                            <button class="settings-row" onclick="togglePolicy('terms')">
+                                <i class="fa-solid fa-file-contract" style="color:var(--accent-brand);"></i>
+                                <span class="settings-row-text">Kullanım Şartları</span>
+                                <i class="fa-solid fa-chevron-down settings-chevron" id="chev-terms"></i>
+                            </button>
+                            <div class="policy-text" id="policy-terms">
+                                Matchrix, spor karşılaşmaları hakkında yapay zeka destekli tahmin içerikleri
+                                sunan bir bilgilendirme uygulamasıdır; bahis oynatmaz ve kazanç garantisi
+                                vermez. Pro abonelik haftalık 129,99 TL bedelle otomatik yenilenir; iptal
+                                etmediğin sürece bir sonraki dönem için otomatik tahsil edilir. Aboneliğini
+                                istediğin an App Store hesap ayarlarından iptal edebilirsin. Hizmet olduğu
+                                gibi sunulur; kesintisiz veya hatasız çalışacağı garanti edilmez.
+                            </div>
+                        </div>
+
+                        <div class="settings-group">
+                            <div class="settings-group-title">Destek</div>
+                            <a class="settings-row" href="mailto:destek@matchrix.app">
+                                <i class="fa-solid fa-envelope" style="color:var(--accent-brand);"></i>
+                                <span class="settings-row-text">destek@matchrix.app</span>
+                                <i class="fa-solid fa-chevron-right settings-chevron"></i>
+                            </a>
+                        </div>
+
+                        <button class="btn-logout" style="width:100%; padding:12px;" onclick="doLogout()">Çıkış Yap</button>
                     </div>`;
                 return;
             }
@@ -1249,8 +1525,51 @@
             switchAuthMode(authMode);
         }
 
+        function togglePolicy(key) {
+            const textEl = document.getElementById('policy-' + key);
+            const chevEl = document.getElementById('chev-' + key);
+            if (!textEl) return;
+            const isOpen = textEl.classList.toggle('open');
+            if (chevEl) chevEl.style.transform = isOpen ? 'rotate(180deg)' : '';
+        }
+
+        function showPaywall() {
+            currentTab = 'paywall';
+            document.querySelectorAll('.bnav-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('homeIntro').style.display = 'none';
+            clearTimeout(refreshTimer);
+            renderPaywallTab();
+        }
+
+        function renderPaywallTab() {
+            const container = document.getElementById('matchListContainer');
+            container.innerHTML = `
+                <div style="display:flex; justify-content:center; padding: 1.5rem 0;">
+                    <div class="auth-card" style="max-width:420px; width:100%;">
+                        <button onclick="switchTab('today', document.querySelector('.bnav-btn'))" style="background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer; padding:0; margin-bottom:1rem;">
+                            <i class="fa-solid fa-arrow-left"></i> Geri
+                        </button>
+
+                        <div class="pro-price-card">
+                            <div class="pro-price-label">PRO HAFTALIK</div>
+                            <div class="pro-price-value">129,99 TL<span>/hafta</span></div>
+                        </div>
+
+                        <ul class="pro-feature-list">
+                            <li><i class="fa-solid fa-check"></i> Tüm açık tahminlere erişim</li>
+                            <li><i class="fa-solid fa-check"></i> Yeni tahmin bildirimleri</li>
+                            <li><i class="fa-solid fa-check"></i> Geçmiş sonuç arşivi</li>
+                            <li><i class="fa-solid fa-check"></i> İstenildiği zaman iptal</li>
+                        </ul>
+
+                        <button class="auth-submit" onclick="alert('Ödeme altyapısı yakında aktif olacak.')">Pro'ya Geç</button>
+                        <div class="auth-sub" style="text-align:center; margin-top:0.75rem; margin-bottom:0;">Otomatik yenilenir, istediğin zaman iptal edebilirsin.</div>
+                    </div>
+                </div>`;
+        }
+
         async function fetchData() {
-            if (currentTab === 'pending') fetchOzet();
+            if (currentTab === 'today') fetchOzet();
             checkForNewWins();
 
             if (currentTab === 'stats') {
@@ -1262,6 +1581,12 @@
 
             if (currentTab === 'login') {
                 renderLoginTab();
+                clearTimeout(refreshTimer);
+                return;
+            }
+
+            if (currentTab === 'paywall') {
+                renderPaywallTab();
                 clearTimeout(refreshTimer);
                 return;
             }
@@ -1278,14 +1603,27 @@
                     // kaydi biriktirmek, sonucu VOID/WON/LOST olan eski maclarin
                     // farkli anahtarla Acik Bahisler'e geri sizmasina yol aciyordu.
                     let dataToRender = result.data || [];
-                    if (currentTab === 'pending') {
+                    if (currentTab === 'today') {
+                        // Bugunun Tahminleri: sadece bugun yayinlanan acik sinyaller.
+                        // Ilk 3'u sunucu zaten herkese acik gonderiyor (bkz. api.py).
+                        dataToRender = dataToRender.filter(m =>
+                            m.outcome === "PENDING" && m.signal_date === currentTodayTR);
+                        const counterEl = document.getElementById('todayCounter');
+                        if (counterEl) {
+                            counterEl.innerText = dataToRender.length
+                                ? `Bugün ${dataToRender.length} açık tahmin var`
+                                : 'Bugün için henüz açık tahmin yok';
+                        }
+                    } else if (currentTab === 'open') {
+                        // Acik Tahminler: tarihe bakmaksizin TUM acik sinyaller.
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'results') {
                         // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
-                        // kazanc/kayip sonucu gorunsun, 1-2 gun oncesi dahil edilmesin -
-                        // bugun gercek sonuc yoksa sekme BOS kalir, eskilerle doldurulmaz.
+                        // kazanc/kayip/iade sonucu gorunsun, 1-2 gun oncesi dahil
+                        // edilmesin - bugun gercek sonuc yoksa sekme BOS kalir,
+                        // eskilerle doldurulmaz.
                         dataToRender = dataToRender.filter(m =>
-                            (m.outcome === "WON" || m.outcome === "LOST") && m.signal_date === currentTodayTR);
+                            ["WON", "LOST", "VOID"].includes(m.outcome) && m.signal_date === currentTodayTR);
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {

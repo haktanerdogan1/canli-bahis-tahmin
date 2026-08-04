@@ -403,13 +403,32 @@ def get_live_matches(request: Request):
             chosen = bucket["lost"]
         else:
             chosen = bucket["void"]
-        chosen.pop("created_at", None)
+        results.append(chosen)
 
-        if not is_member:
-            # UYE DEGILSE tahmin verisi hic gonderilmez. Sadece ekrani CSS ile
-            # bulaniklastirmak koruma SAGLAMAZ (kullanici sayfa kaynagina veya
-            # gelistirici konsoluna bakip veriyi okur). Bu yuzden hassas alanlar
-            # sunucuda siliniyor; on yuzdeki bulanik gorunum yalnizca dekoratif.
+    conn = connect()
+    today_tr = conn.execute("SELECT date('now', '+3 hours')").fetchone()[0]
+    conn.close()
+
+    # Urun plani: giris yapmamis ziyaretci bile "bugunun" ilk 3 acik tahminini
+    # tam icerikle gorur (bkz. Tahmin_Uygulamasi_Urun_ve_Lansman_Plani.pdf, "Temel
+    # kullanici yolculugu"). En erken yayinlanan 3 PENDING sinyal secilir.
+    # NOT: Pro/ucretsiz uye ayrimi henuz yok - odeme entegrasyonu (StoreKit) gelene
+    # kadar mevcut uyelik (is_member) "Pro" icin gecici vekil olarak kullaniliyor.
+    todays_pending = [e for e in results if e["outcome"] == "PENDING" and e["signal_date"] == today_tr]
+    todays_pending.sort(key=lambda e: e["created_at"] or "")
+    for e in todays_pending[:3]:
+        e["_free_today"] = True
+
+    for chosen in results:
+        chosen.pop("created_at", None)
+        is_free_today_pick = chosen.pop("_free_today", False)
+
+        if not is_member and not is_free_today_pick:
+            # UYE DEGILSE VE gunun ucretsiz 3'unden biri DEGILSE tahmin verisi hic
+            # gonderilmez. Sadece ekrani CSS ile bulaniklastirmak koruma SAGLAMAZ
+            # (kullanici sayfa kaynagina veya gelistirici konsoluna bakip veriyi
+            # okur). Bu yuzden hassas alanlar sunucuda siliniyor; on yuzdeki
+            # bulanik gorunum yalnizca dekoratif.
             chosen["market"] = None
             chosen["probability"] = None
             chosen["confidence"] = None
@@ -417,11 +436,6 @@ def get_live_matches(request: Request):
             chosen["lead_bot"] = None
             chosen["locked"] = True
 
-        results.append(chosen)
-
-    conn = connect()
-    today_tr = conn.execute("SELECT date('now', '+3 hours')").fetchone()[0]
-    conn.close()
     return {"success": True, "data": results, "is_member": is_member,
             "today_tr": today_tr}
 

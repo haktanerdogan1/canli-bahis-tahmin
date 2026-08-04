@@ -733,7 +733,13 @@ async def process_api_matches(session):
     # kalmalari sart); kalan butce YENI maclara ayriliyor. Oncelik disi
     # kalanlar DB'den ve ekrandan DUSMEZ - sadece bu dongude detayli
     # istatistik cekilmez, temel skor/dakika guncellemesi yine olur.
-    MAX_STATS_PER_CYCLE = 40
+    #
+    # KOTA HESABI (kullanicinin RapidAPI plani: aylik 2.5M istek): dongu
+    # basina (1 temel + MAX_STATS_PER_CYCLE) istek, NORMAL_CYCLE_SECONDS'te
+    # bir. 30sn + 20 ile en kotu ihtimalde ayda ~1.8M istek (~%72) - guvenli
+    # pay birakiyor. Onceki 15sn+40 ayarı en kotu ihtimalde ~7M/ay cekiyordu -
+    # kotanin gercek nedeni buydu (bkz. git log).
+    MAX_STATS_PER_CYCLE = 20
     prioritized = sorted(to_process, key=lambda m: not m["already_tracked"])
     stats_targets = set(id(m) for m in prioritized[:MAX_STATS_PER_CYCLE])
 
@@ -859,7 +865,7 @@ def _table_exists(conn, name):
     return row is not None
 
 
-NORMAL_CYCLE_SECONDS = 15
+NORMAL_CYCLE_SECONDS = 30
 # RapidAPI 429 (kota/hiz siniri) dondugunde HER 15 saniyede tekrar denemek
 # hem kotayi (eger basarisiz istekler de sayiliyorsa) bosa harciyor hem de
 # kota gercekten tukenmisse iyilesmeyi geciktirebiliyor. Ardisik 429'larda

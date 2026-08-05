@@ -59,6 +59,14 @@ _last_diary_refresh = 0.0
 _gorulen_stat_tipleri = set()
 _gorulen_status_id = set()
 
+# --- Kanit biriktirme: her (stat tipi, mac, 15dk dilimi) icin TEK ornek.
+# NEDEN: tek anlik ornek (ilk gorulen deger) hangi kodun sut/korner/kirmizi
+# kart oldugunu ayirt etmeye yetmiyor - zamanla ARTIP ARTMADIGINI (korner/sut
+# gibi) ya da neredeyse hep 0 KALIP KALMADIGINI (kirmizi kart gibi) gormek
+# lazim. Mac+15dk dilimi basina sinirlandirmak yaziyi orantisiz artirmadan
+# (ayni maci her 10sn'de tekrar tekrar yazmadan) zaman-serisi kaniti biriktirir.
+_gorulen_ornek_anahtari = set()
+
 
 def _stat_tipi_kaydet(type_code, home, away):
     if type_code in _gorulen_stat_tipleri:
@@ -99,8 +107,13 @@ def _kesif_ozeti_yaz():
         print(f"⚠️  Kesif ozeti yazilamadi: {e}", flush=True)
 
 
-def _parse_stats(stats_list):
-    """Sadece dogrulanmis alanlari (top hakimiyeti) cikarir, gerisini kesfe birakir."""
+def _parse_stats(stats_list, match_id_api=None, minute=None, ornek_biriktir=None):
+    """Sadece dogrulanmis alanlari (top hakimiyeti) cikarir, gerisini kesfe birakir.
+
+    ornek_biriktir verilirse (bir liste), her stat tipi icin mac+15dk dilimi
+    basina bir (tip, mac_id, dilim, home, away) ornegi ekler - bkz.
+    _gorulen_ornek_anahtari aciklamasi.
+    """
     h_pos = a_pos = 0
     for item in stats_list or []:
         t = item.get("type")
@@ -109,6 +122,12 @@ def _parse_stats(stats_list):
         _stat_tipi_kaydet(t, h, a)
         if t == STAT_TYPE_POSSESSION:
             h_pos, a_pos = h, a
+        if ornek_biriktir is not None and match_id_api and minute is not None:
+            dilim = (minute // 15) * 15
+            anahtar = (t, match_id_api, dilim)
+            if anahtar not in _gorulen_ornek_anahtari:
+                _gorulen_ornek_anahtari.add(anahtar)
+                ornek_biriktir.append((t, match_id_api, dilim, h, a))
     return h_pos, a_pos
 
 
@@ -173,6 +192,13 @@ def _ensure_match_tracking_schema():
         conn.execute("ALTER TABLE matches ADD COLUMN last_progress_at TIMESTAMP")
     except Exception:
         pass
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stat_type_samples (
+            type_code INTEGER, match_id TEXT, minute_bucket INTEGER,
+            home_val REAL, away_val REAL, captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(type_code, match_id, minute_bucket)
+        )
+    """)
     conn.execute("""
         UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
         WHERE last_seen_at IS NULL
@@ -295,6 +321,7 @@ def process_matches(results):
     to_process = []
     stat_feed_total = len(results)
     stat_skipped_unknown = 0
+    stat_ornekleri = []
 
     for m in results:
         match_id_api = m.get("id")
@@ -355,7 +382,7 @@ def process_matches(results):
 
         score_h = home_arr[0] if len(home_arr) > 0 else 0
         score_a = away_arr[0] if len(away_arr) > 0 else 0
-        h_pos, a_pos = _parse_stats(m.get("stats") or [])
+        h_pos, a_pos = _parse_stats(m.get("stats") or [], match_id_api, minute, stat_ornekleri)
 
         to_process.append({
             "event_id": event_id, "home_name": home_name, "away_name": away_name,
@@ -411,6 +438,13 @@ def process_matches(results):
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (match_id_db, m["minute"], 'first_half' if m["minute"] <= 45 else 'second_half',
               m["score_h"], m["score_a"], m["h_pos"], m["a_pos"]))
+
+    if stat_ornekleri:
+        cursor.executemany('''
+            INSERT OR IGNORE INTO stat_type_samples
+            (type_code, match_id, minute_bucket, home_val, away_val)
+            VALUES (?, ?, ?, ?, ?)
+        ''', stat_ornekleri)
 
     cursor.execute("SELECT COUNT(*) FROM matches "
                    "WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')")

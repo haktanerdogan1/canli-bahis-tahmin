@@ -161,6 +161,78 @@ def backfill_premature_fh_losses(verbose=True):
     return affected
 
 
+FALSE_VOID_STALE_PROGRESS_MIGRATION = "2026_08_05_false_void_stale_progress_to_real_outcome"
+
+
+def backfill_false_void_stale_progress(verbose=True):
+    """_close_stale_progress()'in dakika donmasini (status_id dogrulanamadigi
+    icin) mac gercekten durmus sanmasi yuzunden yanlislikla VOID yazilmis
+    kayitlari, macin GERCEK nihai verisinden hesaplanan dogru sonuca (WON ya
+    da LOST) cevirir.
+
+    Bu, outcome degismezligi kuralinin genel bir istisnasi degildir - GHOST_LOSS
+    ve PREMATURE_FH_LOSS migration'lariyla AYNI dar desen: sadece SOMUT KANITI
+    olan kayitlar (outcome='VOID' + matches.status GERCEKTEN 'FINISHED' olmus -
+    yani mac hicbir zaman gercekten terk edilmemis, thesports_bot/v4_api_bot
+    onu daha sonra dogru sekilde bitmis olarak guncellemis) duzeltiliyor, ve
+    KOR KOR 'LOST' yazilmiyor - compute_outcome() ile ayni mantik, ayni kod
+    yolu kullanilarak GERCEK sonuc (WON ya da LOST) hesaplanip yaziliyor.
+    Migration anahtari sayesinde ayni veritabaninda ikinci kez calismaz.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS data_migrations (
+            migration_key TEXT PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            affected_rows INTEGER NOT NULL DEFAULT 0
+        )
+    ''')
+    if cur.execute("SELECT 1 FROM data_migrations WHERE migration_key=?",
+                   (FALSE_VOID_STALE_PROGRESS_MIGRATION,)).fetchone():
+        conn.close()
+        return 0
+
+    cur.execute('''
+        SELECT p.id, p.signal_minute, p.initial_goals, m.home_score, m.away_score,
+               m.status, m.minute, fh.fh_end_home, fh.fh_end_away
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        LEFT JOIN (
+            SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away
+            FROM live_snapshots ls1
+            WHERE ls1.id = (
+                SELECT ls2.id FROM live_snapshots ls2
+                WHERE ls2.match_id = ls1.match_id AND ls2.minute <= 45
+                ORDER BY ls2.minute DESC, ls2.id DESC
+                LIMIT 1
+            )
+        ) fh ON fh.match_id = m.id
+        WHERE p.decision = 'signal' AND p.outcome = 'VOID' AND m.status = 'FINISHED'
+    ''')
+    rows = cur.fetchall()
+
+    affected = 0
+    for (pid, sig_min, init_g, hs, aws, status, minute, fh_h, fh_a) in rows:
+        outcome = compute_outcome(sig_min, init_g, hs, aws, status, minute, fh_h, fh_a)
+        if outcome in ("WON", "LOST"):
+            cur.execute(
+                "UPDATE consensus_predictions SET outcome=?, settled_at=CURRENT_TIMESTAMP "
+                "WHERE id=? AND outcome='VOID'",
+                (outcome, pid),
+            )
+            affected += cur.rowcount
+
+    cur.execute("INSERT INTO data_migrations(migration_key, affected_rows) VALUES(?,?)",
+                (FALSE_VOID_STALE_PROGRESS_MIGRATION, affected))
+    conn.commit()
+    conn.close()
+    if verbose:
+        print(f"[settlement] yanlis VOID duzeltmesi: {affected} kayit gercek "
+              "sonucuna (WON/LOST) cevrildi", flush=True)
+    return affected
+
+
 def finalize_fully_settled_matches(verbose=True):
     """Butun sinyalleri sonuclanmis (hic PENDING kalmayan) maclarin durumunu
     FINISHED yapar - v4_api_bot'un o an ne rapor ettiginden BAGIMSIZ.

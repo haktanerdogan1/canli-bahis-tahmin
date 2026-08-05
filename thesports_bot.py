@@ -210,6 +210,15 @@ def _ensure_match_tracking_schema():
         conn.execute("ALTER TABLE matches ADD COLUMN last_progress_at TIMESTAMP")
     except Exception:
         pass
+    try:
+        # TheSports icin dakika, status_id dogrulanamadiginda (bkz. _compute_minute)
+        # bilerek 0'da donuyor - bu yuzden "ilk yari bitti mi" sorusu bazen HICBIR
+        # ZAMAN status'ten cevaplanamiyor (HT icin dogrulanmis bir status_id yok).
+        # kickoff_ts, settlement.py'nin saat-bazli bir yedek karar mekanizmasi
+        # kurabilmesi icin kalici olarak saklaniyor (bkz. settlement.py).
+        conn.execute("ALTER TABLE matches ADD COLUMN kickoff_ts INTEGER")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stat_type_samples (
             type_code INTEGER, match_id TEXT, minute_bucket INTEGER,
@@ -410,7 +419,7 @@ def process_matches(results):
             "score_h": score_h, "score_a": score_a, "minute": minute,
             "minute_parsed_ok": minute_parsed_ok, "h_pos": h_pos, "a_pos": a_pos,
             "h_atak": h_atak, "a_atak": a_atak, "h_teh": h_teh, "a_teh": a_teh,
-            "h_kirmizi": h_kirmizi, "a_kirmizi": a_kirmizi,
+            "h_kirmizi": h_kirmizi, "a_kirmizi": a_kirmizi, "kickoff_ts": kickoff_ts,
         })
 
     stat_processed = len(to_process)
@@ -423,8 +432,8 @@ def process_matches(results):
     for m in to_process:
         cursor.execute('''
             INSERT INTO matches
-            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at, kickoff_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
             ON CONFLICT(source_match_id) DO UPDATE SET
                 minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
                 status=excluded.status,
@@ -436,6 +445,7 @@ def process_matches(results):
                 home_team_logo=excluded.home_team_logo,
                 away_team_logo=excluded.away_team_logo,
                 last_seen_at=CURRENT_TIMESTAMP,
+                kickoff_ts=COALESCE(matches.kickoff_ts, excluded.kickoff_ts),
                 last_progress_at=CASE
                     WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
                          OR excluded.home_score IS NOT matches.home_score
@@ -446,6 +456,7 @@ def process_matches(results):
         ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
               m["league_name"], "INT", m["league_logo"],
               m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"], "",
+              m["kickoff_ts"],
               m["minute_parsed_ok"], m["minute_parsed_ok"]))
 
         cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))

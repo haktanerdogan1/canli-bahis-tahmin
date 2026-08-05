@@ -18,8 +18,19 @@ SONUCLANDIRMA KURALI (mevcut api.py mantiginin birebir tasinmis hali):
   * Hedef: sinyal anindaki toplam golun uzerine EN AZ 1 gol daha gelmesi.
 """
 import sqlite3
+import time
 
 from db_config import DB_PATH, connect
+
+# Ilk yari icin dogrulanmis bir HT status_id yok (bkz. thesports_bot.py basi
+# aciklama - sadece LIVE=2 ve FINISHED=8 kanitli). Bu yuzden status'e dayanarak
+# "ilk yari bitti mi" sorusu bazen HICBIR ZAMAN cevaplanamiyor, sinyal mac
+# TAMAMEN bitene kadar PENDING kalirdi. SAFE_FIRST_HALF_OVER_SECONDS, uzatmalar
+# dahil ilk yarinin ve devre arasinin baslangicinin rahatlikla sigdigi, ama
+# 2. yarinin (tipik olarak kickoff+60-65dk) henuz baslamadigi guvenli bir
+# zaman penceresi - bu noktadan sonra fh_end icin "en son gorulen skor"a
+# guvenmek, sinyali saatlerce gereksiz PENDING birakmaktan daha dogru.
+SAFE_FIRST_HALF_OVER_SECONDS = 50 * 60
 
 GHOST_LOSS_MIGRATION = "2026_07_31_early_finished_losses_to_void"
 # Bir sinyal hicbir zaman sonsuza kadar PENDING kalamaz - KOK NEDENDEN BAGIMSIZ
@@ -353,10 +364,14 @@ def void_stuck_signals(verbose=True):
 
 
 def compute_outcome(signal_minute, initial_goals, current_home, current_away,
-                    match_status, current_minute, fh_end_home, fh_end_away):
+                    match_status, current_minute, fh_end_home, fh_end_away,
+                    kickoff_ts=None, now=None):
     """Tek bir sinyalin sonucunu hesaplar: 'WON', 'LOST' veya None (henuz belirsiz).
 
-    Saf fonksiyon - veritabanina dokunmaz, bu sayede test edilebilir.
+    Saf fonksiyon - veritabanina dokunmaz, bu sayede test edilebilir. kickoff_ts/now
+    sadece HT status'u hicbir zaman dogrulanamayan kaynaklar (bkz.
+    SAFE_FIRST_HALF_OVER_SECONDS) icin saat-bazli yedek karara girdi olur; caller
+    fh_end_home/away'i de bu duruma uygun (saat-bazli secilmis) gecirmelidir.
     """
     # Feed takibi mac bitmeden kaybolduysa sonucu bilmiyoruz. Bu bir kayip degil,
     # gozlem disidir; referans snapshot eksik olsa bile VOID karari verilebilir.
@@ -381,6 +396,11 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
         # acik status='HT'/'FINISHED' sinyaline guveniliyor; boyle bir sinyal
         # hic gelmezse zaten void_stuck_signals() 30dk sonra devreye girer.
         first_half_over = match_status in ("HT", "FINISHED")
+
+        if not first_half_over and kickoff_ts:
+            _now = now if now is not None else time.time()
+            if (_now - kickoff_ts) >= SAFE_FIRST_HALF_OVER_SECONDS:
+                first_half_over = True
 
         if not first_half_over:
             # Ilk yari HALA DEVAM EDIYOR: bu asamada current_home/current_away
@@ -409,6 +429,22 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
     return None  # mac devam ediyor, henuz belli degil
 
 
+def _time_based_fh_end(cur, match_id_db, kickoff_ts):
+    """Dakika etiketine guvenilmedigi durumlar icin (bkz. SAFE_FIRST_HALF_OVER_SECONDS)
+    kickoff+50dk civarinda gercekte YAKALANMIS son snapshot'un skorunu doner -
+    hicbir snapshot o zamandan once yoksa (None, None)."""
+    hedef = time.strftime(
+        "%Y-%m-%d %H:%M:%S", time.gmtime(kickoff_ts + SAFE_FIRST_HALF_OVER_SECONDS)
+    )
+    cur.execute('''
+        SELECT home_score, away_score FROM live_snapshots
+        WHERE match_id = ? AND captured_at <= ?
+        ORDER BY captured_at DESC LIMIT 1
+    ''', (match_id_db, hedef))
+    row = cur.fetchone()
+    return (row[0], row[1]) if row else (None, None)
+
+
 def settle_pending(verbose=True):
     """Sonuclanmamis tum sinyalleri kontrol eder, kesinlesenleri KALICI yazar.
 
@@ -422,7 +458,8 @@ def settle_pending(verbose=True):
     cur.execute('''
         SELECT p.id, p.signal_minute, s.home_score, s.away_score,
                m.home_score, m.away_score, m.status, m.minute,
-               fh.fh_end_home, fh.fh_end_away, p.initial_goals
+               fh.fh_end_home, fh.fh_end_away, fh.fh_end_minute, p.initial_goals,
+               m.id, m.kickoff_ts
         FROM consensus_predictions p
         LEFT JOIN matches m ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON s.id = p.snapshot_id
@@ -432,7 +469,8 @@ def settle_pending(verbose=True):
             -- (en yuksek id) tercih edilir - aksi halde match_id basina
             -- birden fazla satir donup disaridaki sorguda satir cogalmasina
             -- (fan-out) yol acardi.
-            SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away
+            SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away,
+                   ls1.minute AS fh_end_minute
             FROM live_snapshots ls1
             WHERE ls1.id = (
                 SELECT ls2.id FROM live_snapshots ls2
@@ -446,8 +484,9 @@ def settle_pending(verbose=True):
     rows = cur.fetchall()
 
     settled = won = lost = void = 0
+    now_ts = time.time()
     for (pid, sig_min, snap_h, snap_a, cur_h, cur_a, status, minute,
-         fh_h, fh_a, stored_initial) in rows:
+         fh_h, fh_a, fh_minute, stored_initial, match_id_db, kickoff_ts) in rows:
 
         # Sinyal anindaki toplam gol: once kalici sutun, yoksa snapshot'tan
         if stored_initial is not None:
@@ -457,7 +496,17 @@ def settle_pending(verbose=True):
         else:
             continue  # referans skor yok, sonuclandiramayiz
 
-        outcome = compute_outcome(sig_min, initial, cur_h, cur_a, status, minute, fh_h, fh_a)
+        # fh_end dakika-etiketi guvenilmezse (0/None - HT icin status_id hic
+        # dogrulanamiyor, bkz. SAFE_FIRST_HALF_OVER_SECONDS aciklamasi) VE
+        # kickoff biliniyorsa, saat-bazli yedek referansi dene. Dakika-bazli
+        # veri GERCEKTEN varsa (fh_minute > 0) buna hic dokunulmuyor.
+        if (not fh_minute) and kickoff_ts and sig_min is not None and sig_min <= 45:
+            t_h, t_a = _time_based_fh_end(cur, match_id_db, kickoff_ts)
+            if t_h is not None:
+                fh_h, fh_a = t_h, t_a
+
+        outcome = compute_outcome(sig_min, initial, cur_h, cur_a, status, minute, fh_h, fh_a,
+                                  kickoff_ts=kickoff_ts, now=now_ts)
         if outcome is None:
             continue
 

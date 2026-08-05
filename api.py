@@ -133,7 +133,7 @@ def thesports_test(request: Request, path: str = "/v1/football/match/detail_live
             params=params,
             timeout=15,
         )
-        return JSONResponse({"status_code": r.status_code, "body": r.text[:6000]})
+        return JSONResponse({"status_code": r.status_code, "body": r.text[:60000]})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

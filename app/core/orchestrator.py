@@ -39,6 +39,7 @@ def _ensure_schema():
     settlement.backfill_ghost_losses()
     settlement.backfill_premature_fh_losses()
     settlement.backfill_false_void_stale_progress()
+    settlement.backfill_void_reconsidered()
 
 def run_orchestrator():
     print("🧠 Başlatılıyor: Sinyal Avcısı (Konsensüs Orkestratörü)", flush=True)

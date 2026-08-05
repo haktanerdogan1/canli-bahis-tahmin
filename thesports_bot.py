@@ -260,11 +260,23 @@ def _close_stale_missing(cursor, active_ids):
 
 
 def _close_stale_progress(cursor):
+    # NOT (onceki hata): sadece last_progress_at'e (dakika/skor donmus mu)
+    # bakiliyordu. TheSports'ta dakika status_id dogrulanamadiginda BILEREK
+    # dondugu icin (bkz. dosya basi aciklama), skoru degismeyen ama GERCEKTEN
+    # oynanmaya devam eden sikici/durgun bir 15 dakika bile maci yanlislikla
+    # ABANDONED yapiyordu - halbuki mac last_seen_at'in gosterdigi gibi hala
+    # TheSports'un canli feed'inde gorunuyordu (bkz. Cesena-Vis Pesaro vakasi).
+    # last_seen_at'in de (_close_stale_missing ile ayni esik) taze OLMAMASI
+    # sart kosularak, bu fonksiyon artik SADECE feed'in gercekten donup
+    # kaldigi (last_seen_at de eskimis) durumlarda calisiyor - boyle bir
+    # durumda zaten _close_stale_missing de tetiklenirdi, bu yuzden bu
+    # fonksiyon artik cogunlukla yedek/fazladan bir guvenlik agi.
     cursor.execute(f'''
         SELECT source_match_id FROM matches
         WHERE status IN ('LIVE','HT')
           AND last_progress_at IS NOT NULL
           AND last_progress_at <= datetime('now', '-{STALE_PROGRESS_MINUTES} minutes')
+          AND (last_seen_at IS NULL OR last_seen_at <= datetime('now', '-{MISSING_GRACE_MINUTES} minutes'))
     ''')
     stale_ids = [row[0] for row in cursor.fetchall()]
     if stale_ids:

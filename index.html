@@ -1069,7 +1069,7 @@
                 <img src="/apple-touch-icon.png" alt="Matchrix" style="width: 28px; height: 28px; border-radius: 8px;">
                 <span style="color: #fff;">MATCHRIX</span>
             </div>
-            <button class="btn-notif" id="notifToggle" onclick="toggleNotifications()" title="Kazanma bildirimlerini aç">
+            <button class="btn-notif" id="notifToggle" onclick="toggleNotifications()" title="Tahmin ve kazanma bildirimlerini aç">
                 <i class="fa-solid fa-bell-slash"></i>
             </button>
         </div>
@@ -1198,6 +1198,7 @@
             && Notification.permission === 'granted'
             && localStorage.getItem('jcode_notif_enabled') === 'true';
         let notifiedWinKeys = new Set(JSON.parse(localStorage.getItem('jcode_notified_wins') || '[]'));
+        let notifiedNewKeys = new Set(JSON.parse(localStorage.getItem('jcode_notified_new_signals') || '[]'));
 
         function updateNotifButton() {
             const btn = document.getElementById('notifToggle');
@@ -1207,10 +1208,10 @@
             if (!('Notification' in window)) { btn.style.display = 'none'; return; }
             if (notificationsEnabled) {
                 btn.innerHTML = '<i class="fa-solid fa-bell" style="color:var(--accent-brand)"></i>';
-                btn.title = 'Kazanma bildirimleri açık';
+                btn.title = 'Tahmin ve kazanma bildirimleri açık';
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-bell-slash"></i>';
-                btn.title = 'Kazanma bildirimlerini aç';
+                btn.title = 'Tahmin ve kazanma bildirimlerini aç';
             }
         }
 
@@ -1263,11 +1264,43 @@
             n.onclick = () => { window.focus(); n.close(); };
         }
 
-        // Hangi sekmede olursa olsun, her 15 saniyede bir tum acik/kazanan
-        // sinyalleri kontrol eder; yeni bir WON gorursen bildirim+ses tetikler.
-        // Ilk hic calistigi an (localStorage bombosken) mevcut tum kazananlari
-        // SESSIZCE taban olarak kaydeder - siteye ilk giriste gecmis 10-20
-        // kazanc birden bildirim olarak patlamasin diye.
+        // Yeni tahmin (sinyal) sesi - kazanma sesinden (iki yukselen ton) ayirt
+        // edilsin diye tek, notr bir "ping" tonu.
+        function playNewSignalSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 520;
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.32);
+            } catch (e) { /* Web Audio desteklenmiyorsa sessizce gec */ }
+        }
+
+        function notifyNewSignal(m) {
+            playNewSignalSound();
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
+            const olasilik = (m.probability != null) ? ` · %${Math.round(100 * m.probability)}` : '';
+            const body = `${m.home_team} - ${m.away_team}` + (m.market ? ` · ${m.market}` : '') + olasilik;
+            const n = new Notification('🎯 Yeni Tahmin', {
+                body,
+                tag: `new-${m.match_id}-${m.signal_period}`,
+            });
+            n.onclick = () => { window.focus(); n.close(); };
+        }
+
+        // Hangi sekmede olursa olsun, her 15 saniyede bir tum sinyalleri kontrol
+        // eder; YENI acilan bir sinyal gorursen (ilk kez gorulen match_id:period)
+        // ve/veya bir sinyal WON'a donusursen bildirim+ses tetikler. Ilk hic
+        // calistigi an (localStorage bombosken) mevcut tum sinyalleri/kazananlari
+        // SESSIZCE taban olarak kaydeder - siteye ilk giriste gecmis onlarca
+        // kayit birden bildirim olarak patlamasin diye.
         async function checkForNewWins() {
             if (!('Notification' in window)) return;
             try {
@@ -1275,19 +1308,30 @@
                 const result = await res.json();
                 if (!result.success) return;
                 const isBaselineRun = !localStorage.getItem('jcode_notif_baseline_done');
-                let changed = false;
+                let winsChanged = false;
+                let newChanged = false;
                 (result.data || []).forEach(m => {
-                    if (m.outcome !== 'WON') return;
                     const key = `${m.match_id}:${m.signal_period || 'H?'}`;
-                    if (notifiedWinKeys.has(key)) return;
-                    notifiedWinKeys.add(key);
-                    changed = true;
-                    if (!isBaselineRun && notificationsEnabled) {
-                        notifyWin(m);
+
+                    if (!notifiedNewKeys.has(key)) {
+                        notifiedNewKeys.add(key);
+                        newChanged = true;
+                        if (!isBaselineRun && notificationsEnabled) {
+                            notifyNewSignal(m);
+                        }
+                    }
+
+                    if (m.outcome === 'WON' && !notifiedWinKeys.has(key)) {
+                        notifiedWinKeys.add(key);
+                        winsChanged = true;
+                        if (!isBaselineRun && notificationsEnabled) {
+                            notifyWin(m);
+                        }
                     }
                 });
                 if (isBaselineRun) localStorage.setItem('jcode_notif_baseline_done', '1');
-                if (changed) localStorage.setItem('jcode_notified_wins', JSON.stringify(Array.from(notifiedWinKeys)));
+                if (winsChanged) localStorage.setItem('jcode_notified_wins', JSON.stringify(Array.from(notifiedWinKeys)));
+                if (newChanged) localStorage.setItem('jcode_notified_new_signals', JSON.stringify(Array.from(notifiedNewKeys)));
             } catch (e) { /* sessizce gec - bildirim ikincil bir ozellik */ }
         }
 
@@ -1529,7 +1573,7 @@
                             <label class="settings-row" for="hesabimNotifToggle">
                                 <i class="fa-solid fa-bell" style="color:var(--accent-brand);"></i>
                                 <span class="settings-row-text">
-                                    Kazanma bildirimleri
+                                    Tahmin ve kazanma bildirimleri
                                     <small>Yeni tahmin ve sonuç anında haber ver</small>
                                 </span>
                                 <span class="settings-toggle">

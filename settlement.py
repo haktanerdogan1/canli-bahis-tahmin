@@ -244,6 +244,109 @@ def backfill_false_void_stale_progress(verbose=True):
     return affected
 
 
+VOID_RECONSIDER_MIGRATION = "2026_08_05_void_reconsidered_after_abandoned_shortcircuit_fix"
+# _close_stale_missing() ile ayni esik (thesports_bot.py'den bagimsiz kalmak
+# icin burada ayrica tanimli - import etmek THESPORTS_USER/SECRET zorunlulugunu
+# settlement.py'ye bulastirirdi).
+RECENTLY_SEEN_MINUTES = 10
+
+
+def backfill_void_reconsidered(verbose=True):
+    """Iki AYRI kanitlanmis hatanin etkiledigi VOID kayitlarini duzeltir:
+
+      1. compute_outcome() ABANDONED kontrolunu koşulsuz en basta yapiyordu -
+         hedef gol SIGNAL ANINDAN SONRA zaten gerceklesmis (WON olmasi
+         gereken) sinyaller bile VOID yaziliyordu (bkz. Cultural
+         Leonesa-Real Aviles, Ponferradina-Unionistas). Bu fonksiyon DUZELTILMIS
+         compute_outcome() ile GERCEK mac verisinden yeniden hesaplar; WON/LOST
+         cikarsa yazar.
+      2. _close_stale_progress() dakika/skor donuk kaldiginda maci ABANDONED
+         yapiyordu, mac GERCEKTEN hala TheSports feed'inde gorunuyor olsa bile
+         (bkz. Cesena-Vis Pesaro). Recompute hala belirsiz (None) donuyorsa VE
+         mac hala TAZE gorulmusse (last_seen_at RECENTLY_SEEN_MINUTES icinde),
+         bu VOID'in de YANLIS oldugu kanitlanmis demektir - ama gercek sonuc
+         henuz belli olmadigi icin WON/LOST yazilamaz; outcome NULL'a
+         (PENDING) geri aciliyor ki normal settle_pending() akisi macin
+         gercek sonucuna ulastiginda onu doğru sekilde sonuclandirsin.
+
+    Migration anahtari sayesinde ayni veritabaninda ikinci kez calismaz.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS data_migrations (
+            migration_key TEXT PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            affected_rows INTEGER NOT NULL DEFAULT 0
+        )
+    ''')
+    if cur.execute("SELECT 1 FROM data_migrations WHERE migration_key=?",
+                   (VOID_RECONSIDER_MIGRATION,)).fetchone():
+        conn.close()
+        return 0, 0
+
+    cur.execute('''
+        SELECT p.id, p.signal_minute, p.initial_goals, m.id, m.home_score, m.away_score,
+               m.status, m.minute, m.kickoff_ts,
+               (julianday('now') - julianday(m.last_seen_at)) * 1440 AS dk_once_gorulmus,
+               fh.fh_end_home, fh.fh_end_away, fh.fh_end_minute
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        LEFT JOIN (
+            SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away,
+                   ls1.minute AS fh_end_minute
+            FROM live_snapshots ls1
+            WHERE ls1.id = (
+                SELECT ls2.id FROM live_snapshots ls2
+                WHERE ls2.match_id = ls1.match_id AND ls2.minute <= 45
+                ORDER BY ls2.minute DESC, ls2.id DESC
+                LIMIT 1
+            )
+        ) fh ON fh.match_id = m.id
+        WHERE p.decision = 'signal' AND p.outcome = 'VOID'
+    ''')
+    rows = cur.fetchall()
+
+    fixed = reopened = 0
+    now_ts = time.time()
+    for (pid, sig_min, init_g, match_id_db, hs, aws, status, minute, kickoff_ts,
+         dk_once_gorulmus, fh_h, fh_a, fh_minute) in rows:
+
+        if (not fh_minute) and kickoff_ts and sig_min is not None and sig_min <= 45:
+            t_h, t_a = _time_based_fh_end(cur, match_id_db, kickoff_ts)
+            if t_h is not None:
+                fh_h, fh_a = t_h, t_a
+
+        outcome = compute_outcome(sig_min, init_g, hs, aws, status, minute, fh_h, fh_a,
+                                  kickoff_ts=kickoff_ts, now=now_ts)
+
+        if outcome in ("WON", "LOST"):
+            cur.execute(
+                "UPDATE consensus_predictions SET outcome=?, settled_at=CURRENT_TIMESTAMP "
+                "WHERE id=? AND outcome='VOID'",
+                (outcome, pid),
+            )
+            fixed += cur.rowcount
+        elif (outcome in (None, "VOID") and status == "ABANDONED"
+              and dk_once_gorulmus is not None and dk_once_gorulmus <= RECENTLY_SEEN_MINUTES):
+            cur.execute(
+                "UPDATE consensus_predictions SET outcome=NULL, settled_at=NULL "
+                "WHERE id=? AND outcome='VOID'",
+                (pid,),
+            )
+            reopened += cur.rowcount
+
+    cur.execute("INSERT INTO data_migrations(migration_key, affected_rows) VALUES(?,?)",
+                (VOID_RECONSIDER_MIGRATION, fixed + reopened))
+    conn.commit()
+    conn.close()
+    if verbose:
+        print(f"[settlement] VOID yeniden degerlendirme: {fixed} kayit gercek "
+              f"sonuca (WON/LOST) cevrildi, {reopened} kayit hala canli oldugu "
+              "kanitlandigi icin PENDING'e geri acildi", flush=True)
+    return fixed, reopened
+
+
 def finalize_fully_settled_matches(verbose=True):
     """Butun sinyalleri sonuclanmis (hic PENDING kalmayan) maclarin durumunu
     FINISHED yapar - v4_api_bot'un o an ne rapor ettiginden BAGIMSIZ.
@@ -373,10 +476,14 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
     SAFE_FIRST_HALF_OVER_SECONDS) icin saat-bazli yedek karara girdi olur; caller
     fh_end_home/away'i de bu duruma uygun (saat-bazli secilmis) gecirmelidir.
     """
-    # Feed takibi mac bitmeden kaybolduysa sonucu bilmiyoruz. Bu bir kayip degil,
-    # gozlem disidir; referans snapshot eksik olsa bile VOID karari verilebilir.
-    if match_status == "ABANDONED":
-        return "VOID"
+    # NOT (onceki hata): ABANDONED kontrolu BURADA, en basta ve kosulsuz
+    # yapiliyordu - bu, hedef gol SIGNAL ANINDAN SONRA zaten gerceklesmis
+    # (dolayisiyla WON olmasi gereken) bir sinyali bile VOID'e ceviriyordu
+    # (bkz. Cultural Leonesa-Real Aviles: mac 1-1 bitti, hedef "1.5 ust"
+    # zaten gecilmisti, ama takip ABANDONED'a dustugu icin VOID yazildi).
+    # ABANDONED artik sadece asagida, WON zaten belirlenemediyse VOID
+    # dondurmek icin kullaniliyor - "kayip takip" gercekten BELIRSIZ
+    # durumlar icindir, zaten kazanilmis bir sinyali silmek icin degil.
 
     if initial_goals is None:
         return None
@@ -410,6 +517,8 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
             total_now = (current_home or 0) + (current_away or 0)
             if total_now > initial_goals:
                 return "WON"
+            if match_status == "ABANDONED":
+                return "VOID"
             return None  # henuz hedef gol gelmedi, ilk yari surdukce belirsiz
 
         # Ilk yari KAPANDI: artik SADECE ilk yari sonu skoruna (fh_end) bakiyoruz,
@@ -426,6 +535,8 @@ def compute_outcome(signal_minute, initial_goals, current_home, current_away,
         return "WON"
     if match_status == "FINISHED":
         return "LOST"
+    if match_status == "ABANDONED":
+        return "VOID"
     return None  # mac devam ediyor, henuz belli degil
 
 

@@ -43,6 +43,14 @@ MAX_PLAUSIBLE_LIVE_AGE_SECONDS = 4 * 60 * 60
 
 # --- Sadece GUCLU KANITLA dogrulanmis kodlar (bkz. dosya basi aciklama) ---
 STAT_TYPE_POSSESSION = 25
+# type 24, stat_type_samples kanitinda (193 gozlem, 69 mac) HER ZAMAN type 23'un
+# alt kumesi (193'te sadece 10 ihlal, ~%5 - canli veri jitter'iyla aciklanabilir):
+# "toplam atak / tehlikeli atak" iliskisiyle birebir ortusuyor.
+STAT_TYPE_ATTACKS = 23
+STAT_TYPE_DANGEROUS_ATTACKS = 24
+# type 3, ayni kanitta neredeyse hep sifir (%89) ve nadiren kucuk pozitif deger
+# (max 5) - kirmizi kartin seyrek-olay imzasiyla ortusuyor.
+STAT_TYPE_RED_CARDS = 3
 STATUS_FINISHED_CONFIRMED = {8}
 STATUS_LIVE_CONFIRMED = {2}  # gozlemlenen tum ornekler ilk yaridaydi (dk<=45)
 
@@ -108,13 +116,17 @@ def _kesif_ozeti_yaz():
 
 
 def _parse_stats(stats_list, match_id_api=None, minute=None, ornek_biriktir=None):
-    """Sadece dogrulanmis alanlari (top hakimiyeti) cikarir, gerisini kesfe birakir.
+    """Sadece dogrulanmis alanlari (top hakimiyeti, atak, tehlikeli atak, kirmizi
+    kart) cikarir, gerisini kesfe birakir.
 
     ornek_biriktir verilirse (bir liste), her stat tipi icin mac+15dk dilimi
     basina bir (tip, mac_id, dilim, home, away) ornegi ekler - bkz.
     _gorulen_ornek_anahtari aciklamasi.
     """
     h_pos = a_pos = 0
+    h_atak = a_atak = 0
+    h_teh = a_teh = 0
+    h_kirmizi = a_kirmizi = 0
     for item in stats_list or []:
         t = item.get("type")
         h = item.get("home", 0)
@@ -122,13 +134,19 @@ def _parse_stats(stats_list, match_id_api=None, minute=None, ornek_biriktir=None
         _stat_tipi_kaydet(t, h, a)
         if t == STAT_TYPE_POSSESSION:
             h_pos, a_pos = h, a
+        elif t == STAT_TYPE_ATTACKS:
+            h_atak, a_atak = h, a
+        elif t == STAT_TYPE_DANGEROUS_ATTACKS:
+            h_teh, a_teh = h, a
+        elif t == STAT_TYPE_RED_CARDS:
+            h_kirmizi, a_kirmizi = h, a
         if ornek_biriktir is not None and match_id_api and minute is not None:
             dilim = (minute // 15) * 15
             anahtar = (t, match_id_api, dilim)
             if anahtar not in _gorulen_ornek_anahtari:
                 _gorulen_ornek_anahtari.add(anahtar)
                 ornek_biriktir.append((t, match_id_api, dilim, h, a))
-    return h_pos, a_pos
+    return h_pos, a_pos, h_atak, a_atak, h_teh, a_teh, h_kirmizi, a_kirmizi
 
 
 def _diary_refresh(force=False):
@@ -382,7 +400,8 @@ def process_matches(results):
 
         score_h = home_arr[0] if len(home_arr) > 0 else 0
         score_a = away_arr[0] if len(away_arr) > 0 else 0
-        h_pos, a_pos = _parse_stats(m.get("stats") or [], match_id_api, minute, stat_ornekleri)
+        h_pos, a_pos, h_atak, a_atak, h_teh, a_teh, h_kirmizi, a_kirmizi = _parse_stats(
+            m.get("stats") or [], match_id_api, minute, stat_ornekleri)
 
         to_process.append({
             "event_id": event_id, "home_name": home_name, "away_name": away_name,
@@ -390,6 +409,8 @@ def process_matches(results):
             "league_logo": league_logo, "home_logo": home_logo, "away_logo": away_logo,
             "score_h": score_h, "score_a": score_a, "minute": minute,
             "minute_parsed_ok": minute_parsed_ok, "h_pos": h_pos, "a_pos": a_pos,
+            "h_atak": h_atak, "a_atak": a_atak, "h_teh": h_teh, "a_teh": a_teh,
+            "h_kirmizi": h_kirmizi, "a_kirmizi": a_kirmizi,
         })
 
     stat_processed = len(to_process)
@@ -434,10 +455,15 @@ def process_matches(results):
         cursor.execute('''
             INSERT INTO live_snapshots (
                 match_id, minute, period, home_score, away_score,
-                home_possession, away_possession
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                home_possession, away_possession,
+                home_attacks, away_attacks,
+                home_dangerous_attacks, away_dangerous_attacks,
+                home_red_cards, away_red_cards
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (match_id_db, m["minute"], 'first_half' if m["minute"] <= 45 else 'second_half',
-              m["score_h"], m["score_a"], m["h_pos"], m["a_pos"]))
+              m["score_h"], m["score_a"], m["h_pos"], m["a_pos"],
+              m["h_atak"], m["a_atak"], m["h_teh"], m["a_teh"],
+              m["h_kirmizi"], m["a_kirmizi"]))
 
     if stat_ornekleri:
         cursor.executemany('''

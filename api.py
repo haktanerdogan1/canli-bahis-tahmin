@@ -103,6 +103,31 @@ def outbound_ip(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/api/admin/thesports-test")
+def thesports_test(request: Request):
+    """GECICI TANI UCU: TheSports API'sine RAILWAY'IN kendi IP'sinden bir
+    deneme istegi atar - IP whitelist onayini ve gercek yanit yapisini
+    dogrulamak icin. Anahtarlar ortam degiskeninden okunuyor, koda yazilmadi."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    user = os.environ.get("THESPORTS_USER")
+    secret = os.environ.get("THESPORTS_SECRET")
+    if not user or not secret:
+        return JSONResponse({"error": "THESPORTS_USER/THESPORTS_SECRET tanimli degil"}, status_code=500)
+    try:
+        r = requests.get(
+            "https://api.thesports.com/v1/football/match/detail_live",
+            params={"user": user, "secret": secret},
+            timeout=15,
+        )
+        return JSONResponse({"status_code": r.status_code, "body": r.text[:4000]})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/admin/db-backup")
 def db_backup(request: Request):
     """Canli SQLite dosyasinin salt-okunur yedegini indirir.

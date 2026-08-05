@@ -104,10 +104,14 @@ def outbound_ip(request: Request):
 
 
 @app.get("/api/admin/thesports-test")
-def thesports_test(request: Request):
+def thesports_test(request: Request, path: str = "/v1/football/match/detail_live", extra: str = ""):
     """GECICI TANI UCU: TheSports API'sine RAILWAY'IN kendi IP'sinden bir
-    deneme istegi atar - IP whitelist onayini ve gercek yanit yapisini
-    dogrulamak icin. Anahtarlar ortam degiskeninden okunuyor, koda yazilmadi."""
+    deneme istegi atar - IP whitelist onayini, endpoint kesfini ve gercek
+    yanit yapisini dogrulamak icin. Anahtarlar ortam degiskeninden okunuyor.
+
+    path: denenecek endpoint yolu (varsayilan detail_live)
+    extra: "k1=v1,k2=v2" formatinda ekstra sorgu parametreleri (opsiyonel)
+    """
     from fastapi.responses import JSONResponse
     expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
     provided = request.headers.get("x-backup-secret")
@@ -117,13 +121,19 @@ def thesports_test(request: Request):
     secret = os.environ.get("THESPORTS_SECRET")
     if not user or not secret:
         return JSONResponse({"error": "THESPORTS_USER/THESPORTS_SECRET tanimli degil"}, status_code=500)
+    params = {"user": user, "secret": secret}
+    if extra:
+        for pair in extra.split(","):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                params[k.strip()] = v.strip()
     try:
         r = requests.get(
-            "https://api.thesports.com/v1/football/match/detail_live",
-            params={"user": user, "secret": secret},
+            f"https://api.thesports.com{path}",
+            params=params,
             timeout=15,
         )
-        return JSONResponse({"status_code": r.status_code, "body": r.text[:4000]})
+        return JSONResponse({"status_code": r.status_code, "body": r.text[:6000]})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

@@ -438,6 +438,8 @@ def process_matches(results):
                 last_seen_at=CURRENT_TIMESTAMP,
                 last_progress_at=CASE
                     WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
+                         OR excluded.home_score IS NOT matches.home_score
+                         OR excluded.away_score IS NOT matches.away_score
                     THEN CURRENT_TIMESTAMP
                     ELSE matches.last_progress_at
                 END

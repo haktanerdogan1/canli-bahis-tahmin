@@ -41,6 +41,23 @@ KNOWN_TEAMS = {
     "paris saint-germain", "psg", "marseille", "monaco", "olympique lyonnais", "lille",
     "nice", "rennes", "lens", "strasbourg", "toulouse", "nantes", "reims", "montpellier",
     "brest", "le havre", "angers", "auxerre", "metz", "paris fc",
+    # Portekiz
+    "benfica", "porto", "sporting cp", "sporting lisbon", "braga", "vitoria guimaraes",
+    # Hollanda
+    "ajax", "psv", "psv eindhoven", "feyenoord", "az alkmaar", "twente",
+    # Belcika
+    "club brugge", "anderlecht", "genk", "union saint-gilloise",
+    # Iskocya
+    "celtic", "rangers",
+    # Suudi Pro Ligi
+    "al hilal", "al nassr", "al ittihad", "al ahli", "al shabab",
+    # MLS
+    "inter miami", "la galaxy", "lafc",
+    # Brezilya
+    "flamengo", "palmeiras", "sao paulo", "corinthians", "santos", "gremio",
+    "internacional", "fluminense", "botafogo", "vasco da gama", "cruzeiro",
+    # Arjantin
+    "boca juniors", "river plate", "racing club", "independiente",
 }
 
 

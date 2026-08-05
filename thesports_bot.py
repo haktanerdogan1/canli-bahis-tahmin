@@ -246,12 +246,24 @@ def fetch_live():
 
 
 def process_matches(results):
-    """Tek bir dongu: TheSports sonuclarini isleyip veritabanina yazar."""
+    """Tek bir dongu: TheSports sonuclarini isleyip veritabanina yazar.
+
+    UC ASAMALI YAPI (RapidAPI oturumundaki v4_api_bot.py'de kanitlanmis
+    desenin AYNISI - bkz. git log "database is locked" duzeltmeleri):
+    ASAMA 1'de KISA bir baglantiyla sadece temizlik+okuma yapilir, hemen
+    kapatilir. ASAMA 2 HICBIR DB baglantisi ACIK DEGILKEN calisir - cunku
+    is_known_match() -> prematch.resolve_team() KENDI AYRI baglantisini acip
+    yazabiliyor (team_aliases onbellegi); bu ASAMA 1/3'un acik bir yazma
+    transaction'iyla CAKISIRSA "database is locked" hatasi verir (ilk
+    versiyonda TAM OLARAK bu oldu - orchestrator'da hata gorundu). ASAMA 3
+    TEK KISA bir transaction'da hepsini yazar, hic disariya cagri yapmaz.
+    """
     _diary_refresh()
 
     now = time.time()
     active_ids = ["ts_" + r["id"] for r in results if r.get("id")]
 
+    # --- ASAMA 1: KISA baglanti, sadece temizlik + okuma ---
     conn = connect()
     cursor = conn.cursor()
 
@@ -276,9 +288,12 @@ def process_matches(results):
         existing_ids = set(row[0] for row in cursor.fetchall())
 
     conn.commit()
+    conn.close()
 
+    # --- ASAMA 2: HANGI maclarin islenecegini belirle. HICBIR DB baglantisi
+    # ACIK DEGIL - is_known_match() kendi baglantisini guvenle acabilir. ---
+    to_process = []
     stat_feed_total = len(results)
-    stat_processed = 0
     stat_skipped_unknown = 0
 
     for m in results:
@@ -299,8 +314,6 @@ def process_matches(results):
 
         # detail_live SADECE mac id'si veriyor - hangi takimlar oynuyor,
         # diary onbellegindeki mac->takim eslesmesinden coziliyor.
-        # NOT: matches.home_team_id/away_team_id kolonlari TARIHSEL olarak
-        # (v4_api_bot.py'de de) TAKIM ADINI tutuyor, gercek bir ID degil.
         info = _match_info_cache.get(match_id_api)
         if not info:
             # Bu mac henuz diary onbelleginde yok (yeni baslamis olabilir) -
@@ -328,8 +341,6 @@ def process_matches(results):
                 stat_skipped_unknown += 1
                 continue
 
-        stat_processed += 1
-
         minute, minute_parsed_ok = _compute_minute(kickoff_ts, status_id, now)
 
         if status_id in STATUS_FINISHED_CONFIRMED:
@@ -344,10 +355,24 @@ def process_matches(results):
 
         score_h = home_arr[0] if len(home_arr) > 0 else 0
         score_a = away_arr[0] if len(away_arr) > 0 else 0
+        h_pos, a_pos = _parse_stats(m.get("stats") or [])
 
-        stats = m.get("stats") or []
-        h_pos, a_pos = _parse_stats(stats)
+        to_process.append({
+            "event_id": event_id, "home_name": home_name, "away_name": away_name,
+            "match_status": match_status, "league_name": league_name,
+            "league_logo": league_logo, "home_logo": home_logo, "away_logo": away_logo,
+            "score_h": score_h, "score_a": score_a, "minute": minute,
+            "minute_parsed_ok": minute_parsed_ok, "h_pos": h_pos, "a_pos": a_pos,
+        })
 
+    stat_processed = len(to_process)
+
+    # --- ASAMA 3: TEK KISA transaction'da hepsini yaz. Disariya HIC cagri
+    # yok (network, prematch vb.) - sadece INSERT/UPDATE. ---
+    conn = connect()
+    cursor = conn.cursor()
+
+    for m in to_process:
         cursor.execute('''
             INSERT INTO matches
             (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
@@ -368,12 +393,12 @@ def process_matches(results):
                     THEN CURRENT_TIMESTAMP
                     ELSE matches.last_progress_at
                 END
-        ''', (event_id, home_name, away_name, match_status,
-              league_name, "INT", league_logo,
-              score_h, score_a, minute, home_logo, away_logo, "",
-              minute_parsed_ok, minute_parsed_ok))
+        ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
+              m["league_name"], "INT", m["league_logo"],
+              m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"], "",
+              m["minute_parsed_ok"], m["minute_parsed_ok"]))
 
-        cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (event_id,))
+        cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))
         row = cursor.fetchone()
         if not row:
             continue
@@ -384,8 +409,8 @@ def process_matches(results):
                 match_id, minute, period, home_score, away_score,
                 home_possession, away_possession
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (match_id_db, minute, 'first_half' if minute <= 45 else 'second_half',
-              score_h, score_a, h_pos, a_pos))
+        ''', (match_id_db, m["minute"], 'first_half' if m["minute"] <= 45 else 'second_half',
+              m["score_h"], m["score_a"], m["h_pos"], m["a_pos"]))
 
     cursor.execute("SELECT COUNT(*) FROM matches "
                    "WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')")

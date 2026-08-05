@@ -85,6 +85,24 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.get("/api/admin/outbound-ip")
+def outbound_ip(request: Request):
+    """GECICI TANI UCU: Railway'in bu servis icin kullandigi cikis IP'sini
+    ogrenmek icin. TheSports gibi IP whitelist isteyen ucuncu taraf API'lere
+    hangi IP'yi eklememiz gerektigini bulmaya yariyor. Disariya sadece
+    salt-okunur bir kontrol istegi atiyor, hicbir veriye dokunmuyor."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    try:
+        r = requests.get("https://api.ipify.org?format=json", timeout=10)
+        return r.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/admin/db-backup")
 def db_backup(request: Request):
     """Canli SQLite dosyasinin salt-okunur yedegini indirir.

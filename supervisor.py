@@ -3,11 +3,12 @@ Tum canli-bahis servislerini tek noktadan ayakta tutan supervisor.
 
 Yonettigi surecler:
   - api            -> uvicorn api:app (FastAPI + index.html)
-  - v4_api_bot      -> RapidAPI (free-api-live-football-data) canli veri cekici (satin alinan API)
+  - thesports_bot   -> TheSports API canli veri cekici (RapidAPI'nin yerine, kota
+                       tukendigi icin degistirildi - bkz. git log)
   - orchestrator    -> 18 AI bot konsensus motoru (app/core/orchestrator.py)
 
-Not: sofascore (live_bot.py) ve sporkolik (sporkolik_bot.py) scraper'lari kullanilmiyor,
-gercek veri kaynagi sadece RapidAPI. Bu iki dosya projede duruyor ama supervisor tarafindan calistirilmiyor.
+Not: sofascore (live_bot.py), sporkolik (sporkolik_bot.py) ve eski v4_api_bot.py
+(RapidAPI) artik calistirilmiyor - kod referans/rollback icin projede duruyor.
 
 Her surec coker/kapanirsa otomatik olarak yeniden baslatilir (basit backoff ile).
 Loglar logs/<isim>.log dosyalarina yazilir.
@@ -37,13 +38,15 @@ ENV["PYTHONUNBUFFERED"] = "1"
 PORT = os.environ.get("PORT", "8000")
 
 # Not: sofascore (live_bot.py) ve sporkolik (sporkolik_bot.py) botlari devre disi.
-# Gercek canli veri kaynagi sadece RapidAPI (v4_api_bot.py) - kullanicinin satin aldigi API.
+# Gercek canli veri kaynagi artik TheSports (thesports_bot.py) - RapidAPI'nin
+# kotasi tukendigi icin degistirildi (bkz. git log). Eski v4_api_bot.py (RapidAPI)
+# koddan silinmedi, gerekirse buradaki satiri geri alip hizlica rollback yapilabilir.
 SERVICES = {
     "api": {
         "cmd": [PYTHON, "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", PORT],
     },
-    "v4_api_bot": {
-        "cmd": [PYTHON, "-u", "v4_api_bot.py"],
+    "thesports_bot": {
+        "cmd": [PYTHON, "-u", "thesports_bot.py"],
     },
     "orchestrator": {
         "cmd": [PYTHON, "-u", "-m", "app.core.orchestrator"],

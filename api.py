@@ -740,6 +740,36 @@ def get_metrics(request: Request):
         for lvl, n, h in cur.fetchall()
     ]
 
+    # --- Gunluk ozet: her gun kac sinyal paylasildi, kaci kazandi/kaybetti ---
+    # Yeni bir tabloya gerek yok - consensus_predictions.created_at zaten
+    # kalici (outcome degismezligi kurali geregi) ve gun bazinda gruplanabilir.
+    # Turkiye saatiyle (+3) gunluk sinir, /api/ozet'teki "bugun" mantigiyla ayni.
+    cur.execute("""
+        SELECT date(created_at, '+3 hours') AS gun,
+               COUNT(*) AS paylasilan,
+               SUM(CASE WHEN outcome='WON' THEN 1 ELSE 0 END) AS kazanan,
+               SUM(CASE WHEN outcome='LOST' THEN 1 ELSE 0 END) AS kaybeden,
+               SUM(CASE WHEN outcome='VOID' THEN 1 ELSE 0 END) AS gecersiz,
+               SUM(CASE WHEN outcome IS NULL THEN 1 ELSE 0 END) AS bekleyen
+        FROM consensus_predictions
+        WHERE decision='signal'
+        GROUP BY gun
+        ORDER BY gun DESC
+        LIMIT 60
+    """)
+    gunluk = []
+    for gun, paylasilan, kazanan, kaybeden, gecersiz, bekleyen in cur.fetchall():
+        sonuclanan = kazanan + kaybeden
+        gunluk.append({
+            "tarih": gun,
+            "paylasilan": paylasilan,
+            "kazanan": kazanan,
+            "kaybeden": kaybeden,
+            "gecersiz": gecersiz,
+            "bekleyen": bekleyen,
+            "isabet_orani": round(kazanan / sonuclanan, 3) if sonuclanan else None,
+        })
+
     conn.close()
 
     # --- PIYASA KARSILASTIRMASI ---
@@ -799,6 +829,7 @@ def get_metrics(request: Request):
         "kalibrasyon": calibration,
         "piyasa_karsilastirmasi": piyasa_ozet,
         "seviyeye_gore": by_level,
+        "gunluk_ozet": gunluk,
         "uyari": note,
     }
 

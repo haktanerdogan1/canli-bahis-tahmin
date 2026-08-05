@@ -1523,8 +1523,39 @@
 
                 const uyariHtml = d.uyari ? `<div class="ozet-warning" style="margin-bottom:1rem;">${d.uyari}</div>` : '';
 
+                const bugunStr = new Date().toISOString().slice(0, 10);
+                let gunlukRows = '';
+                (d.gunluk_ozet || []).forEach(g => {
+                    const oran = (g.isabet_orani !== null && g.isabet_orani !== undefined) ? `%${Math.round(g.isabet_orani * 100)}` : '—';
+                    const oranRenk = g.isabet_orani == null ? 'var(--text-muted)'
+                        : (g.isabet_orani >= 0.6 ? 'var(--accent-success)' : (g.isabet_orani >= 0.4 ? 'var(--text-secondary)' : 'var(--accent-danger)'));
+                    gunlukRows += `<tr>
+                        <td>${g.tarih}${g.tarih === bugunStr ? ' <span style="color:var(--accent-brand);">(bugün)</span>' : ''}</td>
+                        <td>${g.paylasilan}</td>
+                        <td style="color:var(--accent-success);">${g.kazanan}</td>
+                        <td style="color:var(--accent-danger);">${g.kaybeden}</td>
+                        <td style="color:var(--text-muted);">${g.gecersiz}</td>
+                        <td style="color:var(--text-muted);">${g.bekleyen}</td>
+                        <td style="color:${oranRenk}; font-weight:700;">${oran}</td>
+                    </tr>`;
+                });
+                if (!gunlukRows) {
+                    gunlukRows = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Henüz sinyal paylaşılmadı.</td></tr>`;
+                }
+
                 container.innerHTML = `
                     <div class="stats-table-wrap">
+                        <h3>Günlük Özet</h3>
+                        <div style="overflow-x:auto;">
+                            <table class="stats-table">
+                                <thead><tr>
+                                    <th>Tarih</th><th>Paylaşılan</th><th>Kazandı</th><th>Kaybetti</th><th>Geçersiz</th><th>Bekleyen</th><th>İsabet</th>
+                                </tr></thead>
+                                <tbody>${gunlukRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="stats-table-wrap" style="margin-top:1.5rem;">
                         <h3>Bot Bazlı İsabet ve Kalibrasyon</h3>
                         ${uyariHtml}
                         <div style="overflow-x:auto;">

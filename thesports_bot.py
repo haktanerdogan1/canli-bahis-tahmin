@@ -51,8 +51,23 @@ STAT_TYPE_DANGEROUS_ATTACKS = 24
 # type 3, ayni kanitta neredeyse hep sifir (%89) ve nadiren kucuk pozitif deger
 # (max 5) - kirmizi kartin seyrek-olay imzasiyla ortusuyor.
 STAT_TYPE_RED_CARDS = 3
+# --- Status kodlari: TheSports'un RESMI dokumantasyonundan (Chris Yao, destek
+# maili, 2026-08-07 - "Match state" tablosu). Artik tahmine gerek yok:
+#   0 Abnormal(suggest hiding)  1 Not started      2 First half
+#   3 Half-time                 4 Second half       5 Overtime
+#   6 Overtime(deprecated)      7 Penalty Shoot-out  8 End
+#   9 Delay                    10 Interrupt        11 Cut in half
+#  12 Cancel                   13 To be determined
 STATUS_FINISHED_CONFIRMED = {8}
-STATUS_LIVE_CONFIRMED = {2}  # gozlemlenen tum ornekler ilk yaridaydi (dk<=45)
+STATUS_HALFTIME_CONFIRMED = {3}  # artik zaman-bazli tahmine gerek yok, gercek HT
+# Dakikayi SADECE ilk yari icin (status=2) elapsed-time formuluyle hesapliyoruz -
+# 2. yari/uzatma icin devre arasinin ne kadar surdugu bilinmedigi surece dogru
+# offset'i TAHMIN ETMIYORUZ (bkz. _compute_minute). Ama bu durumlar hala CANLI -
+# match_status'u "LIVE" yapiyoruz, sadece dakika 0/donuk kaliyor.
+STATUS_LIVE_CONFIRMED = {2}
+STATUS_OTHER_LIVE = {4, 5, 6, 7, 9, 10, 11, 13}
+STATUS_CANCELLED_CONFIRMED = {12}
+STATUS_HIDE = {0}  # TheSports'un kendi onerisi: bu maclari gosterme
 
 # --- Takim/lig ad+logo onbellegi (diary'den periyodik yenilenir) ---
 _team_cache = {}
@@ -378,6 +393,11 @@ def process_matches(results):
 
         _status_id_kaydet(status_id, {"id": match_id_api, "score": score[:4]})
 
+        if status_id in STATUS_HIDE:
+            # TheSports'un kendi onerisi: "Abnormal(suggest hiding)" - bu
+            # maclari hic islemiyoruz.
+            continue
+
         # detail_live SADECE mac id'si veriyor - hangi takimlar oynuyor,
         # diary onbellegindeki mac->takim eslesmesinden coziliyor.
         info = _match_info_cache.get(match_id_api)
@@ -411,12 +431,15 @@ def process_matches(results):
 
         if status_id in STATUS_FINISHED_CONFIRMED:
             match_status = "FINISHED"
-        elif status_id in STATUS_LIVE_CONFIRMED:
-            match_status = "LIVE"
+        elif status_id in STATUS_HALFTIME_CONFIRMED:
+            match_status = "HT"
+        elif status_id in STATUS_CANCELLED_CONFIRMED:
+            match_status = "ABANDONED"
         else:
-            # Henuz dogrulanmamis bir status_id - "canli maclar" feed'inde
-            # gorundugu icin guvenle LIVE'a alinabilir (TheSports zaten sadece
-            # ilgili maclari bu ucta donduruyor); sadece dakikayi TAHMIN ETMIYORUZ.
+            # status=2 (ilk yari, dakika hesaplanabiliyor), ya da resmi listedeki
+            # diger canli durumlar (2. yari/uzatma/penaltilar/gecikme/kesinti/
+            # belirlenecek - STATUS_OTHER_LIVE) - hepsi LIVE, dakika sadece
+            # status=2 icin hesaplaniyor (bkz. _compute_minute).
             match_status = "LIVE"
 
         score_h = home_arr[0] if len(home_arr) > 0 else 0

@@ -116,10 +116,10 @@ class ConsensusEngine:
         elif mutabakat >= 0.70 and final_prob >= 0.70:
             signal_level = "cok_guclu"
             decision = "signal"
-        elif mutabakat >= 0.55 and final_prob >= 0.63:
+        elif mutabakat >= 0.50 and final_prob >= 0.63:
             signal_level = "guclu_aday"
             decision = "signal"
-        elif mutabakat >= 0.45 and final_prob >= 0.55:
+        elif mutabakat >= 0.40 and final_prob >= 0.55:
             signal_level = "izleme"
 
         return ConsensusResult(

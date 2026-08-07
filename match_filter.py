@@ -58,6 +58,8 @@ KNOWN_TEAMS = {
     "internacional", "fluminense", "botafogo", "vasco da gama", "cruzeiro",
     # Arjantin
     "boca juniors", "river plate", "racing club", "independiente",
+    # Avustralya (NT - Darwin Premier Ligi)
+    "hellenic", "casuarina",
 }
 
 

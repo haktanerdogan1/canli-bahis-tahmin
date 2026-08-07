@@ -276,6 +276,30 @@
             background: rgba(255, 255, 255, 0.03);
         }
 
+        /* xG Sniper botunun en cok katki verdigi (lead_bot) sinyaller - en
+           guclu/en isabetli bot, digerlerinden gorsel olarak ayrilsin diye. */
+        .match-row.xg-signal {
+            background: linear-gradient(90deg, rgba(255,196,0,0.10), rgba(255,196,0,0.02));
+            border-left: 3px solid #ffc400;
+            box-shadow: inset 0 0 24px rgba(255,196,0,0.06);
+        }
+        .match-row.xg-signal:hover {
+            background: linear-gradient(90deg, rgba(255,196,0,0.16), rgba(255,196,0,0.04));
+        }
+        .xg-signal-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(255,196,0,0.18);
+            color: #ffc400;
+            border: 1px solid rgba(255,196,0,0.4);
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-left: 8px;
+        }
+
         /* Time */
         .match-time {
             text-align: center;
@@ -1833,15 +1857,16 @@
                     // farkli anahtarla Acik Bahisler'e geri sizmasina yol aciyordu.
                     let dataToRender = result.data || [];
                     if (currentTab === 'today') {
-                        // Bugunun Tahminleri: sadece bugun yayinlanan acik sinyaller.
+                        // Bugunun Tahminleri: genel (tum zamanlar) ozetin hemen altinda,
+                        // BUGUN paylasilan TUM sinyaller - hem hala acik (PENDING) olanlar
+                        // hem de bugun icinde sonuclanmis (WON/LOST/VOID) olanlar birlikte.
                         // Ilk 3'u sunucu zaten herkese acik gonderiyor (bkz. api.py).
-                        dataToRender = dataToRender.filter(m =>
-                            m.outcome === "PENDING" && m.signal_date === currentTodayTR);
+                        dataToRender = dataToRender.filter(m => m.signal_date === currentTodayTR);
                         const counterEl = document.getElementById('todayCounter');
                         if (counterEl) {
                             counterEl.innerText = dataToRender.length
-                                ? `Bugün ${dataToRender.length} açık tahmin var`
-                                : 'Bugün için henüz açık tahmin yok';
+                                ? `Bugün ${dataToRender.length} maç paylaşıldı`
+                                : 'Bugün için henüz paylaşılan maç yok';
                         }
                     } else if (currentTab === 'open') {
                         // Acik Tahminler: tarihe bakmaksizin TUM acik sinyaller.
@@ -2020,18 +2045,25 @@
                         timeStr = m.minute >= 0 ? `${m.minute}'` : 'Başlıyor';
                     }
                     const isLive = !isFinished && !isAbandoned && !isHalftime && m.minute > 0 && m.minute <= 120;
-                    
+
                     // The ID field depends on the endpoint (all-live returns match_id, live-matches doesn't return match_id, but we can fix that later, currently fallback to 0)
                     const matchId = m.match_id || 0;
 
+                    // xG Sniper'in en cok katki verdigi (lead_bot) sinyaller ozel
+                    // renkle/rozetle ayirt edilsin - en isabetli botumuz oldugu icin.
+                    const isXgSignal = m.lead_bot === 'bot_xg_sniper';
+                    const xgBadgeHtml = isXgSignal
+                        ? `<span class="xg-signal-badge" title="En cok katki veren bot: xG Sniper"><i class="fa-solid fa-crosshairs"></i> xG Sniper</span>`
+                        : '';
+
                     html += `
-                        <div class="match-row" onclick="openMatchDetails(${matchId}, '${m.home_team}', '${m.away_team}', '${m.home_logo || ''}', '${m.away_logo || ''}')">
+                        <div class="match-row ${isXgSignal ? 'xg-signal' : ''}" onclick="openMatchDetails(${matchId}, '${m.home_team}', '${m.away_team}', '${m.home_logo || ''}', '${m.away_logo || ''}')">
                             <div class="match-time ${isLive ? 'live-pulse' : ''}">${timeStr}</div>
                             <div class="match-teams">
                                 <div class="team">
                                     <span class="team-name">
                                         <img src="${m.home_logo || ''}" onerror="this.style.display='none'" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;border-radius:2px;background:#fff;">
-                                        ${m.home_team}
+                                        ${m.home_team}${xgBadgeHtml}
                                     </span>
                                     <span class="team-score">${m.home_score}</span>
                                 </div>

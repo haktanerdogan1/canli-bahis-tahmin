@@ -766,16 +766,22 @@ def get_ozet():
     cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome IS NULL")
     pending = cur.fetchone()[0]
 
-    # Bugun (Turkiye saatiyle, UTC+3 - Turkiye yaz saati uygulamiyor) uretilmis
-    # ve sonuclanmis sinyaller. created_at SQLite CURRENT_TIMESTAMP oldugu icin UTC'dir.
+    # Bugun (Turkiye saatiyle, UTC+3 - Turkiye yaz saati uygulamiyor) PAYLASILAN
+    # (uretilme tarihine gore) tum sinyaller, sonuc durumuna gore kirilmis -
+    # genel (tum-zamanlar) seridin hemen altinda ikinci, gune ozel bir serit
+    # icin. created_at SQLite CURRENT_TIMESTAMP oldugu icin UTC'dir.
     cur.execute("""
         SELECT outcome, COUNT(*) FROM consensus_predictions
-        WHERE decision='signal' AND outcome IN ('WON','LOST')
+        WHERE decision='signal'
           AND date(created_at, '+3 hours') = date('now', '+3 hours')
         GROUP BY outcome
     """)
-    bugun = dict(cur.fetchall())
+    bugun = {(k if k is not None else "PENDING"): v for k, v in cur.fetchall()}
     conn.close()
+
+    bugun_kazanan = bugun.get("WON", 0)
+    bugun_kaybeden = bugun.get("LOST", 0)
+    bugun_sonuclanan = bugun_kazanan + bugun_kaybeden
 
     return {
         "success": True,
@@ -785,8 +791,13 @@ def get_ozet():
         "isabet_orani": round(won / settled, 3) if settled else None,
         "bekleyen": pending,
         "gozlem_disi": void,
-        "bugun_kazanan": bugun.get("WON", 0),
-        "bugun_kaybeden": bugun.get("LOST", 0),
+        "bugun_kazanan": bugun_kazanan,
+        "bugun_kaybeden": bugun_kaybeden,
+        "bugun_paylasilan": sum(bugun.values()),
+        "bugun_sonuclanan": bugun_sonuclanan,
+        "bugun_isabet_orani": round(bugun_kazanan / bugun_sonuclanan, 3) if bugun_sonuclanan else None,
+        "bugun_bekleyen": bugun.get("PENDING", 0),
+        "bugun_gecersiz": bugun.get("VOID", 0),
     }
 
 

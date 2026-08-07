@@ -1145,10 +1145,13 @@
 
             <div id="todayCounter" style="text-align:center; color:var(--text-secondary); font-weight:600; margin-bottom:1rem;"></div>
 
-            <!-- Olculmus sonuc ozeti -->
+            <!-- Olculmus sonuc ozeti (tum zamanlar) -->
             <div class="ozet-strip" id="ozetStrip">
                 <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
             </div>
+
+            <!-- Bugune ozel ozet - genel seridin hemen altinda, ayni formatta -->
+            <div class="ozet-strip" id="ozetStripBugun" style="margin-top:0.75rem;"></div>
         </div>
 
         <div id="matchListContainer">
@@ -1496,6 +1499,29 @@
                 }
 
                 el.innerHTML = html;
+
+                // Bugune ozel ikinci serit - genel seritle AYNI formatta, ama
+                // sadece bugun PAYLASILAN sinyalleri kapsar.
+                const elBugun = document.getElementById('ozetStripBugun');
+                if (elBugun) {
+                    const oranBugunTxt = (d.bugun_isabet_orani !== null && d.bugun_isabet_orani !== undefined)
+                        ? `%${Math.round(d.bugun_isabet_orani * 100)}` : '—';
+                    elBugun.innerHTML = `<div class="ozet-row">` +
+                        `<span class="ozet-item" style="color:var(--accent-brand); font-weight:700;">Bugün <b>${d.bugun_paylasilan || 0}</b></span>` +
+                        `<span class="ozet-sep">·</span>` +
+                        `<span class="ozet-item">Sonuçlanan <b>${d.bugun_sonuclanan || 0}</b></span>` +
+                        `<span class="ozet-sep">·</span>` +
+                        `<span class="ozet-item ozet-win">Kazanan <b>${d.bugun_kazanan || 0}</b></span>` +
+                        `<span class="ozet-sep">·</span>` +
+                        `<span class="ozet-item ozet-loss">Kaybeden <b>${d.bugun_kaybeden || 0}</b></span>` +
+                        `<span class="ozet-sep">·</span>` +
+                        `<span class="ozet-item">İsabet <b>${oranBugunTxt}</b></span>` +
+                        `<span class="ozet-sep">·</span>` +
+                        `<span class="ozet-item">Bekleyen <b>${d.bugun_bekleyen || 0}</b></span>` +
+                        `<span class="ozet-sep">·</span>` +
+                        `<span class="ozet-item">Gözlem dışı <b>${d.bugun_gecersiz || 0}</b></span>` +
+                        `</div>`;
+                }
             } catch (e) {
                 // Ozet dekoratif bir seffaflik unsuru - basarisiz olursa sayfanin
                 // geri kalanini bozmadan sessizce gec.
@@ -1857,16 +1883,15 @@
                     // farkli anahtarla Acik Bahisler'e geri sizmasina yol aciyordu.
                     let dataToRender = result.data || [];
                     if (currentTab === 'today') {
-                        // Bugunun Tahminleri: genel (tum zamanlar) ozetin hemen altinda,
-                        // BUGUN paylasilan TUM sinyaller - hem hala acik (PENDING) olanlar
-                        // hem de bugun icinde sonuclanmis (WON/LOST/VOID) olanlar birlikte.
+                        // Bugunun Tahminleri: sadece bugun yayinlanan acik sinyaller.
                         // Ilk 3'u sunucu zaten herkese acik gonderiyor (bkz. api.py).
-                        dataToRender = dataToRender.filter(m => m.signal_date === currentTodayTR);
+                        dataToRender = dataToRender.filter(m =>
+                            m.outcome === "PENDING" && m.signal_date === currentTodayTR);
                         const counterEl = document.getElementById('todayCounter');
                         if (counterEl) {
                             counterEl.innerText = dataToRender.length
-                                ? `Bugün ${dataToRender.length} maç paylaşıldı`
-                                : 'Bugün için henüz paylaşılan maç yok';
+                                ? `Bugün ${dataToRender.length} açık tahmin var`
+                                : 'Bugün için henüz açık tahmin yok';
                         }
                     } else if (currentTab === 'open') {
                         // Acik Tahminler: tarihe bakmaksizin TUM acik sinyaller.

@@ -74,6 +74,7 @@ STATUS_HALFTIME_CONFIRMED = {3}  # artik zaman-bazli tahmine gerek yok, gercek H
 # match_status'u "LIVE" yapiyoruz, sadece dakika 0/donuk kaliyor.
 STATUS_LIVE_CONFIRMED = {2}
 STATUS_OTHER_LIVE = {4, 5, 6, 7, 9, 10, 11, 13}
+STATUS_SECOND_HALF = 4
 STATUS_CANCELLED_CONFIRMED = {12}
 STATUS_HIDE = {0}  # TheSports'un kendi onerisi: bu maclari gosterme
 
@@ -219,7 +220,7 @@ def _diary_refresh(force=False):
         print(f"⚠️  Diary tazeleme hatasi: {e}", flush=True)
 
 
-def _compute_minute(kickoff_ts, status_id, now=None):
+def _compute_minute(kickoff_ts, status_id, now=None, ikinci_yari_baslangic=None):
     """TheSports'un dokumante ettigi formule gore dakikayi hesaplar.
 
     SADECE ilk yari icin (status_id=2, dk<=45 gozlemlendigi icin kanitli).
@@ -228,13 +229,27 @@ def _compute_minute(kickoff_ts, status_id, now=None):
     TAHMIN ETMEK yerine minute_parsed_ok=False donup mevcut DB degerini
     korumayi tercih ediyoruz, tipki RapidAPI oturumundaki "DAKIKA
     AYRISTIRILAMADI" deseninde oldugu gibi.
+
+    status=4 (2. yari) icin FARKLI bir yol: devre arasinin gercek suresini
+    bilmedigimiz icin sabit bir offset (45+X) TAHMIN ETMIYORUZ - bunun yerine
+    ikinci_yari_baslangic (2. yariyi ILK GORDUGUMUZ an, caller tarafindan
+    persist edilmis wall-clock zamani) verilirse, dakikayi o andan itibaren
+    GERCEKTEN GECEN sureyle hesapliyoruz - bu bir tahmin degil, kendi
+    gozlemimiz.
     """
     now = now or time.time()
-    if not kickoff_ts or status_id not in STATUS_LIVE_CONFIRMED:
+    if status_id in STATUS_LIVE_CONFIRMED:
+        if not kickoff_ts:
+            return 0, False
+        elapsed_min = (now - kickoff_ts) / 60.0
+        if 0 <= elapsed_min <= 130:
+            return int(elapsed_min) + 1, True
         return 0, False
-    elapsed_min = (now - kickoff_ts) / 60.0
-    if 0 <= elapsed_min <= 130:
-        return int(elapsed_min) + 1, True
+    if status_id == STATUS_SECOND_HALF and ikinci_yari_baslangic:
+        elapsed_min = (now - ikinci_yari_baslangic) / 60.0
+        if 0 <= elapsed_min <= 70:
+            return min(45 + int(elapsed_min) + 1, 105), True
+        return 0, False
     return 0, False
 
 
@@ -255,6 +270,13 @@ def _ensure_match_tracking_schema():
         # kickoff_ts, settlement.py'nin saat-bazli bir yedek karar mekanizmasi
         # kurabilmesi icin kalici olarak saklaniyor (bkz. settlement.py).
         conn.execute("ALTER TABLE matches ADD COLUMN kickoff_ts INTEGER")
+    except Exception:
+        pass
+    try:
+        # status=4 (2. yari) icin devre arasinin ne kadar surdugunu bilmiyoruz,
+        # bu yuzden 2. yariyi ILK GORDUGUMUZ an'i (wall-clock) kaydedip dakikayi
+        # oradan hesapliyoruz - TAHMIN degil, kendi gozlemimiz (bkz. _compute_minute).
+        conn.execute("ALTER TABLE matches ADD COLUMN second_half_started_at INTEGER")
     except Exception:
         pass
     conn.execute("""
@@ -386,9 +408,16 @@ def process_matches(results):
 
     placeholders = ','.join('?' for _ in active_ids) if active_ids else ""
     existing_ids = set()
+    ikinci_yari_baslangic = {}  # source_match_id -> unix ts (2. yarinin ILK GORULDUGU an)
     if active_ids:
         cursor.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
         existing_ids = set(row[0] for row in cursor.fetchall())
+        cursor.execute(
+            f"SELECT source_match_id, second_half_started_at FROM matches "
+            f"WHERE source_match_id IN ({placeholders}) AND second_half_started_at IS NOT NULL",
+            active_ids,
+        )
+        ikinci_yari_baslangic = {row[0]: row[1] for row in cursor.fetchall()}
 
     conn.commit()
     conn.close()
@@ -450,7 +479,18 @@ def process_matches(results):
                 stat_skipped_unknown += 1
                 continue
 
-        minute, minute_parsed_ok = _compute_minute(kickoff_ts, status_id, now)
+        onceden_bilinen_2y_baslangic = ikinci_yari_baslangic.get(event_id)
+        # 2. yari ILK KEZ gorulduysek (persist edilmis bir baslangic yoksa),
+        # bu ani "simdi basladi" olarak kullan (dakika~45) VE asagida ASAMA
+        # 3'te kalici olarak yaz - bir sonraki dongude artik bu andan
+        # hesaplanacak.
+        yeni_2y_baslangic = None
+        if status_id == STATUS_SECOND_HALF and not onceden_bilinen_2y_baslangic:
+            onceden_bilinen_2y_baslangic = now
+            yeni_2y_baslangic = now
+
+        minute, minute_parsed_ok = _compute_minute(
+            kickoff_ts, status_id, now, ikinci_yari_baslangic=onceden_bilinen_2y_baslangic)
 
         if status_id in STATUS_FINISHED_CONFIRMED:
             match_status = "FINISHED"
@@ -481,7 +521,7 @@ def process_matches(results):
             "h_korner": h_korner, "a_korner": a_korner,
             "h_kirmizi": h_kirmizi, "a_kirmizi": a_kirmizi,
             "h_sot": h_sot, "a_sot": a_sot, "h_sut": h_sut, "a_sut": a_sut,
-            "kickoff_ts": kickoff_ts,
+            "kickoff_ts": kickoff_ts, "yeni_2y_baslangic": yeni_2y_baslangic,
         })
 
     stat_processed = len(to_process)
@@ -494,8 +534,8 @@ def process_matches(results):
     for m in to_process:
         cursor.execute('''
             INSERT INTO matches
-            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at, kickoff_ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at, kickoff_ts, second_half_started_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
             ON CONFLICT(source_match_id) DO UPDATE SET
                 minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
                 status=excluded.status,
@@ -508,6 +548,7 @@ def process_matches(results):
                 away_team_logo=excluded.away_team_logo,
                 last_seen_at=CURRENT_TIMESTAMP,
                 kickoff_ts=COALESCE(matches.kickoff_ts, excluded.kickoff_ts),
+                second_half_started_at=COALESCE(matches.second_half_started_at, excluded.second_half_started_at),
                 last_progress_at=CASE
                     WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
                          OR excluded.home_score IS NOT matches.home_score
@@ -518,7 +559,7 @@ def process_matches(results):
         ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
               m["league_name"], "INT", m["league_logo"],
               m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"], "",
-              m["kickoff_ts"],
+              m["kickoff_ts"], m["yeni_2y_baslangic"],
               m["minute_parsed_ok"], m["minute_parsed_ok"]))
 
         cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))

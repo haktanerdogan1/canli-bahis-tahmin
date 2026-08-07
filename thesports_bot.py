@@ -41,16 +41,24 @@ MISSING_GRACE_MINUTES = 5
 STALE_PROGRESS_MINUTES = 15
 MAX_PLAUSIBLE_LIVE_AGE_SECONDS = 4 * 60 * 60
 
-# --- Sadece GUCLU KANITLA dogrulanmis kodlar (bkz. dosya basi aciklama) ---
+# --- TheSports'un RESMI stat/incident kod tablosundan (Chris Yao, destek
+# maili, 2026-08-07 - thesports.com/tr/docs/football "Status Code" tablosu).
+# Bizim stats[] dizisinde GORULEN 10 kodun (2,3,4,8,21,22,23,24,25,37) HEPSI
+# bu resmi listede mantikli/tutarli bir karsiliga sahip (buyukluk/artis oruntusu
+# eslesiyor) - artik tahmine degil resmi dokumana dayaniyor.
+# NOT (duzeltme): type 3'u once istatistiksel kanitla (kirmizi kartin seyrek-
+# olay imzasi) YANLISLIKLA kirmizi kart sanmistik - resmi tablo type 3=Sari
+# kart, type 4=Kirmizi kart diyor (bizim %89 sifir kanitimiz aslinda sari kart
+# icin de gecerliydi, yanlis yorumlanmis).
 STAT_TYPE_POSSESSION = 25
-# type 24, stat_type_samples kanitinda (193 gozlem, 69 mac) HER ZAMAN type 23'un
-# alt kumesi (193'te sadece 10 ihlal, ~%5 - canli veri jitter'iyla aciklanabilir):
-# "toplam atak / tehlikeli atak" iliskisiyle birebir ortusuyor.
 STAT_TYPE_ATTACKS = 23
 STAT_TYPE_DANGEROUS_ATTACKS = 24
-# type 3, ayni kanitta neredeyse hep sifir (%89) ve nadiren kucuk pozitif deger
-# (max 5) - kirmizi kartin seyrek-olay imzasiyla ortusuyor.
-STAT_TYPE_RED_CARDS = 3
+STAT_TYPE_CORNERS = 2
+STAT_TYPE_YELLOW_CARDS = 3
+STAT_TYPE_RED_CARDS = 4
+STAT_TYPE_SHOTS_ON_TARGET = 21
+STAT_TYPE_SHOTS_OFF_TARGET = 22
+STAT_TYPE_BLOCKED_SHOTS = 37
 # --- Status kodlari: TheSports'un RESMI dokumantasyonundan (Chris Yao, destek
 # maili, 2026-08-07 - "Match state" tablosu). Artik tahmine gerek yok:
 #   0 Abnormal(suggest hiding)  1 Not started      2 First half
@@ -131,8 +139,8 @@ def _kesif_ozeti_yaz():
 
 
 def _parse_stats(stats_list, match_id_api=None, minute=None, ornek_biriktir=None):
-    """Sadece dogrulanmis alanlari (top hakimiyeti, atak, tehlikeli atak, kirmizi
-    kart) cikarir, gerisini kesfe birakir.
+    """Resmi dokumanla dogrulanmis alanlari (top hakimiyeti, atak, tehlikeli
+    atak, korner, kart, sut) cikarir, gerisini kesfe birakir.
 
     ornek_biriktir verilirse (bir liste), her stat tipi icin mac+15dk dilimi
     basina bir (tip, mac_id, dilim, home, away) ornegi ekler - bkz.
@@ -141,7 +149,11 @@ def _parse_stats(stats_list, match_id_api=None, minute=None, ornek_biriktir=None
     h_pos = a_pos = 0
     h_atak = a_atak = 0
     h_teh = a_teh = 0
+    h_korner = a_korner = 0
     h_kirmizi = a_kirmizi = 0
+    h_sot = a_sot = 0
+    h_sut_disari = a_sut_disari = 0
+    h_blok = a_blok = 0
     for item in stats_list or []:
         t = item.get("type")
         h = item.get("home", 0)
@@ -153,15 +165,26 @@ def _parse_stats(stats_list, match_id_api=None, minute=None, ornek_biriktir=None
             h_atak, a_atak = h, a
         elif t == STAT_TYPE_DANGEROUS_ATTACKS:
             h_teh, a_teh = h, a
+        elif t == STAT_TYPE_CORNERS:
+            h_korner, a_korner = h, a
         elif t == STAT_TYPE_RED_CARDS:
             h_kirmizi, a_kirmizi = h, a
+        elif t == STAT_TYPE_SHOTS_ON_TARGET:
+            h_sot, a_sot = h, a
+        elif t == STAT_TYPE_SHOTS_OFF_TARGET:
+            h_sut_disari, a_sut_disari = h, a
+        elif t == STAT_TYPE_BLOCKED_SHOTS:
+            h_blok, a_blok = h, a
         if ornek_biriktir is not None and match_id_api and minute is not None:
             dilim = (minute // 15) * 15
             anahtar = (t, match_id_api, dilim)
             if anahtar not in _gorulen_ornek_anahtari:
                 _gorulen_ornek_anahtari.add(anahtar)
                 ornek_biriktir.append((t, match_id_api, dilim, h, a))
-    return h_pos, a_pos, h_atak, a_atak, h_teh, a_teh, h_kirmizi, a_kirmizi
+    h_sut_toplam = h_sot + h_sut_disari + h_blok
+    a_sut_toplam = a_sot + a_sut_disari + a_blok
+    return (h_pos, a_pos, h_atak, a_atak, h_teh, a_teh, h_korner, a_korner,
+            h_kirmizi, a_kirmizi, h_sot, a_sot, h_sut_toplam, a_sut_toplam)
 
 
 def _diary_refresh(force=False):
@@ -444,7 +467,8 @@ def process_matches(results):
 
         score_h = home_arr[0] if len(home_arr) > 0 else 0
         score_a = away_arr[0] if len(away_arr) > 0 else 0
-        h_pos, a_pos, h_atak, a_atak, h_teh, a_teh, h_kirmizi, a_kirmizi = _parse_stats(
+        (h_pos, a_pos, h_atak, a_atak, h_teh, a_teh, h_korner, a_korner,
+         h_kirmizi, a_kirmizi, h_sot, a_sot, h_sut, a_sut) = _parse_stats(
             m.get("stats") or [], match_id_api, minute, stat_ornekleri)
 
         to_process.append({
@@ -454,7 +478,10 @@ def process_matches(results):
             "score_h": score_h, "score_a": score_a, "minute": minute,
             "minute_parsed_ok": minute_parsed_ok, "h_pos": h_pos, "a_pos": a_pos,
             "h_atak": h_atak, "a_atak": a_atak, "h_teh": h_teh, "a_teh": a_teh,
-            "h_kirmizi": h_kirmizi, "a_kirmizi": a_kirmizi, "kickoff_ts": kickoff_ts,
+            "h_korner": h_korner, "a_korner": a_korner,
+            "h_kirmizi": h_kirmizi, "a_kirmizi": a_kirmizi,
+            "h_sot": h_sot, "a_sot": a_sot, "h_sut": h_sut, "a_sut": a_sut,
+            "kickoff_ts": kickoff_ts,
         })
 
     stat_processed = len(to_process)
@@ -506,12 +533,17 @@ def process_matches(results):
                 home_possession, away_possession,
                 home_attacks, away_attacks,
                 home_dangerous_attacks, away_dangerous_attacks,
-                home_red_cards, away_red_cards
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                home_corners, away_corners,
+                home_red_cards, away_red_cards,
+                home_shots_on_target, away_shots_on_target,
+                home_shots, away_shots
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (match_id_db, m["minute"], 'first_half' if m["minute"] <= 45 else 'second_half',
               m["score_h"], m["score_a"], m["h_pos"], m["a_pos"],
               m["h_atak"], m["a_atak"], m["h_teh"], m["a_teh"],
-              m["h_kirmizi"], m["a_kirmizi"]))
+              m["h_korner"], m["a_korner"],
+              m["h_kirmizi"], m["a_kirmizi"],
+              m["h_sot"], m["a_sot"], m["h_sut"], m["a_sut"]))
 
     if stat_ornekleri:
         cursor.executemany('''

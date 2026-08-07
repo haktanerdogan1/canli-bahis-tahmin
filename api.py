@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 import os
+import json
 import secrets
 from urllib.parse import urlencode
 
@@ -83,6 +84,145 @@ def serve_apple_touch_icon():
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+
+def _check_admin(request: Request):
+    """Yonetici paneli icin kimlik dogrulama - uye hesaplarindan tamamen
+    bagimsiz, ayri bir gizli anahtar (BACKUP_SECRET/thesports-test deseniyle
+    ayni yaklasim). ADMIN_SECRET tanimli degilse panel tamamen kapali kalir."""
+    expected = os.environ.get("ADMIN_SECRET")
+    provided = request.headers.get("x-admin-secret")
+    return bool(expected) and provided == expected
+
+
+@app.get("/admin")
+def serve_admin():
+    """Yonetici paneli - ana siteden (index.html) tamamen bagimsiz sayfa,
+    tek baglantisi ayni backend'e /api/admin/panel/* uclarindan istek atmasi.
+    Sayfanin kendisi herkese acik yuklenir (statik kabuk, veri icermez);
+    veri uclari x-admin-secret ile korunur."""
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(os.path.dirname(__file__), 'admin.html'))
+
+
+@app.get("/api/admin/panel/ozet")
+def admin_panel_ozet(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM users")
+    uye_sayisi = cur.fetchone()[0]
+    cur.execute("""
+        SELECT outcome, COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' GROUP BY outcome
+    """)
+    tally = dict(cur.fetchall())
+    won = tally.get("WON", 0)
+    lost = tally.get("LOST", 0)
+    conn.close()
+    return {
+        "success": True,
+        "uye_sayisi": uye_sayisi,
+        "toplam_sinyal": sum(tally.values()),
+        "kazanan": won,
+        "kaybeden": lost,
+        "gecersiz": tally.get("VOID", 0),
+        "bekleyen": tally.get(None, 0),
+        "isabet_orani": round(won / (won + lost), 3) if (won + lost) else None,
+    }
+
+
+@app.get("/api/admin/panel/uyeler")
+def admin_panel_uyeler(request: Request):
+    """Uye listesi. NOT: uyelik tipi (Free/Pro) henuz DB'de tutulmuyor -
+    Pro rozeti su an sadece on-yuzde bir yer tutucu (window.isProMember),
+    gercek odeme entegrasyonu yapilmadi. Bu yuzden herkes 'Free' donuyor -
+    uydurma bir ayrim yapmiyoruz."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("SELECT id, email, created_at FROM users ORDER BY created_at DESC")
+    uyeler = [
+        {"id": uid, "email": email, "kayit_tarihi": created_at, "uyelik_tipi": "Free"}
+        for uid, email, created_at in cur.fetchall()
+    ]
+    conn.close()
+    return {"success": True, "uyeler": uyeler,
+            "uyari": "Uyelik tipi (Free/Pro) henuz veritabaninda tutulmuyor - odeme entegrasyonu yapilana kadar herkes Free gorunur."}
+
+
+@app.get("/api/admin/panel/botlar")
+def admin_panel_botlar(request: Request):
+    """Her botun kac sinyal urettigi + isabet orani (ozet, filtre dropdown'u icin)."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT b.bot_name, COUNT(*) n,
+               SUM(CASE WHEN c.outcome='WON' THEN 1 ELSE 0 END) hits,
+               SUM(CASE WHEN c.outcome IN ('WON','LOST') THEN 1 ELSE 0 END) sonuclanan
+        FROM bot_predictions b
+        JOIN consensus_predictions c ON c.match_id=b.match_id AND c.snapshot_id=b.snapshot_id
+        WHERE b.decision='goal'
+        GROUP BY b.bot_name
+        ORDER BY n DESC
+    """)
+    botlar = []
+    for name, n, hits, sonuclanan in cur.fetchall():
+        botlar.append({
+            "bot": name, "paylasim_sayisi": n,
+            "isabet_orani": round(hits / sonuclanan, 3) if sonuclanan else None,
+        })
+    conn.close()
+    return {"success": True, "botlar": botlar}
+
+
+@app.get("/api/admin/panel/bot-sinyalleri")
+def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200):
+    """Tek bir botun (ya da hepsinin) urettigi tum maç paylaşımlarının detayi:
+    hangi mac, ne zaman, ne olasilikla, sonuc ne oldu."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    limit = max(1, min(limit, 1000))
+    conn = connect()
+    cur = conn.cursor()
+    params = []
+    bot_clause = ""
+    if bot:
+        bot_clause = "AND b.bot_name = ?"
+        params.append(bot)
+    params.append(limit)
+    cur.execute(f"""
+        SELECT b.bot_name, b.decision, b.probability, b.confidence, b.reasons_json,
+               m.home_team_id, m.away_team_id, m.league_name,
+               c.market, c.signal_minute, c.outcome, c.weighted_probability, c.created_at
+        FROM bot_predictions b
+        JOIN consensus_predictions c ON c.match_id=b.match_id AND c.snapshot_id=b.snapshot_id
+        JOIN matches m ON m.id = b.match_id
+        WHERE b.decision='goal' {bot_clause}
+        ORDER BY c.created_at DESC
+        LIMIT ?
+    """, params)
+    rows = []
+    for (bot_name, decision, prob, conf, reasons_json, home, away, league,
+         market, sig_min, outcome, w_prob, created_at) in cur.fetchall():
+        rows.append({
+            "bot": bot_name, "olasilik": prob, "guven": conf,
+            "gerekce": json.loads(reasons_json) if reasons_json else [],
+            "ev_sahibi": home, "deplasman": away, "lig": league,
+            "market": market, "sinyal_dakikasi": sig_min,
+            "konsensus_olasilik": w_prob, "sonuc": outcome or "PENDING",
+            "tarih": created_at,
+        })
+    conn.close()
+    return {"success": True, "sinyaller": rows}
 
 
 @app.get("/api/admin/outbound-ip")

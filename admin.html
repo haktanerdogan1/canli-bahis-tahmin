@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Yönetici Paneli</title>
+<style>
+    :root {
+        --bg: #0b0f17;
+        --panel: #121826;
+        --border: #232c3f;
+        --text: #e6e9ef;
+        --text-muted: #8892a6;
+        --accent: #4f8cff;
+        --success: #2ecc71;
+        --danger: #ff5c5c;
+        --warn: #f5a623;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+        min-height: 100vh;
+    }
+    .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .login-box {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 2rem;
+        width: 100%;
+        max-width: 360px;
+    }
+    .login-box h1 { font-size: 1.1rem; margin: 0 0 1.25rem; }
+    .login-box input {
+        width: 100%;
+        padding: 0.7rem 0.85rem;
+        background: #0d1220;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 0.95rem;
+        margin-bottom: 0.85rem;
+    }
+    .login-box button, .btn {
+        width: 100%;
+        padding: 0.7rem;
+        background: var(--accent);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.95rem;
+    }
+    .login-box button:hover, .btn:hover { opacity: 0.9; }
+    .err { color: var(--danger); font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em; }
+
+    #panel { display: none; max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem; }
+    header h1 { font-size: 1.25rem; margin: 0; }
+    .logout { background: transparent; border: 1px solid var(--border); color: var(--text-muted); padding: 0.4rem 0.9rem; border-radius: 8px; cursor: pointer; font-size: 0.8rem; }
+
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem; text-align: center; }
+    .stat-card .val { font-size: 1.4rem; font-weight: 700; }
+    .stat-card .lbl { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .stat-card.win .val { color: var(--success); }
+    .stat-card.loss .val { color: var(--danger); }
+
+    .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .tab-btn { background: none; border: none; color: var(--text-muted); padding: 0.6rem 1rem; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+
+    .panel-section { display: none; }
+    .panel-section.active { display: block; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.02em; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem; }
+
+    .pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+    .pill.won { background: rgba(46,204,113,0.15); color: var(--success); }
+    .pill.lost { background: rgba(255,92,92,0.15); color: var(--danger); }
+    .pill.void { background: rgba(136,146,166,0.15); color: var(--text-muted); }
+    .pill.pending { background: rgba(245,166,35,0.15); color: var(--warn); }
+
+    .filter-row { display: flex; gap: 0.6rem; margin-bottom: 0.85rem; flex-wrap: wrap; align-items: center; }
+    select { background: #0d1220; border: 1px solid var(--border); color: var(--text); padding: 0.45rem 0.6rem; border-radius: 8px; font-size: 0.85rem; }
+    .warn-note { background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3); color: var(--warn); padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.8rem; margin-bottom: 1rem; }
+    .loading, .empty { color: var(--text-muted); text-align: center; padding: 2rem; }
+    .reasons { color: var(--text-muted); font-size: 0.78rem; max-width: 260px; white-space: normal; }
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="loginWrap">
+    <div class="login-box">
+        <h1>🔒 Yönetici Girişi</h1>
+        <input type="password" id="secretInput" placeholder="Yönetici anahtarı" autocomplete="off">
+        <button onclick="tryLogin()">Giriş</button>
+        <div class="err" id="loginErr"></div>
+    </div>
+</div>
+
+<div id="panel">
+    <header>
+        <h1>Yönetici Paneli</h1>
+        <button class="logout" onclick="logout()">Çıkış</button>
+    </header>
+
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="uyeler" onclick="switchTab('uyeler')">Üyeler</button>
+        <button class="tab-btn" data-tab="botlar" onclick="switchTab('botlar')">Bot Sinyalleri</button>
+    </div>
+
+    <div class="panel-section active" id="sec-uyeler">
+        <div class="warn-note" id="uyelerWarn" style="display:none;"></div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>ID</th><th>E-posta</th><th>Üyelik</th><th>Kayıt Tarihi</th></tr></thead>
+                <tbody id="uyelerBody"><tr><td colspan="4" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel-section" id="sec-botlar">
+        <div class="filter-row">
+            <select id="botFilter" onchange="loadBotSinyalleri()">
+                <option value="">Tüm botlar</option>
+            </select>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th>Bot</th><th>Maç</th><th>Lig</th><th>Market</th><th>Olasılık</th>
+                    <th>Konsensüs</th><th>Sonuç</th><th>Tarih</th><th>Gerekçe</th>
+                </tr></thead>
+                <tbody id="botlarBody"><tr><td colspan="9" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let ADMIN_SECRET = sessionStorage.getItem('admin_secret') || '';
+
+function api(path) {
+    return fetch(path, { headers: { 'x-admin-secret': ADMIN_SECRET } }).then(r => r.json());
+}
+
+function tryLogin() {
+    const val = document.getElementById('secretInput').value.trim();
+    if (!val) return;
+    ADMIN_SECRET = val;
+    fetch('/api/admin/panel/ozet', { headers: { 'x-admin-secret': ADMIN_SECRET } })
+        .then(r => {
+            if (!r.ok) throw new Error('yetkisiz');
+            return r.json();
+        })
+        .then(d => {
+            if (!d.success) throw new Error('yetkisiz');
+            sessionStorage.setItem('admin_secret', ADMIN_SECRET);
+            document.getElementById('loginWrap').style.display = 'none';
+            document.getElementById('panel').style.display = 'block';
+            initPanel();
+        })
+        .catch(() => {
+            document.getElementById('loginErr').textContent = 'Hatalı anahtar.';
+        });
+}
+
+function logout() {
+    sessionStorage.removeItem('admin_secret');
+    location.reload();
+}
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('active'));
+    document.getElementById('sec-' + tab).classList.add('active');
+    if (tab === 'botlar') loadBotSinyalleri();
+}
+
+function fmtPct(x) {
+    return (x === null || x === undefined) ? '—' : `%${Math.round(x * 100)}`;
+}
+
+function outcomePill(o) {
+    const map = { WON: ['won', 'Kazandı'], LOST: ['lost', 'Kaybetti'], VOID: ['void', 'Geçersiz'], PENDING: ['pending', 'Bekliyor'] };
+    const [cls, label] = map[o] || ['pending', o || '—'];
+    return `<span class="pill ${cls}">${label}</span>`;
+}
+
+async function loadOzet() {
+    const d = await api('/api/admin/panel/ozet');
+    if (!d.success) return;
+    document.getElementById('statsRow').innerHTML = `
+        <div class="stat-card"><div class="val">${d.uye_sayisi}</div><div class="lbl">Üye</div></div>
+        <div class="stat-card"><div class="val">${d.toplam_sinyal}</div><div class="lbl">Toplam Sinyal</div></div>
+        <div class="stat-card win"><div class="val">${d.kazanan}</div><div class="lbl">Kazanan</div></div>
+        <div class="stat-card loss"><div class="val">${d.kaybeden}</div><div class="lbl">Kaybeden</div></div>
+        <div class="stat-card"><div class="val">${fmtPct(d.isabet_orani)}</div><div class="lbl">İsabet</div></div>
+        <div class="stat-card"><div class="val">${d.bekleyen}</div><div class="lbl">Bekleyen</div></div>
+    `;
+}
+
+async function loadUyeler() {
+    const d = await api('/api/admin/panel/uyeler');
+    if (!d.success) return;
+    if (d.uyari) {
+        const w = document.getElementById('uyelerWarn');
+        w.style.display = 'block';
+        w.textContent = d.uyari;
+    }
+    const body = document.getElementById('uyelerBody');
+    if (!d.uyeler.length) {
+        body.innerHTML = '<tr><td colspan="4" class="empty">Henüz üye yok.</td></tr>';
+        return;
+    }
+    body.innerHTML = d.uyeler.map(u => `
+        <tr><td>${u.id}</td><td>${u.email}</td><td>${u.uyelik_tipi}</td><td>${u.kayit_tarihi}</td></tr>
+    `).join('');
+}
+
+async function loadBotFiltre() {
+    const d = await api('/api/admin/panel/botlar');
+    if (!d.success) return;
+    const sel = document.getElementById('botFilter');
+    d.botlar.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.bot;
+        opt.textContent = `${b.bot} (${b.paylasim_sayisi} sinyal, ${fmtPct(b.isabet_orani)} isabet)`;
+        sel.appendChild(opt);
+    });
+}
+
+async function loadBotSinyalleri() {
+    const bot = document.getElementById('botFilter').value;
+    const body = document.getElementById('botlarBody');
+    body.innerHTML = '<tr><td colspan="9" class="loading">Yükleniyor...</td></tr>';
+    const d = await api('/api/admin/panel/bot-sinyalleri?bot=' + encodeURIComponent(bot) + '&limit=200');
+    if (!d.success) return;
+    if (!d.sinyaller.length) {
+        body.innerHTML = '<tr><td colspan="9" class="empty">Sinyal bulunamadı.</td></tr>';
+        return;
+    }
+    body.innerHTML = d.sinyaller.map(s => `
+        <tr>
+            <td>${s.bot}</td>
+            <td>${s.ev_sahibi} - ${s.deplasman}</td>
+            <td>${s.lig || '—'}</td>
+            <td>${s.market || '—'}</td>
+            <td>${fmtPct(s.olasilik)}</td>
+            <td>${fmtPct(s.konsensus_olasilik)}</td>
+            <td>${outcomePill(s.sonuc)}</td>
+            <td>${s.tarih}</td>
+            <td class="reasons">${(s.gerekce || []).join(' · ')}</td>
+        </tr>
+    `).join('');
+}
+
+function initPanel() {
+    loadOzet();
+    loadUyeler();
+    loadBotFiltre();
+}
+
+if (ADMIN_SECRET) {
+    fetch('/api/admin/panel/ozet', { headers: { 'x-admin-secret': ADMIN_SECRET } })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                document.getElementById('loginWrap').style.display = 'none';
+                document.getElementById('panel').style.display = 'block';
+                initPanel();
+            } else {
+                sessionStorage.removeItem('admin_secret');
+            }
+        })
+        .catch(() => {});
+}
+
+document.getElementById('secretInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') tryLogin();
+});
+</script>
+</body>
+</html>

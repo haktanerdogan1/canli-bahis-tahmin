@@ -1893,11 +1893,12 @@
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (currentTab === 'results') {
                         // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
-                        // kazanc/kayip/iade sonucu gorunsun, 1-2 gun oncesi dahil
-                        // edilmesin - bugun gercek sonuc yoksa sekme BOS kalir,
-                        // eskilerle doldurulmaz.
+                        // kazanc/kayip sonucu gorunsun, 1-2 gun oncesi dahil edilmesin.
+                        // VOID artik kalici bir kategori degil (backend'de reconcile
+                        // edilip WON/LOST'a cevriliyor ya da silinip gidiyor - bkz.
+                        // settlement.py) - bu yuzden burada da gosterilmiyor.
                         dataToRender = dataToRender.filter(m =>
-                            ["WON", "LOST", "VOID"].includes(m.outcome) && m.signal_date === currentTodayTR);
+                            ["WON", "LOST"].includes(m.outcome) && m.signal_date === currentTodayTR);
                     }
                     renderGroups(dataToRender, currentTab);
                 } else {

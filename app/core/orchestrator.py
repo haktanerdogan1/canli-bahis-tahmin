@@ -312,6 +312,12 @@ def run_orchestrator():
             except Exception as ve:
                 print(f"⚠️  VOID yeniden kontrol hatasi: {ve}")
 
+            # Kalici olarak asla cozulemeyecek VOID sinyalleri sil - kullanici talebi.
+            try:
+                settlement.delete_unresolvable_void()
+            except Exception as de:
+                print(f"⚠️  VOID silme hatasi: {de}")
+
             # Tum sinyalleri sonuclanmis maclari FINISHED'e kilitle - aksi
             # halde RapidAPI'nin bir onceki gunden tasidigi stale kayitlar,
             # sirf status='LIVE' oldugu icin restart-bypass'tan (tracked_ids)

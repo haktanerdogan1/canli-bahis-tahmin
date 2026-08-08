@@ -33,6 +33,22 @@ def _has_signal_for_half(cursor, match_id, minute):
     ''', (match_id, 1 if first_half else 0))
     return cursor.fetchone() is not None
 
+SAATLIK_SINYAL_KOTASI = 5  # kullanici talebi: "cok fazla olmasin" - gunluk hacmi dizginler
+
+
+def _saatlik_kota_doldu_mu(cursor):
+    """Son 60 dakikada uretilen sinyal sayisi kotayi (SAATLIK_SINYAL_KOTASI)
+    doldurdu mu? Kalite/mutabakat kontrolunden BAGIMSIZ, saf bir hacim
+    frenidir - "aynı anda en fazla 10" kapasitesi hizli sonuclanan sinyaller
+    (ort. 41dk) yuzunden gunluk hacmi sinirlamiyordu (406+/gun olmustu),
+    bu yuzden ayrica saatlik bir uretim tavani gerekiyor."""
+    cursor.execute('''
+        SELECT COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' AND created_at >= datetime('now', '-60 minutes')
+    ''')
+    return cursor.fetchone()[0] >= SAATLIK_SINYAL_KOTASI
+
+
 AYNI_ANDA_ACIK_KAPASITE = 10
 
 
@@ -213,6 +229,11 @@ def run_orchestrator():
                 # Konsensüs
                 consensus_result = consensus_engine.evaluate(predictions)
                 
+                if consensus_result.decision == "signal" and _saatlik_kota_doldu_mu(cursor):
+                    # Son 60dk'da SAATLIK_SINYAL_KOTASI kadar sinyal uretilmis -
+                    # kalite ne olursa olsun bu saat icin yeni sinyal acilmiyor.
+                    continue
+
                 if consensus_result.decision == "signal" and not _kapasite_kontrolu(cursor, consensus_result.weighted_probability):
                     # Kapasite (10) dolu ve bu aday acik olanlarin en zayifindan
                     # daha guvenilir degil - sinyal hic acilmiyor.

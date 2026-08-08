@@ -642,3 +642,80 @@ def settle_pending(verbose=True):
         print(f"[settlement] {settled} sinyal sonuclandi "
               f"(kazanan={won} kaybeden={lost} gecersiz={void})", flush=True)
     return settled, won, lost, void
+
+
+def reconcile_void_signals(verbose=True):
+    """VOID yazilmis sinyalleri HER DONGUDE yeniden degerlendirir - kullanici
+    talebi geregi ("gozlem disi olanlarin kazananlarini kazandi, kaybedenlerini
+    kayip olarak isaretle"). settle_pending()'in tek farki: outcome='VOID'
+    olanlara bakar (IS NULL degil).
+
+    NEDEN TEK SEFERLIK BIR MIGRATION DEGIL, HER DONGUDE CALISAN BIR FONKSIYON:
+    VOID artik SADECE eski buglardan degil, kasitli bir tasarimdan da geliyor
+    (bkz. orchestrator.py _kapasite_kontrolu - kapasite dolunca en zayif acik
+    sinyal VOID yapilip yerine daha guclu bir aday aciliyor). Kapasite yuzunden
+    VOID olan bir mac COGU ZAMAN hala CANLI - saatler sonra gercek sonucuna
+    ulasabilir. Tek seferlik bir migration bunu YAKALAYAMAZ, bu yuzden
+    settle_pending() ile AYNI CADANSTA (her orchestrator dongusunde) calisir.
+
+    SADECE kesin WON/LOST cikan kayitlar guncellenir - hala belirsiz (None)
+    ya da gercekten VOID cikan kayitlara DOKUNULMAZ, PENDING'e de GERI
+    ACILMAZ (kullanicinin bu seferki istegi sadece kesin sonucu yazmak,
+    kapasite kontrolunu bozmadan).
+    """
+    conn = _connect()
+    cur = conn.cursor()
+
+    cur.execute('''
+        SELECT p.id, p.signal_minute, m.home_score, m.away_score, m.status, m.minute,
+               fh.fh_end_home, fh.fh_end_away, fh.fh_end_minute, p.initial_goals,
+               m.id, m.kickoff_ts
+        FROM consensus_predictions p
+        LEFT JOIN matches m ON m.id = p.match_id
+        LEFT JOIN (
+            SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away,
+                   ls1.minute AS fh_end_minute
+            FROM live_snapshots ls1
+            WHERE ls1.id = (
+                SELECT ls2.id FROM live_snapshots ls2
+                WHERE ls2.match_id = ls1.match_id AND ls2.minute <= 45
+                ORDER BY ls2.minute DESC, ls2.id DESC
+                LIMIT 1
+            )
+        ) fh ON fh.match_id = m.id
+        WHERE p.decision = 'signal' AND p.outcome = 'VOID' AND p.initial_goals IS NOT NULL
+    ''')
+    rows = cur.fetchall()
+
+    fixed = won = lost = 0
+    now_ts = time.time()
+    for (pid, sig_min, cur_h, cur_a, status, minute, fh_h, fh_a, fh_minute,
+         initial, match_id_db, kickoff_ts) in rows:
+
+        if (not fh_minute) and kickoff_ts and sig_min is not None and sig_min <= 45:
+            t_h, t_a = _time_based_fh_end(cur, match_id_db, kickoff_ts)
+            if t_h is not None:
+                fh_h, fh_a = t_h, t_a
+
+        outcome = compute_outcome(sig_min, initial, cur_h, cur_a, status, minute, fh_h, fh_a,
+                                  kickoff_ts=kickoff_ts, now=now_ts)
+        if outcome not in ("WON", "LOST"):
+            continue
+
+        cur.execute(
+            "UPDATE consensus_predictions SET outcome=?, settled_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND outcome='VOID'",
+            (outcome, pid),
+        )
+        fixed += cur.rowcount
+        if outcome == "WON":
+            won += 1
+        else:
+            lost += 1
+
+    conn.commit()
+    conn.close()
+    if verbose and fixed:
+        print(f"[settlement] VOID yeniden kontrol: {fixed} kayit kesin sonuca "
+              f"cevrildi (kazanan={won} kaybeden={lost})", flush=True)
+    return fixed, won, lost

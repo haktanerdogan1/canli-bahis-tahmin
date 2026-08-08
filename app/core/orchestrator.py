@@ -304,6 +304,14 @@ def run_orchestrator():
             except Exception as se:
                 print(f"⚠️  Sonuclandirma hatasi: {se}")
 
+            # VOID yazilmis sinyalleri kesin sonuca ulasip ulasmadigini kontrol
+            # eder - kullanici talebi. settle_pending ile ayni cadansta calisir
+            # (kapasite kontrolunden VOID olan maclar hala canli olabilir).
+            try:
+                settlement.reconcile_void_signals()
+            except Exception as ve:
+                print(f"⚠️  VOID yeniden kontrol hatasi: {ve}")
+
             # Tum sinyalleri sonuclanmis maclari FINISHED'e kilitle - aksi
             # halde RapidAPI'nin bir onceki gunden tasidigi stale kayitlar,
             # sirf status='LIVE' oldugu icin restart-bypass'tan (tracked_ids)

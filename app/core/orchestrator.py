@@ -33,6 +33,41 @@ def _has_signal_for_half(cursor, match_id, minute):
     ''', (match_id, 1 if first_half else 0))
     return cursor.fetchone() is not None
 
+AYNI_ANDA_ACIK_KAPASITE = 10
+
+
+def _kapasite_kontrolu(cursor, yeni_olasilik):
+    """En fazla AYNI_ANDA_ACIK_KAPASITE kadar PENDING sinyal ayni anda acik
+    kalsin - "cok fazla acik bahis, secici olmaliyiz" karari (kullanici
+    talebi). Kapasite doluysa:
+      - yeni aday, acik olanlarin EN ZAYIFINDAN daha guvenilirse (daha yuksek
+        agirlikli olasilik) o zayif sinyal VOID yapilip yerine yenisine yer
+        acilir (outcome bir kez daha KALICI - VOID yazildiktan sonra bu kayda
+        bir daha dokunulmaz, tipki normal sonuclanma gibi).
+      - degilse yeni sinyal hic acilmaz (kapasite doluyken daha guvenilir
+        olmayan bir aday icin yer acilmaz).
+    Kapasite dolu degilse dogrudan True doner - hicbir sey degismez.
+    """
+    cursor.execute('''
+        SELECT id, weighted_probability FROM consensus_predictions
+        WHERE decision='signal' AND outcome IS NULL
+        ORDER BY weighted_probability ASC
+    ''')
+    acik = cursor.fetchall()
+    if len(acik) < AYNI_ANDA_ACIK_KAPASITE:
+        return True
+
+    en_zayif_id, en_zayif_olasilik = acik[0]
+    if yeni_olasilik is not None and en_zayif_olasilik is not None and yeni_olasilik > en_zayif_olasilik:
+        cursor.execute(
+            "UPDATE consensus_predictions SET outcome='VOID', settled_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND outcome IS NULL",
+            (en_zayif_id,),
+        )
+        return True
+    return False
+
+
 def _ensure_schema():
     """Sema garantisi tek yerden (settlement.ensure_schema) yonetilir."""
     settlement.ensure_schema()
@@ -178,6 +213,11 @@ def run_orchestrator():
                 # Konsensüs
                 consensus_result = consensus_engine.evaluate(predictions)
                 
+                if consensus_result.decision == "signal" and not _kapasite_kontrolu(cursor, consensus_result.weighted_probability):
+                    # Kapasite (10) dolu ve bu aday acik olanlarin en zayifindan
+                    # daha guvenilir degil - sinyal hic acilmiyor.
+                    continue
+
                 if consensus_result.decision == "signal":
                     # Sinyalin uretildigi dakika ve hedeflenen market SABIT olarak hesaplanip kaydedilir.
                     # Boylece maç ilerledikce (ör. 2. yariya gecince) bu sinyal SONRADAN yanlislikla

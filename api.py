@@ -793,7 +793,11 @@ def get_ozet():
         "gozlem_disi": void,
         "bugun_kazanan": bugun_kazanan,
         "bugun_kaybeden": bugun_kaybeden,
-        "bugun_paylasilan": sum(bugun.values()),
+        # VOID (gozlem disi) artik kalici bir kategori degil - reconcile_void_signals()
+        # kesin sonuca ulasanlari WON/LOST yapiyor, delete_unresolvable_void() asla
+        # cozulemeyecekleri siliyor (bkz. settlement.py). Bu yuzden "paylasilan" sayisina
+        # VOID dahil edilmiyor - kullanici talebi.
+        "bugun_paylasilan": sum(bugun.values()) - bugun.get("VOID", 0),
         "bugun_sonuclanan": bugun_sonuclanan,
         "bugun_isabet_orani": round(bugun_kazanan / bugun_sonuclanan, 3) if bugun_sonuclanan else None,
         "bugun_bekleyen": bugun.get("PENDING", 0),
@@ -913,10 +917,12 @@ def get_metrics(request: Request):
         sonuclanan = kazanan + kaybeden
         gunluk.append({
             "tarih": gun,
-            "paylasilan": paylasilan,
+            # VOID (gecersiz) artik kalici bir kategori degil (bkz. settlement.py
+            # reconcile_void_signals / delete_unresolvable_void) - paylasilan
+            # sayisina dahil edilmiyor.
+            "paylasilan": paylasilan - gecersiz,
             "kazanan": kazanan,
             "kaybeden": kaybeden,
-            "gecersiz": gecersiz,
             "bekleyen": bekleyen,
             "isabet_orani": round(kazanan / sonuclanan, 3) if sonuclanan else None,
         })

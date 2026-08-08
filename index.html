@@ -1489,8 +1489,6 @@
                     `<span class="ozet-item">İsabet <b>${oranTxt}</b></span>` +
                     `<span class="ozet-sep">·</span>` +
                     `<span class="ozet-item">Bekleyen <b>${d.bekleyen}</b></span>` +
-                    `<span class="ozet-sep">·</span>` +
-                    `<span class="ozet-item">Gözlem dışı <b>${d.gozlem_disi || 0}</b></span>` +
                     `</div>`;
 
                 // DURUSTLUK: kucuk orneklemde oran guvenilir degildir, bunu gizlemiyoruz.
@@ -1518,8 +1516,6 @@
                         `<span class="ozet-item">İsabet <b>${oranBugunTxt}</b></span>` +
                         `<span class="ozet-sep">·</span>` +
                         `<span class="ozet-item">Bekleyen <b>${d.bugun_bekleyen || 0}</b></span>` +
-                        `<span class="ozet-sep">·</span>` +
-                        `<span class="ozet-item">Gözlem dışı <b>${d.bugun_gecersiz || 0}</b></span>` +
                         `</div>`;
                 }
             } catch (e) {
@@ -1587,13 +1583,12 @@
                         <td>${g.paylasilan}</td>
                         <td style="color:var(--accent-success);">${g.kazanan}</td>
                         <td style="color:var(--accent-danger);">${g.kaybeden}</td>
-                        <td style="color:var(--text-muted);">${g.gecersiz}</td>
                         <td style="color:var(--text-muted);">${g.bekleyen}</td>
                         <td style="color:${oranRenk}; font-weight:700;">${oran}</td>
                     </tr>`;
                 });
                 if (!gunlukRows) {
-                    gunlukRows = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Henüz sinyal paylaşılmadı.</td></tr>`;
+                    gunlukRows = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Henüz sinyal paylaşılmadı.</td></tr>`;
                 }
 
                 container.innerHTML = `
@@ -1602,7 +1597,7 @@
                         <div style="overflow-x:auto;">
                             <table class="stats-table">
                                 <thead><tr>
-                                    <th>Tarih</th><th>Paylaşılan</th><th>Kazandı</th><th>Kaybetti</th><th>Geçersiz</th><th>Bekleyen</th><th>İsabet</th>
+                                    <th>Tarih</th><th>Paylaşılan</th><th>Kazandı</th><th>Kaybetti</th><th>Bekleyen</th><th>İsabet</th>
                                 </tr></thead>
                                 <tbody>${gunlukRows}</tbody>
                             </table>

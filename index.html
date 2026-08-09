@@ -578,6 +578,12 @@
             position: relative;
         }
 
+        /* Kullanici talebi: sadece tahmin degil, tum mac karti (takim/skor/lig)
+           bulaniklassin - uye olmayan hangi macin takip edildigini bile gormesin. */
+        .match-row.locked {
+            position: relative;
+        }
+
         .locked-blur {
             filter: blur(6px);
             user-select: none;
@@ -1341,6 +1347,11 @@
                 let winsChanged = false;
                 let newChanged = false;
                 (result.data || []).forEach(m => {
+                    // Kilitli (uye olmayana bulaniklastirilmis) kayitlarda match_id/
+                    // takim adi sunucu tarafinda zaten null - bildirim uretmeye
+                    // calismak "null vs null" gibi bozuk metinler + tum kilitli
+                    // kayitlarin ayni anahtarda ("null:H1") cakismasina yol acardi.
+                    if (m.locked) return;
                     const key = `${m.match_id}:${m.signal_period || 'H?'}`;
 
                     if (!notifiedNewKeys.has(key)) {
@@ -2019,17 +2030,15 @@
                         }
 
                         if (m.locked) {
-                            // Uye degil: sunucu zaten market/probability gondermiyor.
-                            // Asagidaki metin GERCEK tahmin DEGIL, sadece bulanik bir
-                            // yer tutucu - uzerine "Uye Olun" katmani biniyor.
+                            // Uye degil: sunucu zaten market/probability/takim/skor
+                            // gondermiyor. Asagidaki metin GERCEK veri DEGIL, sadece
+                            // bulanik bir yer tutucu - tum kart tek bir "Uye Olun"
+                            // katmaniyla kapli (bkz. asagidaki kart govdesi de).
                             radarHtml = `
                             <div class="radar-panel locked">
                                 <div class="locked-blur">
                                     <div class="radar-target"><i class="fa-solid fa-bullseye"></i> Maç Sonu 2.5 Üst ${outcomeBadge}${dateBadge}</div>
                                     <div class="radar-prob">%78 Olasılık</div>
-                                </div>
-                                <div class="lock-overlay" onclick="event.stopPropagation(); openAuth('register')">
-                                    <button class="lock-btn"><i class="fa-solid fa-lock"></i> Görmek için Üye Olun</button>
                                 </div>
                             </div>`;
                         } else {
@@ -2050,6 +2059,35 @@
                                 ${signalMinuteHtml}
                             </div>`;
                         }
+                    }
+
+                    if (m.locked) {
+                        // Kullanici talebi: aktif macin kendisi (takim/skor/lig/dakika)
+                        // de bulanik olsun, sadece tahmin degil. Sunucu zaten bu
+                        // alanlari göndermiyor (bkz. api.py) - burada gercek veri
+                        // YOK, sadece dekoratif bir yer tutucu + tek katmanli kilit.
+                        html += `
+                        <div class="match-row locked" onclick="openAuth('register')">
+                            <div class="match-time">--'</div>
+                            <div class="match-teams locked-blur">
+                                <div class="team">
+                                    <span class="team-name">Gizli Takım A</span>
+                                    <span class="team-score">-</span>
+                                </div>
+                                <div class="team">
+                                    <span class="team-name">Gizli Takım B</span>
+                                    <span class="team-score">-</span>
+                                </div>
+                            </div>
+                            <div class="match-action locked-blur">
+                                <button class="btn-stats"><i class="fa-solid fa-chart-bar"></i> Veri</button>
+                            </div>
+                            ${radarHtml}
+                            <div class="lock-overlay" onclick="event.stopPropagation(); openAuth('register')">
+                                <button class="lock-btn"><i class="fa-solid fa-lock"></i> Görmek için Üye Olun</button>
+                            </div>
+                        </div>`;
+                        return;
                     }
 
                     const isFinished = m.match_status === 'FINISHED';

@@ -696,16 +696,35 @@ def get_live_matches(request: Request):
         is_free_today_pick = chosen.pop("_free_today", False)
 
         if not is_member and not is_free_today_pick:
-            # UYE DEGILSE VE gunun ucretsiz 3'unden biri DEGILSE tahmin verisi hic
-            # gonderilmez. Sadece ekrani CSS ile bulaniklastirmak koruma SAGLAMAZ
-            # (kullanici sayfa kaynagina veya gelistirici konsoluna bakip veriyi
-            # okur). Bu yuzden hassas alanlar sunucuda siliniyor; on yuzdeki
-            # bulanik gorunum yalnizca dekoratif.
+            # UYE DEGILSE VE gunun ucretsiz 3'unden biri DEGILSE HICBIR SEY
+            # gonderilmez - sadece tahmin degil, hangi macin takip edildigi de
+            # (takim adi, skor, dakika, lig, logo, match_id). Kullanici talebi:
+            # aktif maclari gormek icin uye olmak sart olsun, kart tamamen
+            # bulaniklassin. Sadece ekrani CSS ile bulaniklastirmak koruma
+            # SAGLAMAZ (kullanici sayfa kaynagina/gelistirici konsoluna bakip
+            # veriyi okur) - bu yuzden hassas alanlar sunucuda siliniyor;
+            # on yuzdeki bulanik gorunum yalnizca dekoratif.
             chosen["market"] = None
             chosen["probability"] = None
             chosen["confidence"] = None
             chosen["signal_minute"] = None
             chosen["lead_bot"] = None
+            chosen["home_team"] = None
+            chosen["away_team"] = None
+            chosen["home_score"] = None
+            chosen["away_score"] = None
+            chosen["minute"] = None
+            chosen["match_status"] = None
+            chosen["league_name"] = None
+            chosen["league_logo"] = None
+            chosen["home_logo"] = None
+            chosen["away_logo"] = None
+            chosen["match_id"] = None
+            # NOT: outcome BILEREK null'lanmiyor - frontend'in 'today'/'open'/
+            # 'results' sekme filtreleri outcome'a gore calisiyor (bkz. index.html
+            # fetchData). outcome (PENDING/WON/LOST) tek basina hangi macin
+            # oynandigini ifsa etmez, sadece kilitli karti dogru sekmede
+            # bulaniklastirilmis olarak gostermeye yarar.
             chosen["locked"] = True
 
     return {"success": True, "data": results, "is_member": is_member,

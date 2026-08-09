@@ -53,9 +53,14 @@ SERVICES = {
     "orchestrator": {
         "cmd": [PYTHON, "-u", "-m", "app.core.orchestrator"],
     },
-    "flashscore_xg_bot": {
-        "cmd": [PYTHON, "-u", "flashscore_xg_bot.py"],
-    },
+    # flashscore_xg_bot: GECICI OLARAK DEVRE DISI (bkz. git log). Ilk canli
+    # denemede Chromium container'da tekrar tekrar "Page/Target crashed" verdi
+    # ve servisin toplam bellek kullanimi 1GB limitine dayandi (0.999GB olculdu) -
+    # tum sistemi (api dahil) OOM riskine soktugu icin geri alindi. Ayri bir
+    # Railway servisinde izole calistirilmadan tekrar acilmamali.
+    # "flashscore_xg_bot": {
+    #     "cmd": [PYTHON, "-u", "flashscore_xg_bot.py"],
+    # },
 }
 
 MAX_LOG_BYTES = 5 * 1024 * 1024  # 5MB, asarsa .old'a tasi

@@ -300,6 +300,70 @@ def db_backup(request: Request):
                          media_type="application/octet-stream")
 
 
+@app.get("/api/admin/xg-targets")
+def xg_targets(request: Request):
+    """Flashscore xG istemcisi (flashscore_xg_client.py, YEREL makineden calisir)
+    icin: xG zenginlestirmesi yapilabilecek canli maclarin listesi.
+
+    NEDEN AYRI BIR UC: Chromium'u Railway container'inda calistirmak bellek
+    limitini (1GB) zorluyordu ve "Page crashed" hatasi veriyordu (bkz. git log -
+    "Flashscore xG bot'u GECICI olarak devre disi birak"). Cozum: scraping'i
+    (agir islem) kullanicinin kendi bilgisayarinda calistirip, sadece SONUCU
+    (birkaç ondalik sayi) bu API uzerinden Railway'deki canli veritabanina
+    yazdirmak - Railway container'i hic Chromium calistirmiyor, sifir ek
+    bellek yuku."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT m.id, m.home_team_id, m.away_team_id, m.minute
+        FROM matches m
+        WHERE m.status = 'LIVE'
+          AND EXISTS (SELECT 1 FROM live_snapshots s WHERE s.match_id = m.id)
+    ''')
+    maclar = [
+        {"match_id": mid, "home_team": home, "away_team": away, "minute": minute}
+        for mid, home, away, minute in cur.fetchall()
+    ]
+    conn.close()
+    return {"success": True, "maclar": maclar}
+
+
+@app.post("/api/admin/xg-update")
+def xg_update(request: Request, payload: dict):
+    """flashscore_xg_client.py'nin scrape ettigi xG degerini yazar.
+
+    live_snapshots'a YENI SATIR eklemiyoruz - orchestrator "en son satir =
+    guncel durum" varsayimiyla calisiyor (bkz. flashscore_xg_bot.py docstring),
+    sparse bir satir diger botlarin (sut, korner vb.) o dongude veri
+    kaybetmesine yol acardi. Bunun yerine EN SON satirin home_xg/away_xg
+    kolonlarini UPDATE ediyoruz."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    match_id = payload.get("match_id")
+    home_xg = payload.get("home_xg")
+    away_xg = payload.get("away_xg")
+    if match_id is None or home_xg is None or away_xg is None:
+        return JSONResponse({"error": "match_id/home_xg/away_xg gerekli"}, status_code=400)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        UPDATE live_snapshots SET home_xg = ?, away_xg = ?
+        WHERE id = (SELECT id FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1)
+    ''', (home_xg, away_xg, match_id))
+    updated = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"success": True, "updated_rows": updated}
+
+
 # ---------------------------------------------------------------------------
 # Kimlik dogrulama uclari
 # ---------------------------------------------------------------------------

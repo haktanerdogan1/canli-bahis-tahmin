@@ -6,3 +6,5 @@ numpy
 requests
 aiohttp
 beautifulsoup4
+Pillow
+playwright

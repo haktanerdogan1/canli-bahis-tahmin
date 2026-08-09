@@ -6,6 +6,8 @@ Yonettigi surecler:
   - thesports_bot   -> TheSports API canli veri cekici (RapidAPI'nin yerine, kota
                        tukendigi icin degistirildi - bkz. git log)
   - orchestrator    -> 18 AI bot konsensus motoru (app/core/orchestrator.py)
+  - flashscore_xg_bot -> Flashscore'dan canli xG cekip live_snapshots'a yazar
+                       (TheSports Basic pakette xG yok - bkz. flashscore_xg_bot.py)
 
 Not: sofascore (live_bot.py), sporkolik (sporkolik_bot.py) ve eski v4_api_bot.py
 (RapidAPI) artik calistirilmiyor - kod referans/rollback icin projede duruyor.
@@ -50,6 +52,9 @@ SERVICES = {
     },
     "orchestrator": {
         "cmd": [PYTHON, "-u", "-m", "app.core.orchestrator"],
+    },
+    "flashscore_xg_bot": {
+        "cmd": [PYTHON, "-u", "flashscore_xg_bot.py"],
     },
 }
 

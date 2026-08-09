@@ -47,6 +47,10 @@ def init_auth_schema():
             value TEXT NOT NULL
         )
     ''')
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass  # sutun zaten var
     conn.commit()
     conn.close()
 
@@ -200,6 +204,31 @@ def get_or_create_oauth_user(email: str) -> int:
     user_id = cur.lastrowid
     conn.close()
     return user_id
+
+
+# --- "Aktif mi" takibi ------------------------------------------------------
+# Her istekte DB'ye yazmak (frontend /api/ozet, /api/live-matches gibi uclari
+# birkaç saniyede bir polluyor) gereksiz yazma yuku olusturur. Bunun yerine
+# bellek-ici (process-ici) bir "en son ne zaman yazdik" onbellegiyle, kullanici
+# basina en fazla dakikada bir DB yazisi yapiyoruz - "son gorulme" birkaç
+# dakikaya kadar hassasiyet kaybedebilir ama bu amaca (aktif/pasif ayrimi,
+# yogun saatleri gormek) fazlasiyla yeterli.
+_LAST_SEEN_WRITE_THROTTLE_SECONDS = 60
+_last_seen_write_cache = {}
+
+
+def touch_last_seen(user_id: int):
+    now = time.time()
+    if now - _last_seen_write_cache.get(user_id, 0) < _LAST_SEEN_WRITE_THROTTLE_SECONDS:
+        return
+    _last_seen_write_cache[user_id] = now
+    try:
+        conn = _connect()
+        conn.execute("UPDATE users SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def get_user_email(user_id: int):

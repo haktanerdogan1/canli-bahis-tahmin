@@ -76,6 +76,12 @@
     .stat-card .lbl { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; }
     .stat-card.win .val { color: var(--success); }
     .stat-card.loss .val { color: var(--danger); }
+    .dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        margin-right: 6px; vertical-align: middle;
+    }
+    .dot-on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot-off { background: var(--text-muted); }
 
     .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
     .tab-btn { background: none; border: none; color: var(--text-muted); padding: 0.6rem 1rem; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; }
@@ -131,8 +137,8 @@
         <div class="warn-note" id="uyelerWarn" style="display:none;"></div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>ID</th><th>E-posta</th><th>Üyelik</th><th>Kayıt Tarihi</th></tr></thead>
-                <tbody id="uyelerBody"><tr><td colspan="4" class="loading">Yükleniyor...</td></tr></tbody>
+                <thead><tr><th>ID</th><th>E-posta</th><th>Üyelik</th><th>Kayıt Tarihi</th><th>Durum</th><th>Son Görülme</th></tr></thead>
+                <tbody id="uyelerBody"><tr><td colspan="6" class="loading">Yükleniyor...</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -228,12 +234,28 @@ async function loadUyeler() {
     }
     const body = document.getElementById('uyelerBody');
     if (!d.uyeler.length) {
-        body.innerHTML = '<tr><td colspan="4" class="empty">Henüz üye yok.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="empty">Henüz üye yok.</td></tr>';
         return;
     }
     body.innerHTML = d.uyeler.map(u => `
-        <tr><td>${u.id}</td><td>${u.email}</td><td>${u.uyelik_tipi}</td><td>${u.kayit_tarihi}</td></tr>
+        <tr>
+            <td>${u.id}</td><td>${u.email}</td><td>${u.uyelik_tipi}</td><td>${u.kayit_tarihi}</td>
+            <td>${u.aktif ? '<span class="dot dot-on"></span>Aktif' : '<span class="dot dot-off"></span>Pasif'}</td>
+            <td>${fmtSonGorulme(u.son_gorulme)}</td>
+        </tr>
     `).join('');
+}
+
+function fmtSonGorulme(iso) {
+    if (!iso) return 'Hiç görülmedi';
+    // Sunucu saatleri UTC (SQLite CURRENT_TIMESTAMP) - "Z" ekleyip tarayicinin
+    // yerel saatine cevrilmesini sagliyoruz.
+    const t = new Date(iso.replace(' ', 'T') + 'Z');
+    const diffSec = Math.round((Date.now() - t.getTime()) / 1000);
+    if (diffSec < 60) return 'az önce';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} dakika önce`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} saat önce`;
+    return `${Math.floor(diffSec / 86400)} gün önce (${t.toLocaleString('tr-TR')})`;
 }
 
 async function loadBotFiltre() {

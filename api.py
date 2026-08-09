@@ -41,8 +41,15 @@ SESSION_COOKIE = "jcode_session"
 
 
 def current_user_id(request: Request):
-    """Istekteki oturum cookie'sinden kullanici id'si cikarir; yoksa None."""
-    return auth.verify_session_token(request.cookies.get(SESSION_COOKIE, ""))
+    """Istekteki oturum cookie'sinden kullanici id'si cikarir; yoksa None.
+
+    Yan etki: gecerli bir kullaniciysa "son gorulme" zamanini gunceller
+    (bkz. auth.touch_last_seen - dakikada bir kereye kadar throttled) ki
+    yonetici panelinde kimin aktif oldugu gorulebilsin."""
+    uid = auth.verify_session_token(request.cookies.get(SESSION_COOKIE, ""))
+    if uid is not None:
+        auth.touch_last_seen(uid)
+    return uid
 
 # NOT: Eskiden allow_origins=["*"] + allow_credentials=True vardi. Bu ikisi birlikte
 # hem tarayici tarafindan reddedilir hem de cookie tabanli oturumla birlesince baska
@@ -145,10 +152,18 @@ def admin_panel_uyeler(request: Request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     conn = connect()
     cur = conn.cursor()
-    cur.execute("SELECT id, email, created_at FROM users ORDER BY created_at DESC")
+    cur.execute('''
+        SELECT id, email, created_at, last_seen_at,
+               CASE WHEN last_seen_at >= datetime('now', '-5 minutes') THEN 1 ELSE 0 END AS aktif
+        FROM users ORDER BY created_at DESC
+    ''')
     uyeler = [
-        {"id": uid, "email": email, "kayit_tarihi": created_at, "uyelik_tipi": "Free"}
-        for uid, email, created_at in cur.fetchall()
+        {
+            "id": uid, "email": email, "kayit_tarihi": created_at,
+            "son_gorulme": last_seen_at, "aktif": bool(aktif),
+            "uyelik_tipi": "Free",
+        }
+        for uid, email, created_at, last_seen_at, aktif in cur.fetchall()
     ]
     conn.close()
     return {"success": True, "uyeler": uyeler,

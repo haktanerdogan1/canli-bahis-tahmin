@@ -189,7 +189,13 @@ def run_cycle():
     exe_path = _chromium_executable_path()
 
     with sync_playwright() as p:
-        launch_kwargs = {"headless": True}
+        launch_kwargs = {
+            "headless": True,
+            # Railway container'inda /dev/shm cok kucuk ve sandbox user-namespace
+            # izinleri yok - bunlar olmadan Chromium "Target/Page crashed" ile
+            # oluyor (yerelde macOS'ta bu sinirlar olmadigi icin sorun cikmadi).
+            "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        }
         if exe_path:
             launch_kwargs["executable_path"] = exe_path
         browser = p.chromium.launch(**launch_kwargs)

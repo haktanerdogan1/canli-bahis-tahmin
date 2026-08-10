@@ -106,26 +106,6 @@ body::before{
 .avatar-frame.offline{border-color:var(--dim); color:var(--dim); box-shadow:none; filter:grayscale(0.55); opacity:0.5;}
 .avatar-frame svg{width:60%; height:60%; filter:drop-shadow(0 0 4px currentColor);}
 
-/* ---------- Squad grid (daraltilabilir) ---------- */
-.squad-section{margin:14px 0 4px;}
-.squad-section-head{display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:2px 2px 10px;}
-.squad-section-head .lbl{
-  font-family:'Orbitron'; font-size:0.7rem; letter-spacing:2px; color:var(--text);
-  display:flex; align-items:center; gap:8px;
-}
-.squad-section-head .lbl::before{content:''; width:3px; height:15px; background:var(--green); border-radius:2px; box-shadow:0 0 8px var(--green);}
-.squad-section-head i{color:var(--muted); transition:transform .25s;}
-.squad-section.collapsed .squad-grid{display:none;}
-.squad-section.collapsed .squad-section-head i{transform:rotate(180deg);}
-.squad-grid{display:grid; grid-template-columns:repeat(4, 1fr); gap:9px; padding-bottom:8px;}
-.squad-cell{text-align:center; cursor:pointer;}
-.squad-cell .avatar-frame{width:100%; aspect-ratio:1; margin-bottom:4px;}
-.squad-cell .nm{font-size:0.56rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.squad-cell .cd{font-size:0.5rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.squad-cell .st{font-size:0.48rem; font-weight:700; letter-spacing:0.5px; margin-top:1px;}
-.squad-cell .st.on{color:var(--green);}
-.squad-cell .st.off{color:var(--dim);}
-
 /* ---------- Summary strip ---------- */
 .stat-row{display:flex; gap:10px; padding:0 18px 16px; overflow-x:auto;}
 .stat-pill{
@@ -374,13 +354,6 @@ body::before{
 
 <!-- ================= SİNYALLER (today) ================= -->
 <div class="tab-panel active" id="tab-today">
-  <div class="squad-section" id="squadSection">
-    <div class="squad-section-head" onclick="toggleSquadSection()">
-      <span class="lbl">SİBER EKİBİN</span>
-      <i class="fa-solid fa-chevron-up"></i>
-    </div>
-    <div class="squad-grid" id="squadGrid"></div>
-  </div>
   <div class="stat-row" id="statRowToday"></div>
   <div class="section-title"><i class="fa-solid fa-satellite-dish"></i> BUGÜNKÜ SİNYALLER</div>
   <div id="listToday"><div class="loader-ring"></div></div>
@@ -494,25 +467,9 @@ function switchTab(tab){
 }
 
 // ======================================================================
-// CYBER SQUAD — ana ekranin ustundeki daraltilabilir grid + Istatistikler
-// sekmesindeki tam liste, ikisi de ayni BOTS verisini kullanir.
+// CYBER SQUAD — sadece Istatistikler sekmesindeki tam liste (ana ekranin
+// ustunde ayrica bir grid YOK - kullanici "kalabalık duruyor" dedi, kaldirildi).
 // ======================================================================
-function renderSquadGrid(){
-  const el = document.getElementById('squadGrid');
-  if(!el) return;
-  el.innerHTML = BOTS.map((b, i) => `
-    <div class="squad-cell" onclick="openBotModal(${i})">
-      ${avatarHtml(b)}
-      <div class="nm">${b.name}</div>
-      <div class="cd">// ${b.code}</div>
-      <div class="st ${b.active?'on':'off'}">${b.active?'AKTİF':'STANDBY'}</div>
-    </div>
-  `).join('');
-}
-function toggleSquadSection(){
-  document.getElementById('squadSection').classList.toggle('collapsed');
-}
-
 function renderSquadFull(){
   const el = document.getElementById('squadFullList');
   el.innerHTML = BOTS.map((b, i) => `
@@ -857,7 +814,6 @@ async function logout(){
 // uygulamaya gectiginde) polling'i durduruyoruz; hem gereksiz pil/veri
 // tuketimini onluyor hem de geri donuldugunde tazeleniyor.
 // ======================================================================
-renderSquadGrid();
 checkAuth();
 loadOzetStrip();
 loadSignals();

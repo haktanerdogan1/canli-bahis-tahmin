@@ -93,33 +93,6 @@ body::before{
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green); box-shadow:0 0 8px var(--green); animation:pulse-dot 1.4s infinite;}
 @keyframes pulse-dot{0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.4; transform:scale(0.7);}}
 
-/* ---------- Squad strip ---------- */
-.squad-strip{
-  display:flex; gap:10px; overflow-x:auto; padding:4px 18px 14px;
-  scroll-snap-type:x proximity;
-}
-.squad-chip{
-  flex:0 0 auto; width:64px; text-align:center; cursor:pointer;
-  scroll-snap-align:start;
-}
-.squad-avatar{
-  width:52px; height:52px; border-radius:16px; margin:0 auto 5px;
-  display:flex; align-items:center; justify-content:center;
-  font-family:'Orbitron'; font-weight:800; font-size:0.95rem;
-  position:relative; border:1px solid var(--border);
-  background:linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.01));
-  transition:transform .2s;
-}
-.squad-chip:active .squad-avatar{transform:scale(0.92);}
-.squad-avatar.active-glow{box-shadow:0 0 16px -3px var(--glow-c, var(--green));}
-.squad-avatar .dot{
-  position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%;
-  background:var(--green); border:2px solid var(--bg); box-shadow:0 0 6px var(--green);
-}
-.squad-avatar.offline{opacity:0.38; filter:grayscale(0.6);}
-.squad-avatar.offline .dot{background:var(--dim); box-shadow:none;}
-.squad-label{font-size:0.6rem; color:var(--muted); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-
 /* ---------- Summary strip ---------- */
 .stat-row{display:flex; gap:10px; padding:0 18px 16px; overflow-x:auto;}
 .stat-pill{
@@ -148,9 +121,18 @@ body::before{
 }
 .league-header img{width:16px;height:16px;border-radius:3px;}
 
+/* ---------- Card surface (blur YOK - listede cok sayida tekrarlaniyor,
+   backdrop-filter'i her kartta ayri ayri calistirmak mobilde kaydirma
+   performansini ciddi dusuruyordu) ---------- */
+.card-surface{
+  background:linear-gradient(160deg, rgba(20,26,42,0.92), rgba(12,17,30,0.96));
+  border:1px solid var(--border);
+  border-radius:18px;
+}
+
 /* ---------- Signal Card (flip) ---------- */
 .flip-outer{perspective:1400px; margin-bottom:14px;}
-.flip-inner{position:relative; transition:transform .55s cubic-bezier(.4,.2,.2,1); transform-style:preserve-3d; min-height:128px;}
+.flip-inner{position:relative; transition:transform .55s cubic-bezier(.4,.2,.2,1); transform-style:preserve-3d; min-height:172px;}
 .flip-outer.flipped .flip-inner{transform:rotateY(180deg);}
 .flip-face{position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; padding:14px; overflow:hidden;}
 .flip-face.back{transform:rotateY(180deg); display:flex; flex-direction:column; justify-content:center;}
@@ -178,7 +160,6 @@ body::before{
   padding:3px 8px; border-radius:999px; background:rgba(255,255,255,0.05); border:1px solid var(--border);
   margin-top:5px;
 }
-.bot-pill .dot{width:6px;height:6px;border-radius:50%;}
 
 .gauge{
   --pct:0; width:52px; height:52px; border-radius:50%; position:relative; flex:0 0 auto;
@@ -190,7 +171,7 @@ body::before{
 .gauge span{position:relative; font-family:'Orbitron'; font-weight:700; font-size:0.72rem; z-index:1;}
 
 /* laser scan sweep for locked cards */
-.locked-card{position:relative; overflow:hidden; min-height:128px; padding:14px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:8px; cursor:pointer;}
+.locked-card{position:relative; overflow:hidden; min-height:150px; padding:14px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:8px; cursor:pointer;}
 .locked-card .scan{
   position:absolute; left:0; right:0; height:40%; top:-40%;
   background:linear-gradient(180deg, transparent, rgba(0,255,135,0.16), transparent);
@@ -225,7 +206,10 @@ body::before{
 }
 .bot-back-name{font-family:'Orbitron'; font-size:0.78rem; font-weight:700;}
 .bot-back-code{font-size:0.65rem; color:var(--muted);}
-.bot-back-desc{font-size:0.78rem; color:var(--muted); line-height:1.4;}
+.bot-back-desc{
+  font-size:0.78rem; color:var(--muted); line-height:1.4;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+}
 .flip-hint{position:absolute; bottom:8px; right:12px; font-size:0.6rem; color:var(--dim); display:flex; align-items:center; gap:4px;}
 
 /* ---------- Bottom nav ---------- */
@@ -336,7 +320,7 @@ body::before{
 .form-card .row b{color:var(--green);}
 
 @media (min-width:600px){
-  .tab-panel, .topbar, .squad-strip, .stat-row{padding-left:32px; padding-right:32px;}
+  .tab-panel, .topbar, .stat-row{padding-left:32px; padding-right:32px;}
 }
 </style>
 </head>
@@ -352,8 +336,6 @@ body::before{
   </div>
   <div class="live-chip"><span class="live-dot"></span>CANLI</div>
 </div>
-
-<div class="squad-strip" id="squadStrip"></div>
 
 <!-- ================= SİNYALLER (today) ================= -->
 <div class="tab-panel active" id="tab-today">
@@ -403,32 +385,41 @@ body::before{
   </div>
 </div>
 
+<div class="modal-overlay" id="botModal" onclick="if(event.target===this) closeBotModal();">
+  <div class="modal-sheet glass" style="max-width:420px;">
+    <span class="modal-close" onclick="closeBotModal()"><i class="fa-solid fa-xmark"></i></span>
+    <div id="botModalBody"></div>
+  </div>
+</div>
+
 <script>
 // ======================================================================
 // GERÇEK 18 BOT — bot_* id'leri app/core/consensus_engine.py ile 1:1 aynı.
 // ======================================================================
 const BOTS = [
-  {id:'bot_19_prematch_prophet', code:'ORIGIN-19', name:'The Prophet', c:'#ffd54a', active:true, desc:'Canlı veriye bakmaz — 33.525 maçlık arşivden çıkarılmış takım gol profiline göre maçın 1. dakikasından itibaren konuşur.'},
-  {id:'bot_base_rate', code:'ARCHIVE-P', name:'Bedrock', c:'#b8c4d9', active:true, desc:'Sistemin çapası: yorum yapmaz, sadece "bu dakikada bu skorda geçmişte kaç maçta gol geldi" sorusunun ölçülmüş cevabını verir.'},
-  {id:'bot_odds_profile', code:'V-88', name:'Value Oracle', c:'#ffd54a', active:false, desc:'Canlı bahis oranını arşivdeki aynı fiyat profiliyle eşler.'},
-  {id:'bot_form_asymmetry', code:'SYNC-05', name:'The Profiler', c:'#2dd4bf', active:true, desc:'İki takımın beklenen gol (xG) profili arasındaki uyum/uyumsuzluğu okur.'},
-  {id:'bot_xg_sniper', code:'xG-ALPHA', name:'The Architect', c:'#00e5b0', active:true, desc:'Canlı xG birikim hızına bakar — üretilen pozisyonların gerçek gol değerini ölçer.'},
-  {id:'bot_finishing_gap', code:'GAP-06', name:'The Closer', c:'#22c55e', active:true, desc:'xG ile atılan gol arasındaki farka bakar — "hak edip atamadılar mı" sorusu.'},
-  {id:'bot_shot_accuracy', code:'AIM-X', name:'Precision Sniper', c:'#00FF87', active:true, desc:'Şutların yüzde kaçının kaleyi bulduğuna bakar.'},
-  {id:'bot_tempo_scanner', code:'PACE-3000', name:'Tempo Master', c:'#f5d90a', active:true, desc:'10 dakikaya düşen şut sayısına göre oyunun temposunu ölçer.'},
-  {id:'bot_attack_volume', code:'VOL-09', name:'Assault Wave', c:'#8a8f98', active:false, desc:'Tehlikeli atak sayısına bakar.'},
-  {id:'bot_momentum_surge', code:'VIBE-AI', name:'Momentum Pulse', c:'#c084fc', active:true, desc:'Son 5 dakikadaki isabetli şut ve korner baskısını yakalar.'},
-  {id:'bot_acceleration', code:'DELTA-11', name:'Accelerant', c:'#a855f7', active:true, desc:'Mutlak hacme değil DEĞİŞİME bakar — oyun hızlanıyor mu, yavaşlıyor mu.'},
-  {id:'bot_corner_pressure', code:'CP-05', name:'Set-Piece Hawk', c:'#ff5fd1', active:true, desc:'Korner hızına göre duran top baskısını ölçer.'},
-  {id:'bot_game_state', code:'STATE-07', name:'Clockwork', c:'#22c1ff', active:true, desc:'Skor farkı ve kalan süreye bakar — beraberlik ya da tek fark, iki tarafın da açık oynamasını zorlar.'},
-  {id:'bot_draw_breaker', code:'DB-04', name:'The Breaker', c:'#3fd3ff', active:true, desc:'Sadece 55. dakika sonrası, hâlâ berabere giden maçlarda devreye girer.'},
-  {id:'bot_red_card', code:'RC-03', name:'Red Alert', c:'#8a8f98', active:false, desc:'Kırmızı kart sonrası sayısal üstünlük etkisine bakar.'},
-  {id:'bot_early_blitz', code:'EB-03', name:'First Strike', c:'#ff8a3d', active:true, desc:'Sadece maçın ilk 25 dakikasında konuşur — erken tempo yoğunluğu.'},
-  {id:'bot_late_drama', code:'LATE-80', name:'Iron Clutch', c:'#ff5f5f', active:true, desc:'Sadece 70. dakika sonrası, maçın son bölümündeki dramı okur.'},
-  {id:'bot_possession_dominance', code:'POSS-0', name:'Dominion', c:'#4361ee', active:false, desc:'Topla oynama ve şut üstünlüğü dengesizliğine bakar.'},
+  {id:'bot_19_prematch_prophet', code:'ORIGIN-19', name:'The Prophet', c:'#ffd54a', icon:'fa-eye', active:true, desc:'Canlı veriye bakmaz — 33.525 maçlık arşivden çıkarılmış takım gol profiline göre maçın 1. dakikasından itibaren konuşur.'},
+  {id:'bot_base_rate', code:'ARCHIVE-P', name:'Bedrock', c:'#b8c4d9', icon:'fa-database', active:true, desc:'Sistemin çapası: yorum yapmaz, sadece "bu dakikada bu skorda geçmişte kaç maçta gol geldi" sorusunun ölçülmüş cevabını verir.'},
+  {id:'bot_odds_profile', code:'V-88', name:'Value Oracle', c:'#ffd54a', icon:'fa-coins', active:false, desc:'Canlı bahis oranını arşivdeki aynı fiyat profiliyle eşler.'},
+  {id:'bot_form_asymmetry', code:'SYNC-05', name:'The Profiler', c:'#2dd4bf', icon:'fa-fingerprint', active:true, desc:'İki takımın beklenen gol (xG) profili arasındaki uyum/uyumsuzluğu okur.'},
+  {id:'bot_xg_sniper', code:'xG-ALPHA', name:'The Architect', c:'#00e5b0', icon:'fa-compass-drafting', active:true, desc:'Canlı xG birikim hızına bakar — üretilen pozisyonların gerçek gol değerini ölçer.'},
+  {id:'bot_finishing_gap', code:'GAP-06', name:'The Closer', c:'#22c55e', icon:'fa-bullseye', active:true, desc:'xG ile atılan gol arasındaki farka bakar — "hak edip atamadılar mı" sorusu.'},
+  {id:'bot_shot_accuracy', code:'AIM-X', name:'Precision Sniper', c:'#00FF87', icon:'fa-crosshairs', active:true, desc:'Şutların yüzde kaçının kaleyi bulduğuna bakar.'},
+  {id:'bot_tempo_scanner', code:'PACE-3000', name:'Tempo Master', c:'#f5d90a', icon:'fa-gauge-high', active:true, desc:'10 dakikaya düşen şut sayısına göre oyunun temposunu ölçer.'},
+  {id:'bot_attack_volume', code:'VOL-09', name:'Assault Wave', c:'#8a8f98', icon:'fa-fire', active:false, desc:'Tehlikeli atak sayısına bakar.'},
+  {id:'bot_momentum_surge', code:'VIBE-AI', name:'Momentum Pulse', c:'#c084fc', icon:'fa-wave-square', active:true, desc:'Son 5 dakikadaki isabetli şut ve korner baskısını yakalar.'},
+  {id:'bot_acceleration', code:'DELTA-11', name:'Accelerant', c:'#a855f7', icon:'fa-forward-fast', active:true, desc:'Mutlak hacme değil DEĞİŞİME bakar — oyun hızlanıyor mu, yavaşlıyor mu.'},
+  {id:'bot_corner_pressure', code:'CP-05', name:'Set-Piece Hawk', c:'#ff5fd1', icon:'fa-flag', active:true, desc:'Korner hızına göre duran top baskısını ölçer.'},
+  {id:'bot_game_state', code:'STATE-07', name:'Clockwork', c:'#22c1ff', icon:'fa-clock', active:true, desc:'Skor farkı ve kalan süreye bakar — beraberlik ya da tek fark, iki tarafın da açık oynamasını zorlar.'},
+  {id:'bot_draw_breaker', code:'DB-04', name:'The Breaker', c:'#3fd3ff', icon:'fa-scale-unbalanced', active:true, desc:'Sadece 55. dakika sonrası, hâlâ berabere giden maçlarda devreye girer.'},
+  {id:'bot_red_card', code:'RC-03', name:'Red Alert', c:'#8a8f98', icon:'fa-triangle-exclamation', active:false, desc:'Kırmızı kart sonrası sayısal üstünlük etkisine bakar.'},
+  {id:'bot_early_blitz', code:'EB-03', name:'First Strike', c:'#ff8a3d', icon:'fa-rocket', active:true, desc:'Sadece maçın ilk 25 dakikasında konuşur — erken tempo yoğunluğu.'},
+  {id:'bot_late_drama', code:'LATE-80', name:'Iron Clutch', c:'#ff5f5f', icon:'fa-stopwatch', active:true, desc:'Sadece 70. dakika sonrası, maçın son bölümündeki dramı okur.'},
+  {id:'bot_possession_dominance', code:'POSS-0', name:'Dominion', c:'#4361ee', icon:'fa-chess-king', active:false, desc:'Topla oynama ve şut üstünlüğü dengesizliğine bakar.'},
 ];
 const BOT_MAP = Object.fromEntries(BOTS.map(b => [b.id, b]));
-function botInitials(name){ return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+function botIconHtml(b, size){
+  return `<i class="fa-solid ${b.icon}" style="font-size:${size||'1rem'};"></i>`;
+}
 
 // ======================================================================
 // STATE
@@ -449,26 +440,13 @@ function switchTab(tab){
 }
 
 // ======================================================================
-// SQUAD STRIP (üst şerit)
+// CYBER SQUAD — İstatistikler sekmesindeki tam kadro listesi
 // ======================================================================
-function renderSquadStrip(){
-  const el = document.getElementById('squadStrip');
-  el.innerHTML = BOTS.map(b => `
-    <div class="squad-chip" onclick="alert('${b.name} // ${b.code}\\n\\n${b.desc}${b.active?'':'\\n\\n[ÇEVRİMDIŞI]'}')">
-      <div class="squad-avatar ${b.active?'active-glow':'offline'}" style="--glow-c:${b.c}; color:${b.c}; border-color:${b.c}55;">
-        ${botInitials(b.name)}
-        <span class="dot"></span>
-      </div>
-      <div class="squad-label">${b.code}</div>
-    </div>
-  `).join('');
-}
-
 function renderSquadFull(){
   const el = document.getElementById('squadFullList');
-  el.innerHTML = BOTS.map(b => `
-    <div class="glass squad-full-item ${b.active?'':'offline'}" onclick="alert('${b.name} // ${b.code}\\n\\n${b.desc}')">
-      <div class="squad-full-avatar" style="color:${b.c}; border-color:${b.c}55;">${botInitials(b.name)}</div>
+  el.innerHTML = BOTS.map((b, i) => `
+    <div class="glass squad-full-item ${b.active?'':'offline'}" onclick="openBotModal(${i})">
+      <div class="squad-full-avatar" style="color:${b.c}; border-color:${b.c}55;">${botIconHtml(b,'1.15rem')}</div>
       <div class="squad-full-info">
         <div class="squad-full-name">${b.name} <span style="color:var(--muted); font-weight:500;">// ${b.code}</span></div>
         <div class="squad-full-desc">${b.desc}</div>
@@ -477,6 +455,23 @@ function renderSquadFull(){
     </div>
   `).join('');
 }
+
+function openBotModal(i){
+  const b = BOTS[i];
+  document.getElementById('botModalBody').innerHTML = `
+    <div class="bot-back-head" style="margin-bottom:14px;">
+      <div class="bot-back-avatar" style="width:52px;height:52px;border-radius:16px; color:${b.c}; border-color:${b.c}55;">${botIconHtml(b,'1.4rem')}</div>
+      <div>
+        <div class="bot-back-name" style="font-size:1rem;">${b.name}</div>
+        <div class="bot-back-code">// ${b.code}</div>
+      </div>
+    </div>
+    <div class="bot-back-desc" style="display:block; -webkit-line-clamp:unset; font-size:0.86rem;">${b.desc}</div>
+    <div class="squad-status-tag ${b.active?'on':'off'}" style="display:inline-block; margin-top:14px;">${b.active?'AKTİF':'STANDBY — bu birim şu an çevrimdışı'}</div>
+  `;
+  document.getElementById('botModal').classList.add('active');
+}
+function closeBotModal(){ document.getElementById('botModal').classList.remove('active'); }
 
 // ======================================================================
 // API helpers
@@ -524,7 +519,16 @@ function groupByLeague(matches){
   return groups;
 }
 
+// Ayni veriyle DOM'u tekrar tekrar yeniden kurmak (12sn'de bir) hem gereksiz
+// islem yukuydu hem de acik olan kartlarin cevrili durumunu her seferinde
+// sifirliyordu. Onceki dongude gonderilen veriyle imza karsilastirip
+// gercekten degisiklik yoksa DOM'a hic dokunmuyoruz.
+const _lastListSignature = {};
 function renderList(containerId, data){
+  const signature = JSON.stringify(data);
+  if(_lastListSignature[containerId] === signature) return;
+  _lastListSignature[containerId] = signature;
+
   const el = document.getElementById(containerId);
   if(!data.length){
     el.innerHTML = `<div class="empty-state"><i class="fa-solid fa-satellite"></i><div>Şu an gösterilecek sinyal yok</div></div>`;
@@ -545,7 +549,7 @@ function renderList(containerId, data){
 
 function lockedCardHtml(m){
   return `
-  <div class="glass locked-card" onclick="switchTab('account')">
+  <div class="card-surface locked-card" onclick="switchTab('account')">
     <div class="scan"></div>
     <i class="fa-solid fa-lock"></i>
     <div class="locked-blur-row"><div></div><div style="width:24px;"></div><div></div></div>
@@ -571,14 +575,14 @@ function signalCardHtml(m){
   else if(m.match_status==='ABANDONED') timeLabel='GD';
   else timeLabel = (m.minute>=0? m.minute+"'" : '—');
 
-  const botPill = bot ? `<div class="bot-pill" style="border-color:${bot.c}55;"><span class="dot" style="background:${bot.c}; box-shadow:0 0 6px ${bot.c};"></span>${bot.name}</div>` : '';
+  const botPill = bot ? `<div class="bot-pill" style="border-color:${bot.c}55; color:${bot.c};">${botIconHtml(bot,'0.7rem')} ${bot.name}</div>` : '';
 
   const celebrateClass = m.outcome==='WON' ? 'celebrate' : '';
 
   return `
   <div class="flip-outer" id="${id}">
-    <div class="flip-inner" style="min-height:132px;">
-      <div class="flip-face front glass ${celebrateClass}" onclick="toggleFlip('${id}')">
+    <div class="flip-inner">
+      <div class="flip-face front card-surface ${celebrateClass}" onclick="toggleFlip('${id}')">
         <div class="card-top">
           ${statusBadge}
           <span class="badge-min">${timeLabel}</span>
@@ -602,10 +606,10 @@ function signalCardHtml(m){
           <div class="gauge" style="--pct:${pct}; --gc:${gaugeColor};"><span>${pct}%</span></div>
         </div>
       </div>
-      <div class="flip-face back glass" onclick="toggleFlip('${id}')">
+      <div class="flip-face back card-surface" onclick="toggleFlip('${id}')">
         ${bot ? `
           <div class="bot-back-head">
-            <div class="bot-back-avatar" style="color:${bot.c}; border-color:${bot.c}55;">${botInitials(bot.name)}</div>
+            <div class="bot-back-avatar" style="color:${bot.c}; border-color:${bot.c}55;">${botIconHtml(bot,'1.1rem')}</div>
             <div>
               <div class="bot-back-name">${bot.name}</div>
               <div class="bot-back-code">// ${bot.code} — en çok katkı veren birim</div>
@@ -613,8 +617,8 @@ function signalCardHtml(m){
           </div>
           <div class="bot-back-desc">${bot.desc}</div>
         ` : `<div class="bot-back-desc">Bu sinyal, konsensüs ekibinin ortak kararıyla üretildi.</div>`}
-        <div class="bot-back-desc" style="margin-top:10px;">Sinyal dakikası: <b style="color:var(--green)">${m.signal_minute ?? '—'}'</b></div>
-        ${m.match_id && isMember ? `<button class="btn-primary" style="margin-top:14px;" onclick="event.stopPropagation(); openMatchDetail(${m.match_id}, '${(m.home_team||'').replace(/'/g,"")}', '${(m.away_team||'').replace(/'/g,"")}')"><i class="fa-solid fa-radar"></i> CANLI ANALİZİ AÇ</button>` : ''}
+        <div style="font-size:0.78rem; color:var(--muted); margin-top:8px;">Sinyal dakikası: <b style="color:var(--green)">${m.signal_minute ?? '—'}'</b></div>
+        ${m.match_id && isMember ? `<button class="btn-primary" style="margin-top:12px;" onclick="event.stopPropagation(); openMatchDetail(${m.match_id}, '${(m.home_team||'').replace(/'/g,"")}', '${(m.away_team||'').replace(/'/g,"")}')"><i class="fa-solid fa-satellite-dish"></i> CANLI ANALİZİ AÇ</button>` : ''}
         <div class="flip-hint"><i class="fa-solid fa-rotate"></i> çevir</div>
       </div>
     </div>
@@ -628,10 +632,14 @@ function toggleFlip(id){
 // ======================================================================
 // ÖZET / İSTATİSTİK
 // ======================================================================
+let _lastOzetSignature = null;
 async function loadOzetStrip(){
   try{
     const d = await api('/api/ozet');
     if(!d.success) return;
+    const sig = JSON.stringify(d);
+    if(sig === _lastOzetSignature) return;
+    _lastOzetSignature = sig;
     document.getElementById('statRowToday').innerHTML = `
       <div class="glass stat-pill won"><div class="v">${d.bugun_kazanan}</div><div class="l">BUGÜN KAZANAN</div></div>
       <div class="glass stat-pill lost"><div class="v">${d.bugun_kaybeden}</div><div class="l">BUGÜN KAYBEDEN</div></div>
@@ -761,14 +769,27 @@ async function logout(){
 }
 
 // ======================================================================
-// INIT
+// INIT — sekme arka plandayken (kullanici uygulamadan cikip baska bir
+// uygulamaya gectiginde) polling'i durduruyoruz; hem gereksiz pil/veri
+// tuketimini onluyor hem de geri donuldugunde tazeleniyor.
 // ======================================================================
-renderSquadStrip();
 checkAuth();
 loadOzetStrip();
 loadSignals();
-setInterval(loadSignals, 12000);
-setInterval(loadOzetStrip, 30000);
+let signalsTimer = setInterval(loadSignals, 12000);
+let ozetTimer = setInterval(loadOzetStrip, 30000);
+
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){
+    clearInterval(signalsTimer);
+    clearInterval(ozetTimer);
+  } else {
+    loadSignals();
+    loadOzetStrip();
+    signalsTimer = setInterval(loadSignals, 12000);
+    ozetTimer = setInterval(loadOzetStrip, 30000);
+  }
+});
 </script>
 </body>
 </html>

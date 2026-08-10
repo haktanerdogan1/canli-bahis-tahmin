@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>Matchrix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+:root{
+  --bg:#070A10;
+  --bg-el:#0c1220;
+  --bg-el2:#0f1830;
+  --glass:rgba(255,255,255,0.045);
+  --glass-strong:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.09);
+  --green:#00FF87;
+  --blue:#22c1ff;
+  --purple:#b06bff;
+  --pink:#ff5fd1;
+  --gold:#ffd54a;
+  --orange:#ff8a3d;
+  --red:#ff5f6d;
+  --text:#eaf7f1;
+  --muted:#7c8aa0;
+  --dim:#4c5568;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:
+    radial-gradient(circle at 15% -10%, rgba(0,255,135,0.10), transparent 40%),
+    radial-gradient(circle at 100% 0%, rgba(34,193,255,0.10), transparent 45%),
+    radial-gradient(circle at 50% 120%, rgba(176,107,255,0.08), transparent 50%),
+    var(--bg);
+  background-attachment:fixed;
+  color:var(--text);
+  font-family:'Rajdhani',sans-serif;
+  font-size:16px;
+  min-height:100vh;
+  overflow-x:hidden;
+  padding-bottom:78px;
+}
+.font-head{font-family:'Orbitron',sans-serif;}
+::-webkit-scrollbar{display:none;}
+a{color:inherit;text-decoration:none;}
+button{font-family:inherit;}
+
+/* subtle scanline grid texture */
+body::before{
+  content:'';
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(0,255,135,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,135,0.025) 1px, transparent 1px);
+  background-size:38px 38px;
+  mask-image:radial-gradient(circle at 50% 0%, rgba(0,0,0,0.9), transparent 70%);
+}
+
+/* ---------- Glass ---------- */
+.glass{
+  background:linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.015));
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  border-radius:18px;
+}
+
+/* ---------- Top bar ---------- */
+.topbar{
+  position:sticky; top:0; z-index:20;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px 10px;
+  background:linear-gradient(180deg, rgba(7,10,16,0.96), rgba(7,10,16,0.75) 80%, transparent);
+}
+.brand{display:flex; align-items:center; gap:10px;}
+.brand-mark{
+  width:34px; height:34px; border-radius:9px;
+  background:linear-gradient(135deg, var(--green), var(--blue));
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 18px -2px var(--green);
+  font-family:'Orbitron'; font-weight:800; color:#031810; font-size:1.05rem;
+}
+.brand-text{font-family:'Orbitron'; font-weight:700; font-size:1.05rem; letter-spacing:1px;}
+.brand-sub{font-size:0.62rem; color:var(--muted); letter-spacing:2px; margin-top:-2px;}
+.live-chip{
+  display:flex; align-items:center; gap:6px;
+  padding:5px 10px; border-radius:999px;
+  background:rgba(0,255,135,0.08); border:1px solid rgba(0,255,135,0.35);
+  font-size:0.68rem; font-weight:700; letter-spacing:1px; color:var(--green);
+}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green); box-shadow:0 0 8px var(--green); animation:pulse-dot 1.4s infinite;}
+@keyframes pulse-dot{0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.4; transform:scale(0.7);}}
+
+/* ---------- Squad strip ---------- */
+.squad-strip{
+  display:flex; gap:10px; overflow-x:auto; padding:4px 18px 14px;
+  scroll-snap-type:x proximity;
+}
+.squad-chip{
+  flex:0 0 auto; width:64px; text-align:center; cursor:pointer;
+  scroll-snap-align:start;
+}
+.squad-avatar{
+  width:52px; height:52px; border-radius:16px; margin:0 auto 5px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Orbitron'; font-weight:800; font-size:0.95rem;
+  position:relative; border:1px solid var(--border);
+  background:linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.01));
+  transition:transform .2s;
+}
+.squad-chip:active .squad-avatar{transform:scale(0.92);}
+.squad-avatar.active-glow{box-shadow:0 0 16px -3px var(--glow-c, var(--green));}
+.squad-avatar .dot{
+  position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%;
+  background:var(--green); border:2px solid var(--bg); box-shadow:0 0 6px var(--green);
+}
+.squad-avatar.offline{opacity:0.38; filter:grayscale(0.6);}
+.squad-avatar.offline .dot{background:var(--dim); box-shadow:none;}
+.squad-label{font-size:0.6rem; color:var(--muted); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
+/* ---------- Summary strip ---------- */
+.stat-row{display:flex; gap:10px; padding:0 18px 16px; overflow-x:auto;}
+.stat-pill{
+  flex:0 0 auto; min-width:92px; padding:12px 14px; text-align:center;
+}
+.stat-pill .v{font-family:'Orbitron'; font-weight:700; font-size:1.15rem;}
+.stat-pill .l{font-size:0.62rem; color:var(--muted); letter-spacing:0.5px; margin-top:2px;}
+.stat-pill.won .v{color:var(--green); text-shadow:0 0 12px rgba(0,255,135,0.5);}
+.stat-pill.lost .v{color:var(--red);}
+.stat-pill.rate .v{color:var(--blue); text-shadow:0 0 12px rgba(34,193,255,0.5);}
+
+/* ---------- Tabs content ---------- */
+.tab-panel{display:none; padding:0 18px; position:relative; z-index:1;}
+.tab-panel.active{display:block;}
+.section-title{
+  font-family:'Orbitron'; font-size:0.72rem; letter-spacing:2px; color:var(--muted);
+  margin:18px 0 10px; display:flex; align-items:center; gap:8px;
+}
+.section-title i{color:var(--green);}
+
+/* ---------- League group ---------- */
+.league-group{margin-bottom:18px;}
+.league-header{
+  display:flex; align-items:center; gap:8px; font-size:0.78rem; font-weight:700;
+  color:var(--muted); margin-bottom:8px; padding-left:2px;
+}
+.league-header img{width:16px;height:16px;border-radius:3px;}
+
+/* ---------- Signal Card (flip) ---------- */
+.flip-outer{perspective:1400px; margin-bottom:14px;}
+.flip-inner{position:relative; transition:transform .55s cubic-bezier(.4,.2,.2,1); transform-style:preserve-3d; min-height:128px;}
+.flip-outer.flipped .flip-inner{transform:rotateY(180deg);}
+.flip-face{position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; padding:14px; overflow:hidden;}
+.flip-face.back{transform:rotateY(180deg); display:flex; flex-direction:column; justify-content:center;}
+
+.card-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+.badge-status{
+  font-size:0.62rem; font-weight:700; letter-spacing:1px; padding:3px 9px; border-radius:999px;
+}
+.badge-live{background:rgba(0,255,135,0.12); color:var(--green); border:1px solid rgba(0,255,135,0.4);}
+.badge-won{background:rgba(0,255,135,0.16); color:var(--green); border:1px solid var(--green); box-shadow:0 0 14px -3px var(--green);}
+.badge-lost{background:rgba(255,95,109,0.1); color:var(--red); border:1px solid rgba(255,95,109,0.35);}
+.badge-min{font-size:0.68rem; color:var(--muted); font-weight:700;}
+
+.teams-row{display:flex; align-items:center; gap:10px;}
+.team-col{flex:1; display:flex; align-items:center; gap:8px; min-width:0;}
+.team-col img{width:22px;height:22px;border-radius:5px;background:#fff;flex:0 0 auto;}
+.team-name{font-size:0.86rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.score-col{font-family:'Orbitron'; font-weight:700; font-size:1.15rem; padding:0 10px; color:var(--text);}
+.vs-divider{color:var(--dim); font-size:0.8rem;}
+
+.card-bottom{display:flex; align-items:center; justify-content:space-between; margin-top:12px; gap:10px;}
+.market-txt{font-size:0.78rem; color:var(--muted); font-weight:600; flex:1; min-width:0;}
+.bot-pill{
+  display:inline-flex; align-items:center; gap:5px; font-size:0.62rem; font-weight:700;
+  padding:3px 8px; border-radius:999px; background:rgba(255,255,255,0.05); border:1px solid var(--border);
+  margin-top:5px;
+}
+.bot-pill .dot{width:6px;height:6px;border-radius:50%;}
+
+.gauge{
+  --pct:0; width:52px; height:52px; border-radius:50%; position:relative; flex:0 0 auto;
+  background:conic-gradient(var(--gc, var(--green)) calc(var(--pct)*3.6deg), rgba(255,255,255,0.07) 0);
+  box-shadow:0 0 14px -3px var(--gc, var(--green));
+  display:flex; align-items:center; justify-content:center;
+}
+.gauge::after{content:'';position:absolute; inset:5px; border-radius:50%; background:var(--bg-el);}
+.gauge span{position:relative; font-family:'Orbitron'; font-weight:700; font-size:0.72rem; z-index:1;}
+
+/* laser scan sweep for locked cards */
+.locked-card{position:relative; overflow:hidden; min-height:128px; padding:14px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:8px; cursor:pointer;}
+.locked-card .scan{
+  position:absolute; left:0; right:0; height:40%; top:-40%;
+  background:linear-gradient(180deg, transparent, rgba(0,255,135,0.16), transparent);
+  animation:scan-sweep 2.6s linear infinite;
+}
+@keyframes scan-sweep{0%{top:-40%;} 100%{top:100%;}}
+.locked-card i.fa-lock{font-size:1.3rem; color:var(--green); text-shadow:0 0 14px var(--green);}
+.locked-card .lbl{font-size:0.72rem; color:var(--muted); font-weight:700; letter-spacing:0.5px;}
+.locked-card .cta{
+  font-family:'Orbitron'; font-size:0.68rem; font-weight:700; letter-spacing:1px;
+  padding:8px 16px; border-radius:999px; margin-top:4px;
+  background:linear-gradient(135deg, var(--green), var(--blue)); color:#03130c;
+  box-shadow:0 0 20px -4px var(--green);
+}
+.locked-blur-row{display:flex; gap:8px; filter:blur(5px); opacity:0.35; width:100%; justify-content:center;}
+.locked-blur-row div{height:10px; border-radius:5px; background:rgba(255,255,255,0.5); width:70px;}
+
+/* WON celebration glow ring */
+.celebrate{animation:celebrate-pulse 1.8s ease-out 1;}
+@keyframes celebrate-pulse{
+  0%{box-shadow:0 0 0px 0px rgba(0,255,135,0.6);}
+  40%{box-shadow:0 0 0 14px rgba(0,255,135,0);}
+  100%{box-shadow:0 0 0 0 rgba(0,255,135,0);}
+}
+
+/* ---------- Bot back-of-card ---------- */
+.bot-back-head{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+.bot-back-avatar{
+  width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+  font-family:'Orbitron'; font-weight:800; font-size:0.85rem; flex:0 0 auto;
+  background:linear-gradient(160deg, rgba(255,255,255,0.08), rgba(255,255,255,0.01)); border:1px solid var(--border);
+}
+.bot-back-name{font-family:'Orbitron'; font-size:0.78rem; font-weight:700;}
+.bot-back-code{font-size:0.65rem; color:var(--muted);}
+.bot-back-desc{font-size:0.78rem; color:var(--muted); line-height:1.4;}
+.flip-hint{position:absolute; bottom:8px; right:12px; font-size:0.6rem; color:var(--dim); display:flex; align-items:center; gap:4px;}
+
+/* ---------- Bottom nav ---------- */
+.bottom-nav{
+  position:fixed; left:0; right:0; bottom:0; z-index:30;
+  display:flex; justify-content:space-around; align-items:center;
+  padding:10px 6px calc(10px + env(safe-area-inset-bottom));
+  background:rgba(9,13,22,0.92); backdrop-filter:blur(18px); border-top:1px solid var(--border);
+}
+.nav-btn{
+  display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none;
+  color:var(--dim); font-size:0.6rem; font-weight:700; letter-spacing:0.3px; padding:4px 8px;
+}
+.nav-btn i{font-size:1.05rem;}
+.nav-btn.active{color:var(--green); text-shadow:0 0 10px rgba(0,255,135,0.6);}
+
+/* ---------- Empty / loading ---------- */
+.empty-state{text-align:center; padding:60px 20px; color:var(--muted);}
+.empty-state i{font-size:2.4rem; margin-bottom:12px; opacity:0.4; color:var(--green);}
+.loader-ring{
+  width:34px;height:34px;border-radius:50%; margin:40px auto;
+  border:3px solid rgba(0,255,135,0.15); border-top-color:var(--green);
+  animation:spin 0.8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ---------- Stats screen ---------- */
+.big-stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px;}
+.big-stat{padding:16px; text-align:center;}
+.big-stat .v{font-family:'Orbitron'; font-weight:800; font-size:1.6rem;}
+.big-stat .l{font-size:0.68rem; color:var(--muted); margin-top:4px; letter-spacing:0.5px;}
+.big-stat.accent .v{color:var(--green); text-shadow:0 0 16px rgba(0,255,135,0.5);}
+
+.squad-full-item{
+  display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:8px; cursor:pointer;
+}
+.squad-full-item.offline{opacity:0.45;}
+.squad-full-avatar{
+  width:44px; height:44px; border-radius:13px; display:flex; align-items:center; justify-content:center;
+  font-family:'Orbitron'; font-weight:800; font-size:0.9rem; flex:0 0 auto; border:1px solid var(--border);
+  background:linear-gradient(160deg, rgba(255,255,255,0.08), rgba(255,255,255,0.01));
+}
+.squad-full-info{flex:1; min-width:0;}
+.squad-full-name{font-family:'Orbitron'; font-size:0.76rem; font-weight:700;}
+.squad-full-desc{font-size:0.72rem; color:var(--muted); margin-top:2px;}
+.squad-status-tag{font-size:0.58rem; font-weight:700; letter-spacing:1px; padding:3px 8px; border-radius:999px; flex:0 0 auto;}
+.squad-status-tag.on{color:var(--green); background:rgba(0,255,135,0.1); border:1px solid rgba(0,255,135,0.35);}
+.squad-status-tag.off{color:var(--dim); background:rgba(255,255,255,0.04); border:1px solid var(--border);}
+
+/* ---------- Account ---------- */
+.acc-card{padding:22px; margin-top:10px;}
+.acc-title{font-family:'Orbitron'; font-size:1.1rem; font-weight:700; margin-bottom:4px;}
+.acc-sub{font-size:0.78rem; color:var(--muted); margin-bottom:18px;}
+.field{margin-bottom:14px;}
+.field label{display:block; font-size:0.68rem; color:var(--muted); margin-bottom:6px; letter-spacing:0.5px;}
+.field input{
+  width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border);
+  background:rgba(255,255,255,0.03); color:var(--text); font-family:'Rajdhani'; font-size:0.92rem;
+}
+.field input:focus{outline:none; border-color:var(--green); box-shadow:0 0 0 3px rgba(0,255,135,0.12);}
+.btn-primary{
+  width:100%; padding:13px; border-radius:12px; border:none; font-family:'Orbitron'; font-weight:700;
+  font-size:0.8rem; letter-spacing:1px; background:linear-gradient(135deg, var(--green), var(--blue));
+  color:#03130c; box-shadow:0 0 22px -5px var(--green); margin-top:4px;
+}
+.btn-google{
+  width:100%; padding:12px; border-radius:12px; margin-top:10px; text-align:center;
+  border:1px solid var(--border); background:rgba(255,255,255,0.03); font-weight:700; font-size:0.82rem;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.acc-switch{text-align:center; margin-top:16px; font-size:0.78rem; color:var(--muted);}
+.acc-switch b{color:var(--green); cursor:pointer;}
+.err-msg{color:var(--red); font-size:0.76rem; margin-top:8px; min-height:1em;}
+.logged-avatar{
+  width:64px; height:64px; border-radius:20px; margin:0 auto 14px; display:flex; align-items:center; justify-content:center;
+  font-family:'Orbitron'; font-weight:800; font-size:1.4rem; background:linear-gradient(135deg, var(--green), var(--blue));
+  color:#03130c; box-shadow:0 0 26px -4px var(--green);
+}
+.btn-logout{
+  width:100%; padding:12px; border-radius:12px; margin-top:18px; border:1px solid rgba(255,95,109,0.35);
+  background:rgba(255,95,109,0.08); color:var(--red); font-weight:700; font-size:0.8rem;
+}
+
+/* ---------- Modal (match detail) ---------- */
+.modal-overlay{
+  position:fixed; inset:0; z-index:50; background:rgba(3,5,10,0.78); backdrop-filter:blur(6px);
+  display:none; align-items:flex-end; justify-content:center;
+}
+.modal-overlay.active{display:flex;}
+.modal-sheet{
+  width:100%; max-width:520px; max-height:86vh; overflow-y:auto; border-radius:24px 24px 0 0;
+  padding:22px 20px calc(24px + env(safe-area-inset-bottom));
+  animation:sheet-up .28s ease-out;
+}
+@keyframes sheet-up{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+.modal-close{position:absolute; top:16px; right:18px; font-size:1.1rem; color:var(--muted);}
+.modal-title{font-family:'Orbitron'; font-size:1rem; font-weight:700; margin-bottom:16px; padding-right:30px;}
+.stat-bar-row{margin-bottom:14px;}
+.stat-bar-labels{display:flex; justify-content:space-between; font-size:0.78rem; font-weight:700; margin-bottom:5px;}
+.stat-bar-track{height:8px; border-radius:99px; background:rgba(255,255,255,0.06); overflow:hidden; display:flex;}
+.stat-bar-home{background:linear-gradient(90deg, var(--green), var(--blue));}
+.stat-bar-away{background:rgba(255,255,255,0.18);}
+.stat-cat{font-size:0.66rem; text-align:center; color:var(--muted); margin-bottom:2px; letter-spacing:0.5px;}
+.form-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px;}
+.form-card{padding:14px; text-align:center;}
+.form-card .t{font-size:0.7rem; color:var(--muted); margin-bottom:8px; font-weight:700;}
+.form-card .row{display:flex; justify-content:space-between; font-size:0.74rem; margin-bottom:5px;}
+.form-card .row b{color:var(--green);}
+
+@media (min-width:600px){
+  .tab-panel, .topbar, .squad-strip, .stat-row{padding-left:32px; padding-right:32px;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">M</div>
+    <div>
+      <div class="brand-text">MATCHRIX</div>
+      <div class="brand-sub">SIGNAL GRID</div>
+    </div>
+  </div>
+  <div class="live-chip"><span class="live-dot"></span>CANLI</div>
+</div>
+
+<div class="squad-strip" id="squadStrip"></div>
+
+<!-- ================= SİNYALLER (today) ================= -->
+<div class="tab-panel active" id="tab-today">
+  <div class="stat-row" id="statRowToday"></div>
+  <div class="section-title"><i class="fa-solid fa-satellite-dish"></i> BUGÜNKÜ SİNYALLER</div>
+  <div id="listToday"><div class="loader-ring"></div></div>
+</div>
+
+<!-- ================= AÇIK ================= -->
+<div class="tab-panel" id="tab-open">
+  <div class="section-title"><i class="fa-solid fa-crosshairs"></i> TÜM AÇIK SİNYALLER</div>
+  <div id="listOpen"><div class="loader-ring"></div></div>
+</div>
+
+<!-- ================= SONUÇLAR ================= -->
+<div class="tab-panel" id="tab-results">
+  <div class="section-title"><i class="fa-solid fa-flag-checkered"></i> BUGÜNÜN SONUÇLARI</div>
+  <div id="listResults"><div class="loader-ring"></div></div>
+</div>
+
+<!-- ================= İSTATİSTİK ================= -->
+<div class="tab-panel" id="tab-stats">
+  <div class="section-title"><i class="fa-solid fa-chart-line"></i> PERFORMANS</div>
+  <div class="big-stat-grid" id="bigStatGrid"></div>
+  <div class="section-title"><i class="fa-solid fa-users-viewfinder"></i> CYBER SQUAD — TAM KADRO</div>
+  <div id="squadFullList"></div>
+</div>
+
+<!-- ================= HESAP ================= -->
+<div class="tab-panel" id="tab-account">
+  <div id="accountArea"></div>
+</div>
+
+<div class="bottom-nav">
+  <button class="nav-btn active" data-tab="today" onclick="switchTab('today')"><i class="fa-solid fa-bolt"></i>Bugün</button>
+  <button class="nav-btn" data-tab="open" onclick="switchTab('open')"><i class="fa-solid fa-crosshairs"></i>Açık</button>
+  <button class="nav-btn" data-tab="results" onclick="switchTab('results')"><i class="fa-solid fa-flag-checkered"></i>Sonuç</button>
+  <button class="nav-btn" data-tab="stats" onclick="switchTab('stats')"><i class="fa-solid fa-chart-line"></i>İstatistik</button>
+  <button class="nav-btn" data-tab="account" onclick="switchTab('account')"><i class="fa-solid fa-user-astronaut"></i>Hesap</button>
+</div>
+
+<div class="modal-overlay" id="matchModal">
+  <div class="modal-sheet glass">
+    <span class="modal-close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></span>
+    <div class="modal-title" id="modalTitle">—</div>
+    <div id="modalBody"><div class="loader-ring"></div></div>
+  </div>
+</div>
+
+<script>
+// ======================================================================
+// GERÇEK 18 BOT — bot_* id'leri app/core/consensus_engine.py ile 1:1 aynı.
+// ======================================================================
+const BOTS = [
+  {id:'bot_19_prematch_prophet', code:'ORIGIN-19', name:'The Prophet', c:'#ffd54a', active:true, desc:'Canlı veriye bakmaz — 33.525 maçlık arşivden çıkarılmış takım gol profiline göre maçın 1. dakikasından itibaren konuşur.'},
+  {id:'bot_base_rate', code:'ARCHIVE-P', name:'Bedrock', c:'#b8c4d9', active:true, desc:'Sistemin çapası: yorum yapmaz, sadece "bu dakikada bu skorda geçmişte kaç maçta gol geldi" sorusunun ölçülmüş cevabını verir.'},
+  {id:'bot_odds_profile', code:'V-88', name:'Value Oracle', c:'#ffd54a', active:false, desc:'Canlı bahis oranını arşivdeki aynı fiyat profiliyle eşler.'},
+  {id:'bot_form_asymmetry', code:'SYNC-05', name:'The Profiler', c:'#2dd4bf', active:true, desc:'İki takımın beklenen gol (xG) profili arasındaki uyum/uyumsuzluğu okur.'},
+  {id:'bot_xg_sniper', code:'xG-ALPHA', name:'The Architect', c:'#00e5b0', active:true, desc:'Canlı xG birikim hızına bakar — üretilen pozisyonların gerçek gol değerini ölçer.'},
+  {id:'bot_finishing_gap', code:'GAP-06', name:'The Closer', c:'#22c55e', active:true, desc:'xG ile atılan gol arasındaki farka bakar — "hak edip atamadılar mı" sorusu.'},
+  {id:'bot_shot_accuracy', code:'AIM-X', name:'Precision Sniper', c:'#00FF87', active:true, desc:'Şutların yüzde kaçının kaleyi bulduğuna bakar.'},
+  {id:'bot_tempo_scanner', code:'PACE-3000', name:'Tempo Master', c:'#f5d90a', active:true, desc:'10 dakikaya düşen şut sayısına göre oyunun temposunu ölçer.'},
+  {id:'bot_attack_volume', code:'VOL-09', name:'Assault Wave', c:'#8a8f98', active:false, desc:'Tehlikeli atak sayısına bakar.'},
+  {id:'bot_momentum_surge', code:'VIBE-AI', name:'Momentum Pulse', c:'#c084fc', active:true, desc:'Son 5 dakikadaki isabetli şut ve korner baskısını yakalar.'},
+  {id:'bot_acceleration', code:'DELTA-11', name:'Accelerant', c:'#a855f7', active:true, desc:'Mutlak hacme değil DEĞİŞİME bakar — oyun hızlanıyor mu, yavaşlıyor mu.'},
+  {id:'bot_corner_pressure', code:'CP-05', name:'Set-Piece Hawk', c:'#ff5fd1', active:true, desc:'Korner hızına göre duran top baskısını ölçer.'},
+  {id:'bot_game_state', code:'STATE-07', name:'Clockwork', c:'#22c1ff', active:true, desc:'Skor farkı ve kalan süreye bakar — beraberlik ya da tek fark, iki tarafın da açık oynamasını zorlar.'},
+  {id:'bot_draw_breaker', code:'DB-04', name:'The Breaker', c:'#3fd3ff', active:true, desc:'Sadece 55. dakika sonrası, hâlâ berabere giden maçlarda devreye girer.'},
+  {id:'bot_red_card', code:'RC-03', name:'Red Alert', c:'#8a8f98', active:false, desc:'Kırmızı kart sonrası sayısal üstünlük etkisine bakar.'},
+  {id:'bot_early_blitz', code:'EB-03', name:'First Strike', c:'#ff8a3d', active:true, desc:'Sadece maçın ilk 25 dakikasında konuşur — erken tempo yoğunluğu.'},
+  {id:'bot_late_drama', code:'LATE-80', name:'Iron Clutch', c:'#ff5f5f', active:true, desc:'Sadece 70. dakika sonrası, maçın son bölümündeki dramı okur.'},
+  {id:'bot_possession_dominance', code:'POSS-0', name:'Dominion', c:'#4361ee', active:false, desc:'Topla oynama ve şut üstünlüğü dengesizliğine bakar.'},
+];
+const BOT_MAP = Object.fromEntries(BOTS.map(b => [b.id, b]));
+function botInitials(name){ return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+
+// ======================================================================
+// STATE
+// ======================================================================
+let isMember = false;
+let currentTab = 'today';
+let todayTR = null;
+let authMode = 'login';
+
+function switchTab(tab){
+  currentTab = tab;
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  if(tab==='account') renderAccount();
+  if(tab==='stats') loadStats();
+  loadSignals();
+}
+
+// ======================================================================
+// SQUAD STRIP (üst şerit)
+// ======================================================================
+function renderSquadStrip(){
+  const el = document.getElementById('squadStrip');
+  el.innerHTML = BOTS.map(b => `
+    <div class="squad-chip" onclick="alert('${b.name} // ${b.code}\\n\\n${b.desc}${b.active?'':'\\n\\n[ÇEVRİMDIŞI]'}')">
+      <div class="squad-avatar ${b.active?'active-glow':'offline'}" style="--glow-c:${b.c}; color:${b.c}; border-color:${b.c}55;">
+        ${botInitials(b.name)}
+        <span class="dot"></span>
+      </div>
+      <div class="squad-label">${b.code}</div>
+    </div>
+  `).join('');
+}
+
+function renderSquadFull(){
+  const el = document.getElementById('squadFullList');
+  el.innerHTML = BOTS.map(b => `
+    <div class="glass squad-full-item ${b.active?'':'offline'}" onclick="alert('${b.name} // ${b.code}\\n\\n${b.desc}')">
+      <div class="squad-full-avatar" style="color:${b.c}; border-color:${b.c}55;">${botInitials(b.name)}</div>
+      <div class="squad-full-info">
+        <div class="squad-full-name">${b.name} <span style="color:var(--muted); font-weight:500;">// ${b.code}</span></div>
+        <div class="squad-full-desc">${b.desc}</div>
+      </div>
+      <div class="squad-status-tag ${b.active?'on':'off'}">${b.active?'AKTİF':'STANDBY'}</div>
+    </div>
+  `).join('');
+}
+
+// ======================================================================
+// API helpers
+// ======================================================================
+async function api(path, opts){
+  const res = await fetch(path, Object.assign({credentials:'same-origin'}, opts||{}));
+  return res.json();
+}
+
+// ======================================================================
+// SİNYAL LİSTESİ
+// ======================================================================
+let allMatches = [];
+
+async function loadSignals(){
+  try{
+    const result = await api('/api/live-matches');
+    if(!result.success) return;
+    isMember = result.is_member;
+    todayTR = result.today_tr || todayTR;
+    allMatches = result.data || [];
+    renderCurrentTabList();
+  }catch(e){ /* sessiz gec, bir sonraki dongude tekrar dener */ }
+}
+
+function renderCurrentTabList(){
+  if(currentTab === 'today'){
+    const data = allMatches.filter(m => m.outcome==='PENDING' && m.signal_date===todayTR);
+    renderList('listToday', data);
+  } else if(currentTab === 'open'){
+    const data = allMatches.filter(m => m.outcome==='PENDING');
+    renderList('listOpen', data);
+  } else if(currentTab === 'results'){
+    const data = allMatches.filter(m => ['WON','LOST'].includes(m.outcome) && m.signal_date===todayTR);
+    renderList('listResults', data);
+  }
+}
+
+function groupByLeague(matches){
+  const groups = {};
+  matches.forEach(m=>{
+    const key = m.league_name || 'Gizli Sinyaller';
+    (groups[key] = groups[key] || []).push(m);
+  });
+  return groups;
+}
+
+function renderList(containerId, data){
+  const el = document.getElementById(containerId);
+  if(!data.length){
+    el.innerHTML = `<div class="empty-state"><i class="fa-solid fa-satellite"></i><div>Şu an gösterilecek sinyal yok</div></div>`;
+    return;
+  }
+  const groups = groupByLeague(data);
+  let html = '';
+  Object.keys(groups).forEach(league=>{
+    const items = groups[league];
+    const logo = items[0].league_logo;
+    html += `<div class="league-group">
+      <div class="league-header">${logo?`<img src="${logo}">`:'<i class="fa-solid fa-trophy" style="color:var(--gold)"></i>'} ${league}</div>`;
+    items.forEach(m => { html += m.locked ? lockedCardHtml(m) : signalCardHtml(m); });
+    html += `</div>`;
+  });
+  el.innerHTML = html;
+}
+
+function lockedCardHtml(m){
+  return `
+  <div class="glass locked-card" onclick="switchTab('account')">
+    <div class="scan"></div>
+    <i class="fa-solid fa-lock"></i>
+    <div class="locked-blur-row"><div></div><div style="width:24px;"></div><div></div></div>
+    <div class="lbl">SİNYAL ŞİFRELİ</div>
+    <div class="cta">GÖRMEK İÇİN ÜYE OL</div>
+  </div>`;
+}
+
+let cardSeq = 0;
+function signalCardHtml(m){
+  const id = 'card_' + (cardSeq++);
+  const bot = BOT_MAP[m.lead_bot];
+  const pct = Math.round((m.probability||0)*100);
+  const gaugeColor = pct>=75 ? 'var(--green)' : (pct>=63 ? 'var(--blue)' : 'var(--purple)');
+
+  let statusBadge, timeLabel;
+  if(m.outcome==='WON'){ statusBadge = `<span class="badge-status badge-won"><i class="fa-solid fa-check"></i> KAZANDI</span>`; }
+  else if(m.outcome==='LOST'){ statusBadge = `<span class="badge-status badge-lost"><i class="fa-solid fa-xmark"></i> KAYBETTİ</span>`; }
+  else { statusBadge = `<span class="badge-status badge-live"><span class="live-dot" style="display:inline-block;"></span> CANLI</span>`; }
+
+  if(m.match_status==='FINISHED') timeLabel='MS';
+  else if(m.match_status==='HT') timeLabel='İY';
+  else if(m.match_status==='ABANDONED') timeLabel='GD';
+  else timeLabel = (m.minute>=0? m.minute+"'" : '—');
+
+  const botPill = bot ? `<div class="bot-pill" style="border-color:${bot.c}55;"><span class="dot" style="background:${bot.c}; box-shadow:0 0 6px ${bot.c};"></span>${bot.name}</div>` : '';
+
+  const celebrateClass = m.outcome==='WON' ? 'celebrate' : '';
+
+  return `
+  <div class="flip-outer" id="${id}">
+    <div class="flip-inner" style="min-height:132px;">
+      <div class="flip-face front glass ${celebrateClass}" onclick="toggleFlip('${id}')">
+        <div class="card-top">
+          ${statusBadge}
+          <span class="badge-min">${timeLabel}</span>
+        </div>
+        <div class="teams-row">
+          <div class="team-col">
+            ${m.home_logo?`<img src="${m.home_logo}" onerror="this.style.display='none'">`:''}
+            <span class="team-name">${m.home_team||''}</span>
+          </div>
+          <div class="score-col">${m.home_score ?? '-'}<span class="vs-divider"> : </span>${m.away_score ?? '-'}</div>
+          <div class="team-col" style="justify-content:flex-end; text-align:right;">
+            <span class="team-name">${m.away_team||''}</span>
+            ${m.away_logo?`<img src="${m.away_logo}" onerror="this.style.display='none'">`:''}
+          </div>
+        </div>
+        <div class="card-bottom">
+          <div>
+            <div class="market-txt">${m.market||''}</div>
+            ${botPill}
+          </div>
+          <div class="gauge" style="--pct:${pct}; --gc:${gaugeColor};"><span>${pct}%</span></div>
+        </div>
+      </div>
+      <div class="flip-face back glass" onclick="toggleFlip('${id}')">
+        ${bot ? `
+          <div class="bot-back-head">
+            <div class="bot-back-avatar" style="color:${bot.c}; border-color:${bot.c}55;">${botInitials(bot.name)}</div>
+            <div>
+              <div class="bot-back-name">${bot.name}</div>
+              <div class="bot-back-code">// ${bot.code} — en çok katkı veren birim</div>
+            </div>
+          </div>
+          <div class="bot-back-desc">${bot.desc}</div>
+        ` : `<div class="bot-back-desc">Bu sinyal, konsensüs ekibinin ortak kararıyla üretildi.</div>`}
+        <div class="bot-back-desc" style="margin-top:10px;">Sinyal dakikası: <b style="color:var(--green)">${m.signal_minute ?? '—'}'</b></div>
+        ${m.match_id && isMember ? `<button class="btn-primary" style="margin-top:14px;" onclick="event.stopPropagation(); openMatchDetail(${m.match_id}, '${(m.home_team||'').replace(/'/g,"")}', '${(m.away_team||'').replace(/'/g,"")}')"><i class="fa-solid fa-radar"></i> CANLI ANALİZİ AÇ</button>` : ''}
+        <div class="flip-hint"><i class="fa-solid fa-rotate"></i> çevir</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function toggleFlip(id){
+  document.getElementById(id).classList.toggle('flipped');
+}
+
+// ======================================================================
+// ÖZET / İSTATİSTİK
+// ======================================================================
+async function loadOzetStrip(){
+  try{
+    const d = await api('/api/ozet');
+    if(!d.success) return;
+    document.getElementById('statRowToday').innerHTML = `
+      <div class="glass stat-pill won"><div class="v">${d.bugun_kazanan}</div><div class="l">BUGÜN KAZANAN</div></div>
+      <div class="glass stat-pill lost"><div class="v">${d.bugun_kaybeden}</div><div class="l">BUGÜN KAYBEDEN</div></div>
+      <div class="glass stat-pill rate"><div class="v">${d.isabet_orani!=null ? Math.round(d.isabet_orani*100)+'%' : '—'}</div><div class="l">GENEL İSABET</div></div>
+      <div class="glass stat-pill"><div class="v">${d.bekleyen}</div><div class="l">CANLI TAKİP</div></div>
+    `;
+    document.getElementById('bigStatGrid').innerHTML = `
+      <div class="glass big-stat accent"><div class="v">${d.sonuclanan}</div><div class="l">TOPLAM SONUÇLANAN</div></div>
+      <div class="glass big-stat accent"><div class="v">${d.isabet_orani!=null ? Math.round(d.isabet_orani*100)+'%' : '—'}</div><div class="l">İSABET ORANI</div></div>
+      <div class="glass big-stat"><div class="v" style="color:var(--green)">${d.kazanan}</div><div class="l">KAZANAN</div></div>
+      <div class="glass big-stat"><div class="v" style="color:var(--red)">${d.kaybeden}</div><div class="l">KAYBEDEN</div></div>
+    `;
+  }catch(e){}
+}
+function loadStats(){ loadOzetStrip(); renderSquadFull(); }
+
+// ======================================================================
+// MAÇ DETAY MODALI
+// ======================================================================
+async function openMatchDetail(matchId, home, away){
+  document.getElementById('matchModal').classList.add('active');
+  document.getElementById('modalTitle').textContent = `${home} — ${away}`;
+  document.getElementById('modalBody').innerHTML = '<div class="loader-ring"></div>';
+  try{
+    const r = await api('/api/match/'+matchId);
+    if(!r.success){
+      document.getElementById('modalBody').innerHTML = `<div class="empty-state"><i class="fa-solid fa-lock"></i><div>${r.error||'Görüntülenemedi'}</div></div>`;
+      return;
+    }
+    const d = r.data;
+    const ls = d.live_stats || {};
+    const bar = (label, h, a, suffix) => {
+      const total = (h+a) || 1;
+      const hp = (h/total)*100;
+      return `<div class="stat-bar-row">
+        <div class="stat-bar-labels"><span>${h}${suffix||''}</span><span style="color:var(--muted); font-weight:600;">${label}</span><span>${a}${suffix||''}</span></div>
+        <div class="stat-bar-track"><div class="stat-bar-home" style="width:${hp}%"></div><div class="stat-bar-away" style="width:${100-hp}%"></div></div>
+      </div>`;
+    };
+    document.getElementById('modalBody').innerHTML = `
+      ${bar('Top Hakimiyeti', ls.possession?.home||0, ls.possession?.away||0, '%')}
+      ${bar('xG', (ls.xg?.home||0).toFixed(2), (ls.xg?.away||0).toFixed(2), '')}
+      ${bar('Şut', ls.shots?.home||0, ls.shots?.away||0, '')}
+      ${bar('İsabetli Şut', ls.shots_target?.home||0, ls.shots_target?.away||0, '')}
+      ${bar('Korner', ls.corners?.home||0, ls.corners?.away||0, '')}
+      <div class="form-grid">
+        <div class="glass form-card">
+          <div class="t">${home} — FORM</div>
+          <div class="row"><span>İY Gol Oranı</span><b>${d.home_form.fh_goal_rate}</b></div>
+          <div class="row"><span>Maç Başı Gol</span><b>${d.home_form.avg_goals_scored}</b></div>
+        </div>
+        <div class="glass form-card">
+          <div class="t">${away} — FORM</div>
+          <div class="row"><span>İY Gol Oranı</span><b>${d.away_form.fh_goal_rate}</b></div>
+          <div class="row"><span>Maç Başı Gol</span><b>${d.away_form.avg_goals_scored}</b></div>
+        </div>
+      </div>
+    `;
+  }catch(e){
+    document.getElementById('modalBody').innerHTML = `<div class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><div>Veri çekilemedi</div></div>`;
+  }
+}
+function closeModal(){ document.getElementById('matchModal').classList.remove('active'); }
+
+// ======================================================================
+// HESAP / AUTH
+// ======================================================================
+async function checkAuth(){
+  try{
+    const d = await api('/api/me');
+    isMember = !!d.authenticated;
+    if(currentTab==='account') renderAccount();
+  }catch(e){}
+}
+
+function renderAccount(){
+  const el = document.getElementById('accountArea');
+  if(isMember){
+    api('/api/me').then(d=>{
+      el.innerHTML = `
+        <div class="glass acc-card" style="text-align:center;">
+          <div class="logged-avatar">${(d.email||'?')[0].toUpperCase()}</div>
+          <div class="acc-title">Hoş geldin, Operatör</div>
+          <div class="acc-sub">${d.email}</div>
+          <div class="btn-logout" onclick="logout()"><i class="fa-solid fa-power-off"></i> Oturumu Kapat</div>
+        </div>`;
+    });
+    return;
+  }
+  el.innerHTML = `
+    <div class="glass acc-card">
+      <div class="acc-title">${authMode==='login' ? 'Giriş Yap' : 'Üye Ol'}</div>
+      <div class="acc-sub">Tüm aktif sinyallere ve canlı analize erişmek için hesabına bağlan.</div>
+      <div class="field"><label>E-POSTA</label><input type="email" id="authEmail" placeholder="ornek@mail.com"></div>
+      <div class="field"><label>ŞİFRE</label><input type="password" id="authPass" placeholder="••••••••"></div>
+      <button class="btn-primary" onclick="doAuth()">${authMode==='login' ? 'GİRİŞ YAP' : 'HESAP OLUŞTUR'}</button>
+      <a class="btn-google" href="/api/auth/google/login"><i class="fa-brands fa-google"></i> Google ile devam et</a>
+      <div class="err-msg" id="authErr"></div>
+      <div class="acc-switch">
+        ${authMode==='login' ? `Hesabın yok mu? <b onclick="authMode='register'; renderAccount();">Üye ol</b>` : `Zaten üye misin? <b onclick="authMode='login'; renderAccount();">Giriş yap</b>`}
+      </div>
+    </div>`;
+}
+
+async function doAuth(){
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPass').value;
+  const errEl = document.getElementById('authErr');
+  errEl.textContent = '';
+  try{
+    const d = await api(authMode==='login' ? '/api/login' : '/api/register', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email, password})
+    });
+    if(!d.success){ errEl.textContent = d.error || 'Bir hata oluştu.'; return; }
+    isMember = true;
+    renderAccount();
+    loadSignals();
+  }catch(e){ errEl.textContent = 'Bağlantı hatası.'; }
+}
+
+async function logout(){
+  await api('/api/logout', {method:'POST'});
+  isMember = false;
+  authMode = 'login';
+  renderAccount();
+  loadSignals();
+}
+
+// ======================================================================
+// INIT
+// ======================================================================
+renderSquadStrip();
+checkAuth();
+loadOzetStrip();
+loadSignals();
+setInterval(loadSignals, 12000);
+setInterval(loadOzetStrip, 30000);
+</script>
+</body>
+</html>

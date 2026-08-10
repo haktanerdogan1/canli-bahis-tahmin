@@ -83,6 +83,16 @@ def serve_index():
     from fastapi.responses import FileResponse
     return FileResponse(os.path.join(os.path.dirname(__file__), 'index.html'))
 
+@app.get("/app")
+def serve_mobile_app():
+    """Cyberpunk temali, ozgun tasarimli mobil arayuz - index.html'den TAMAMEN
+    ayri bir dosya (ayni tasarimi kopyalamiyor). Ayni backend/API'yi kullanir,
+    sadece farkli bir on yuz. Capacitor kabugu (mobile/) ileride bu URL'e
+    yonlendirilebilir - bkz. mobile/capacitor.config.json."""
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(os.path.dirname(__file__), 'mobile_app.html'))
+
+
 @app.get("/apple-touch-icon.png")
 def serve_apple_touch_icon():
     from fastapi.responses import FileResponse

@@ -80,13 +80,23 @@ def arsivde_var_mi(takim_adi):
 def is_known_match(league_name, home_name, away_name):
     """Mac takip edilmeye deger mi?
 
-    Uc kademe:
+    Dort kademe:
       1. Lig adi tanidik bir turnuva mi (Sampiyonlar/Avrupa/Konferans Ligi)
-      2. Takim adi elle tutulan buyuk kulup listesinde mi
-      3. Takim Iddaa arsivinde var mi (veriye dayali, en genis kapsam)
+      2. Lig adi DENEY kapsamindaki bir ulkeye mi ait (bkz. asagida)
+      3. Takim adi elle tutulan buyuk kulup listesinde mi
+      4. Takim Iddaa arsivinde var mi (veriye dayali, en genis kapsam)
     """
     ln = (league_name or "").strip().lower()
     if ln in KNOWN_LEAGUE_NAMES:
+        return True
+
+    # DENEY (kullanici talebi, 2026-08-12): "Romanya maclarini da cekelim,
+    # sisteme analiz ettirelim, deneyelim bakalim" - Romanya Kupasi gibi
+    # bolgesel/amator maclar bilerek genisletildi. UYARI: bu kulupler
+    # buyuk ihtimalle prematch.py'nin Iddaa-arsiv-tabanli takim profillerinde
+    # HIC YOK - botlarin cogu "insufficient_data" donebilir, bu BEKLENEN bir
+    # sonuc (veri gercekten yoksa uydurulmuyor), hata degil.
+    if "romania" in ln:
         return True
 
     hn = (home_name or "").strip().lower()

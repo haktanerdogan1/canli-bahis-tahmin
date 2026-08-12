@@ -1552,6 +1552,7 @@
             try {
                 const res = await fetch('/api/metrics');
                 const d = await res.json();
+                if (currentTab !== 'stats') return; // beklerken baska sekmeye gecilmis
 
                 if (d.locked) {
                     container.innerHTML = `
@@ -1866,23 +1867,34 @@
         }
 
         async function fetchData() {
-            if (currentTab === 'today') fetchOzet();
+            // Bu cagrinin BASLADIGI andaki sekme sabitlenir. fetchData() async
+            // oldugu icin, kullanici cevap gelmeden baska bir sekmeye gecerse
+            // (currentTab global degisir), asagidaki DOM yazma noktalarindan
+            // ONCE requestTab hala guncel mi diye kontrol ediyoruz - degilse bu
+            // gec kalan/eskimis cevabi sessizce yok sayiyoruz. Aksi halde eski
+            // sekmenin gec gelen cevabi, kullanicinin o an baktigi YENI sekmenin
+            // icerigini eziyordu (ornek: Sonuclar'dan Istatistik'e gecince birkac
+            // saniye sonra Sonuclar verisi ekrana geri geliyordu).
+            const requestTab = currentTab;
+
+            if (requestTab === 'today') fetchOzet();
             checkForNewWins();
 
-            if (currentTab === 'stats') {
+            if (requestTab === 'stats') {
                 await renderStatsTab();
+                if (currentTab !== requestTab) return;
                 clearTimeout(refreshTimer);
                 refreshTimer = setTimeout(fetchData, 15000);
                 return;
             }
 
-            if (currentTab === 'login') {
+            if (requestTab === 'login') {
                 renderLoginTab();
                 clearTimeout(refreshTimer);
                 return;
             }
 
-            if (currentTab === 'paywall') {
+            if (requestTab === 'paywall') {
                 renderPaywallTab();
                 clearTimeout(refreshTimer);
                 return;
@@ -1894,13 +1906,15 @@
                 const res = await fetch('/api/live-matches');
                 const result = await res.json();
 
+                if (currentTab !== requestTab) return; // sekme degisti, bu cevap artik gecersiz
+
                 if(result.success) {
                     currentTodayTR = result.today_tr || currentTodayTR;
                     // API/DB tek gercek kaynaktir. Tarayici tarafinda PENDING
                     // kaydi biriktirmek, sonucu VOID/WON/LOST olan eski maclarin
                     // farkli anahtarla Acik Bahisler'e geri sizmasina yol aciyordu.
                     let dataToRender = result.data || [];
-                    if (currentTab === 'today') {
+                    if (requestTab === 'today') {
                         // Bugunun Tahminleri: sadece bugun yayinlanan acik sinyaller.
                         // Ilk 3'u sunucu zaten herkese acik gonderiyor (bkz. api.py).
                         dataToRender = dataToRender.filter(m =>
@@ -1911,10 +1925,10 @@
                                 ? `Bugün ${dataToRender.length} açık tahmin var`
                                 : 'Bugün için henüz açık tahmin yok';
                         }
-                    } else if (currentTab === 'open') {
+                    } else if (requestTab === 'open') {
                         // Acik Tahminler: tarihe bakmaksizin TUM acik sinyaller.
                         dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
-                    } else if (currentTab === 'results') {
+                    } else if (requestTab === 'results') {
                         // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
                         // kazanc/kayip sonucu gorunsun, 1-2 gun oncesi dahil edilmesin.
                         // VOID artik kalici bir kategori degil (backend'de reconcile
@@ -1923,7 +1937,7 @@
                         dataToRender = dataToRender.filter(m =>
                             ["WON", "LOST"].includes(m.outcome) && m.signal_date === currentTodayTR);
                     }
-                    renderGroups(dataToRender, currentTab);
+                    renderGroups(dataToRender, requestTab);
                 } else {
                     // Gecici API hatasinda mevcut listeyi silme. Ilk yuklemede
                     // veri yoksa hata mesaji goster; sonraki yenilemelerde son
@@ -1933,10 +1947,13 @@
                     }
                 }
             } catch(e) {
+                if (currentTab !== requestTab) return;
                 if (!container.querySelector('.league-group')) {
                     container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Sunucuya bağlanılamadı. API açık mı?</p></div>`;
                 }
             }
+
+            if (currentTab !== requestTab) return;
 
             // Auto refresh
             clearTimeout(refreshTimer);

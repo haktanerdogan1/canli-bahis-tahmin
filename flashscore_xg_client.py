@@ -1,19 +1,31 @@
-"""Flashscore xG istemcisi - YEREL makinede (terminalde) calistirilir, Railway'de DEGIL.
+"""Flashscore canli veri istemcisi - YEREL makinede (terminalde) calisir, Railway'de DEGIL.
 
-NEDEN VAR: flashscore_xg_bot.py'yi Railway'in 'web' servisine 4. surec olarak
-eklemek denendi - Chromium container'da "Page/Target crashed" verdi ve servisin
-toplam bellek kullanimi 1GB limitine dayandi (bkz. git log, "Flashscore xG bot'u
-GECICI olarak devre disi birak"). O deneme geri alindi.
+TARIHCE: Once sadece xG zenginlestirmesi icin yazildi (flashscore_xg_bot.py'yi
+Railway'in 'web' servisine 4. surec olarak eklemek denendi - Chromium
+container'da "Page/Target crashed" verdi ve servisin toplam bellek kullanimi
+1GB limitine dayandi, bkz. git log). 2026-08-12'de TheSports hesabi "yetkisiz"
+hatasi vermeye basladi ve TUM canli veri kaynagi durdu (kod tarafinda hicbir
+sey degismedi - abonelik/plan sorunu). Bu yuzden bu istemci TheSports'un
+YERINI TAMAMEN ALACAK sekilde genisletildi: artik sadece xG degil, TUM canli
+mac senkronunu (skor/dakika/durum + detayli istatistikler) Flashscore'dan
+cekip Railway'e yaziyor.
 
-BU DOSYA O RISKI TAMAMEN ORTADAN KALDIRIYOR: agir isi (Chromium acmak, sayfa
-render etmek) SENIN bilgisayarinda yapiyoruz, Railway'e sadece SONUCU (iki
-ondalik sayi) kucuk bir API istegiyle gonderiyoruz. Railway container'i hic
-Chromium calistirmiyor - bellek riski sifir.
+MIMARI: agir isi (Chromium acmak, sayfa render etmek) SENIN bilgisayarinda
+yapiyoruz, Railway'e sadece SONUCU kucuk API istekleriyle gonderiyoruz.
+Railway container'i hic Chromium calistirmiyor - bellek riski sifir.
 
-BEDELI: bu script SADECE SEN CALISTIRDIGIN surece xG verisi akar. Terminali
-kapatirsan/bilgisayarini kapatirsan xG zenginlestirmesi durur (digger her sey -
-sinyal uretimi, TheSports verisi- calismaya devam eder, sadece xG botlari
-tekrar insufficient_data'ya doner).
+IKI KATMANLI DONGU (her CYCLE_PAUSE_SECONDS'ta bir):
+  1) TUM canli maclarin skor/dakika/lig ozeti TEK sayfa yuklemesiyle cekilir
+     ve /api/admin/live-sync'e gonderilir (ucuz, kapsamli, her dongude).
+  2) Kucuk bir grup (BATCH_SIZE) macin DETAYLI istatistik sayfasi ziyaret
+     edilir (~15-25sn/mac, pahali) ve /api/admin/live-stats-update'e
+     gonderilir - en uzun suredir taranmayan mac once islenir, boylece
+     zamanla TUM canli maclar kapsanir.
+
+BEDELI: bu script SADECE SEN CALISTIRDIGIN surece veri akar. Terminali
+kapatirsan/bilgisayarini kapatirsan TUM canli veri (skor/dakika dahil) durur -
+TheSports'un aksine burada "en azindan skor akar, sadece xG durur" diye bir
+ara durum YOK, artik Flashscore skorun da tek kaynagi.
 
 KULLANIM:
     export BACKUP_SECRET=<Railway'deki BACKUP_SECRET degeri>
@@ -29,7 +41,7 @@ import requests
 from playwright.sync_api import sync_playwright
 
 from flashscore_xg_bot import (
-    _get_live_matches, _find_match, _scrape_xg, _chromium_executable_path,
+    get_live_summary, _find_match, _scrape_stats, _chromium_executable_path,
     BATCH_SIZE, MIN_MINUTE, MAX_MINUTE, CYCLE_PAUSE_SECONDS,
 )
 
@@ -38,36 +50,45 @@ DEFAULT_API_BASE = "https://web-production-f1dba.up.railway.app"
 _last_scraped_at = {}
 
 
-def _hedef_maclari_getir(api_base, secret):
-    r = requests.get(
-        f"{api_base}/api/admin/xg-targets",
+def _stage_scrapeable(stage):
+    """Istatistik sayfasini ziyaret etmeye deger mi? Mac cok yeni basladiysa
+    (ilk birkac dakika istatistik neredeyse hep 0/bos, bkz. MIN_MINUTE) ya da
+    90+ dakika gecmisse atla - ayni MIN_MINUTE/MAX_MINUTE penceresi thesports_bot
+    doneminde de kullaniliyordu."""
+    st = (stage or "").strip()
+    if st.isdigit():
+        n = int(st)
+        return MIN_MINUTE <= n <= MAX_MINUTE
+    return st.lower() in ("half time", "ht")
+
+
+def _live_sync_gonder(api_base, secret, live_summary):
+    payload = {"matches": [
+        {"fs_id": m["mid"], "home": m["home"], "away": m["away"], "league": m["league"],
+         "home_logo": m["home_logo"], "away_logo": m["away_logo"],
+         "score_h": m["score_h"], "score_a": m["score_a"], "stage": m["stage"]}
+        for m in live_summary
+    ]}
+    r = requests.post(
+        f"{api_base}/api/admin/live-sync",
         headers={"x-backup-secret": secret},
-        timeout=20,
+        json=payload, timeout=30,
     )
     r.raise_for_status()
-    maclar = r.json().get("maclar", [])
-    maclar = [m for m in maclar if MIN_MINUTE <= (m.get("minute") or 0) <= MAX_MINUTE]
-    maclar.sort(key=lambda m: _last_scraped_at.get(m["match_id"], 0))
-    return maclar[:BATCH_SIZE]
+    return r.json()
 
 
-def _xg_gonder(api_base, secret, match_id, home_xg, away_xg):
+def _stats_gonder(api_base, secret, fs_id, stats):
     r = requests.post(
-        f"{api_base}/api/admin/xg-update",
+        f"{api_base}/api/admin/live-stats-update",
         headers={"x-backup-secret": secret},
-        json={"match_id": match_id, "home_xg": home_xg, "away_xg": away_xg},
-        timeout=20,
+        json={"fs_id": fs_id, "stats": stats}, timeout=20,
     )
     r.raise_for_status()
     return r.json()
 
 
 def run_cycle(api_base, secret):
-    hedefler = _hedef_maclari_getir(api_base, secret)
-    if not hedefler:
-        return 0, 0
-
-    islenen = bulunan = 0
     exe_path = _chromium_executable_path()
 
     with sync_playwright() as p:
@@ -78,41 +99,47 @@ def run_cycle(api_base, secret):
         page = browser.new_page()
 
         try:
-            live_matches = _get_live_matches(page)
+            live_summary = get_live_summary(page)
         except Exception as e:
             print(f"⚠️  Flashscore canli liste cekilemedi: {e}", flush=True)
             browser.close()
             return 0, 0
 
+        kabul_edilen = None
+        try:
+            sonuc = _live_sync_gonder(api_base, secret, live_summary)
+            print(f"🔄 live-sync: {sonuc.get('islenen', 0)} mac islendi "
+                  f"({sonuc.get('yeni', 0)} yeni)", flush=True)
+            kabul_edilen = set(sonuc.get("kabul_edilen") or [])
+        except Exception as e:
+            print(f"⚠️  live-sync gonderilemedi: {e}", flush=True)
+
+        # SADECE sunucunun kabul ettigi (is_known_match'ten gecen) maclar icin
+        # istatistik sayfasi ziyaret et - aksi halde batch slotlari filtrelenmis
+        # (obscure) maclara bosuna harcanir (404 alinir).
+        havuz = live_summary if kabul_edilen is None else [m for m in live_summary if m["mid"] in kabul_edilen]
+        hedefler = [m for m in havuz if _stage_scrapeable(m["stage"])]
+        hedefler.sort(key=lambda m: _last_scraped_at.get(m["mid"], 0))
+        hedefler = hedefler[:BATCH_SIZE]
+
+        islenen = bulunan = 0
         for m in hedefler:
-            match_id, home_team, away_team = m["match_id"], m["home_team"], m["away_team"]
-            _last_scraped_at[match_id] = time.time()
+            _last_scraped_at[m["mid"]] = time.time()
             islenen += 1
-            if not home_team or not away_team:
-                continue
-
-            found, score = _find_match(home_team, away_team, live_matches)
-            if not found:
-                continue
-
             try:
-                xg = _scrape_xg(page, found["mid"])
+                stats = _scrape_stats(page, m["mid"])
             except Exception as e:
-                print(f"⚠️  {home_team} - {away_team} xG cekilemedi: {e}", flush=True)
+                print(f"⚠️  {m['home']} - {m['away']} istatistik cekilemedi: {e}", flush=True)
                 continue
-            if xg is None:
+            if not stats:
                 continue
-
-            home_xg, away_xg = xg
             try:
-                _xg_gonder(api_base, secret, match_id, home_xg, away_xg)
+                _stats_gonder(api_base, secret, m["mid"], stats)
             except Exception as e:
-                print(f"⚠️  {home_team} - {away_team} API'ye yazilamadi: {e}", flush=True)
+                print(f"⚠️  {m['home']} - {m['away']} API'ye yazilamadi: {e}", flush=True)
                 continue
-
             bulunan += 1
-            print(f"✅ xG: {home_team} {home_xg} - {away_xg} {away_team} "
-                  f"(eslesme skoru={score:.2f})", flush=True)
+            print(f"✅ {m['home']} - {m['away']}: {stats}", flush=True)
 
         browser.close()
 
@@ -130,7 +157,7 @@ def main():
               "export BACKUP_SECRET=... calistirip tekrar dene.", flush=True)
         sys.exit(1)
 
-    print(f"🚀 Flashscore xG istemcisi baslatiliyor -> {args.api_base}", flush=True)
+    print(f"🚀 Flashscore canli veri istemcisi baslatiliyor -> {args.api_base}", flush=True)
     while True:
         start = time.time()
         try:
@@ -139,7 +166,7 @@ def main():
             print(f"⚠️  Dongu hatasi: {e}", flush=True)
             islenen, bulunan = 0, 0
         elapsed = time.time() - start
-        print(f"📊 {islenen} mac denendi, {bulunan} xG bulundu ({elapsed:.1f}sn). "
+        print(f"📊 {islenen} mac istatistik icin denendi, {bulunan} basarili ({elapsed:.1f}sn). "
               f"{CYCLE_PAUSE_SECONDS}sn bekleniyor... (durdurmak icin Ctrl+C)", flush=True)
         time.sleep(CYCLE_PAUSE_SECONDS)
 

@@ -13,6 +13,7 @@ import auth
 import settlement
 import odds as odds_mod
 import prematch
+from match_filter import is_known_match
 
 app = FastAPI(title="Canlı Gol Olasılığı API")
 
@@ -325,64 +326,298 @@ def db_backup(request: Request):
                          media_type="application/octet-stream")
 
 
-@app.get("/api/admin/xg-targets")
-def xg_targets(request: Request):
-    """Flashscore xG istemcisi (flashscore_xg_client.py, YEREL makineden calisir)
-    icin: xG zenginlestirmesi yapilabilecek canli maclarin listesi.
+FS_MISSING_GRACE_MINUTES = 5
 
-    NEDEN AYRI BIR UC: Chromium'u Railway container'inda calistirmak bellek
-    limitini (1GB) zorluyordu ve "Page crashed" hatasi veriyordu (bkz. git log -
-    "Flashscore xG bot'u GECICI olarak devre disi birak"). Cozum: scraping'i
-    (agir islem) kullanicinin kendi bilgisayarinda calistirip, sadece SONUCU
-    (birkaç ondalik sayi) bu API uzerinden Railway'deki canli veritabanina
-    yazdirmak - Railway container'i hic Chromium calistirmiyor, sifir ek
-    bellek yuku."""
-    from fastapi.responses import JSONResponse
-    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
-    provided = request.headers.get("x-backup-secret")
-    if not expected or provided != expected:
-        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+# last_seen_at/last_progress_at bugune kadar SADECE thesports_bot.py
+# calistiginda ekleniyordu (_ensure_match_tracking_schema). Bu uclar artik
+# thesports_bot'a BAGIMLI OLMAMALI (TheSports devre disi kalsa/kaldirilsa
+# bile calismali) - kendi idempotent semasini garantiliyor.
+_fs_schema_ready = False
+
+
+def _fs_ensure_schema():
+    global _fs_schema_ready
+    if _fs_schema_ready:
+        return
     conn = connect()
-    cur = conn.cursor()
-    cur.execute('''
-        SELECT m.id, m.home_team_id, m.away_team_id, m.minute
-        FROM matches m
-        WHERE m.status = 'LIVE'
-          AND EXISTS (SELECT 1 FROM live_snapshots s WHERE s.match_id = m.id)
-    ''')
-    maclar = [
-        {"match_id": mid, "home_team": home, "away_team": away, "minute": minute}
-        for mid, home, away, minute in cur.fetchall()
-    ]
+    for stmt in (
+        "ALTER TABLE matches ADD COLUMN last_seen_at TIMESTAMP",
+        "ALTER TABLE matches ADD COLUMN last_progress_at TIMESTAMP",
+    ):
+        try:
+            conn.execute(stmt)
+        except Exception:
+            pass
+    conn.commit()
     conn.close()
-    return {"success": True, "maclar": maclar}
+    _fs_schema_ready = True
+
+# Flashscore'un "stage" hucresinden gelen metni (minute, minute_ok, status)
+# ucluye cevirir. Sadece YERELDE Playwright ile GOZLEMLENMIS degerler icin
+# kesin bir esleme var (rakam -> dakika, "Half Time" -> HT, bkz.
+# flashscore_xg_bot.py docstring). Tanimadigimiz bir metin gelirse TAHMIN
+# ETMIYORUZ - LIVE/dakika bilinmiyor sayip stat_key_discovery'ye logluyoruz
+# (thesports_bot.py'deki "YENI STATUS_ID" deseniyle ayni ilke).
+def _fs_parse_stage(stage_text):
+    st = (stage_text or "").strip()
+    if st.isdigit():
+        return int(st), True, "LIVE"
+    stl = st.lower()
+    if stl in ("half time", "ht"):
+        return None, False, "HT"
+    if "penalt" in stl or "extra time" in stl:
+        return None, False, "LIVE"
+    if "finished" in stl or stl in ("ft", "aet", "pen"):
+        return None, False, "FINISHED"
+    if "postponed" in stl or "cancel" in stl or "abandoned" in stl:
+        return None, False, "ABANDONED"
+    _fs_unknown_stage_kaydet(st)
+    return None, False, "LIVE"
 
 
-@app.post("/api/admin/xg-update")
-def xg_update(request: Request, payload: dict):
-    """flashscore_xg_client.py'nin scrape ettigi xG degerini yazar.
+def _fs_unknown_stage_kaydet(stage_text):
+    if not stage_text:
+        return
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS stat_key_discovery (
+            anahtar TEXT PRIMARY KEY, gorulme INTEGER, ilk_gorulme TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        cur.execute("""INSERT INTO stat_key_discovery (anahtar, gorulme) VALUES (?,1)
+                       ON CONFLICT(anahtar) DO UPDATE SET gorulme = gorulme + 1""",
+                    (f"flashscore_stage_{stage_text}",))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
-    live_snapshots'a YENI SATIR eklemiyoruz - orchestrator "en son satir =
-    guncel durum" varsayimiyla calisiyor (bkz. flashscore_xg_bot.py docstring),
-    sparse bir satir diger botlarin (sut, korner vb.) o dongude veri
-    kaybetmesine yol acardi. Bunun yerine EN SON satirin home_xg/away_xg
-    kolonlarini UPDATE ediyoruz."""
+
+def _fs_close_stale(cursor, active_ids):
+    """thesports_bot._close_stale_missing ile AYNI mantik, ama SADECE fs_
+    onekli (Flashscore kaynakli) maclara uygulanir - ts_ maclara (TheSports
+    geri gelirse) dokunmamak icin."""
+    params = []
+    active_clause = ""
+    if active_ids:
+        placeholders = ','.join('?' for _ in active_ids)
+        active_clause = f"AND source_match_id NOT IN ({placeholders})"
+        params.extend(active_ids)
+    cursor.execute(f'''
+        UPDATE matches
+        SET status = CASE WHEN COALESCE(minute, 0) >= 85 THEN 'FINISHED' ELSE 'ABANDONED' END
+        WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+          AND source_match_id LIKE 'fs\\_%' ESCAPE '\\'
+          AND last_seen_at IS NOT NULL
+          AND last_seen_at <= datetime('now', '-{FS_MISSING_GRACE_MINUTES} minutes')
+          {active_clause}
+    ''', params)
+
+
+@app.post("/api/admin/live-sync")
+def live_sync(request: Request, payload: dict):
+    """flashscore_xg_client.py'den (YEREL makineden, her dongude) gelen TUM
+    canli maclarin skor/dakika/lig ozetini isler.
+
+    NEDEN VAR: 2026-08-12'de TheSports hesabi "yetkisiz" hatasi vermeye
+    basladi (abonelik/plan sorunu, bkz. Railway loglari) ve TUM canli veri
+    kaynagi durdu. Bu uc, thesports_bot.process_matches ile AYNI ROLU
+    (matches tablosu upsert + is_known_match filtresi + stale-kapama) dolduruyor,
+    ama Flashscore ZATEN GERCEK dakikayi dogrudan veriyor (elapsed-time
+    formulune gerek yok).
+
+    live_snapshots'a HER canli mac icin YENI bir satir eklenir (sparse UPDATE
+    degil) - orchestrator.py'nin momentum botlari (bkz. app/core/orchestrator.py,
+    "minute - 5/10/15" sorgulari) GERCEK zaman-serisi satirlarina ihtiyaç
+    duyuyor. Detayli istatistik kolonlari bu ucta YOK - bir onceki satirdan
+    OLDUGU GIBI KOPYALANIR (carry-forward), boylece /api/admin/live-stats-update
+    tarafindan doldurulan degerler bir sonraki hizli senkron turunde
+    KAYBOLMAZ (ayni "sparse yazma diger botlari aclikta birakir" ilkesi)."""
     from fastapi.responses import JSONResponse
     expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
     provided = request.headers.get("x-backup-secret")
     if not expected or provided != expected:
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
-    match_id = payload.get("match_id")
-    home_xg = payload.get("home_xg")
-    away_xg = payload.get("away_xg")
-    if match_id is None or home_xg is None or away_xg is None:
-        return JSONResponse({"error": "match_id/home_xg/away_xg gerekli"}, status_code=400)
+    _fs_ensure_schema()
+
+    matches_in = payload.get("matches") or []
+    prepared = []
+    active_ids = []
+    for m in matches_in:
+        fs_id = m.get("fs_id")
+        home = (m.get("home") or "").strip()
+        away = (m.get("away") or "").strip()
+        if not fs_id or not home or not away:
+            continue
+        event_id = "fs_" + fs_id
+        minute, minute_ok, status = _fs_parse_stage(m.get("stage"))
+        try:
+            score_h = int(m.get("score_h") or 0)
+            score_a = int(m.get("score_a") or 0)
+        except (TypeError, ValueError):
+            score_h, score_a = 0, 0
+        active_ids.append(event_id)
+        prepared.append({
+            "event_id": event_id, "home": home, "away": away,
+            "league": (m.get("league") or "Unknown League").strip(),
+            "home_logo": m.get("home_logo") or "", "away_logo": m.get("away_logo") or "",
+            "minute": minute, "minute_ok": minute_ok, "status": status,
+            "score_h": score_h, "score_a": score_a,
+        })
+
+    # ASAMA 1: KISA baglanti - temizlik + var olanlari oku (bkz.
+    # thesports_bot.process_matches docstring - is_known_match kendi
+    # baglantisini acabildigi icin bunu ACIK baglantiyla cakistirmamak lazim)
     conn = connect()
     cur = conn.cursor()
-    cur.execute('''
-        UPDATE live_snapshots SET home_xg = ?, away_xg = ?
-        WHERE id = (SELECT id FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1)
-    ''', (home_xg, away_xg, match_id))
+    if active_ids:
+        placeholders = ','.join('?' for _ in active_ids)
+        cur.execute(f'''
+            UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
+            WHERE status IN ('LIVE','HT') AND source_match_id IN ({placeholders})
+        ''', active_ids)
+    _fs_close_stale(cur, active_ids)
+    existing_ids = set()
+    if active_ids:
+        cur.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
+        existing_ids = set(r[0] for r in cur.fetchall())
+    conn.commit()
+    conn.close()
+
+    # ASAMA 2: HICBIR DB baglantisi ACIK DEGIL - is_known_match guvenle kendi
+    # baglantisini acabilir.
+    to_write = []
+    for m in prepared:
+        if m["event_id"] not in existing_ids and not is_known_match(m["league"], m["home"], m["away"]):
+            continue
+        to_write.append(m)
+
+    # ASAMA 3: TEK KISA transaction'da hepsini yaz.
+    conn = connect()
+    cur = conn.cursor()
+    yeni_sayisi = 0
+    for m in to_write:
+        is_new = m["event_id"] not in existing_ids
+        cur.execute('''
+            INSERT INTO matches
+            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
+            VALUES (?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(source_match_id) DO UPDATE SET
+                minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
+                status=excluded.status,
+                home_score=excluded.home_score,
+                away_score=excluded.away_score,
+                league_name=excluded.league_name,
+                home_team_logo=excluded.home_team_logo,
+                away_team_logo=excluded.away_team_logo,
+                last_seen_at=CURRENT_TIMESTAMP,
+                last_progress_at=CASE
+                    WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
+                         OR excluded.home_score IS NOT matches.home_score
+                         OR excluded.away_score IS NOT matches.away_score
+                    THEN CURRENT_TIMESTAMP ELSE matches.last_progress_at
+                END
+        ''', (m["event_id"], m["home"], m["away"], m["status"], m["league"],
+              m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
+              m["minute_ok"], m["minute_ok"]))
+
+        cur.execute("SELECT id FROM matches WHERE source_match_id=?", (m["event_id"],))
+        row = cur.fetchone()
+        if not row:
+            continue
+        match_db_id = row[0]
+
+        if is_new:
+            yeni_sayisi += 1
+            minute_to_write = m["minute"] or 0
+            period = 'half_time' if m["status"] == "HT" else ('first_half' if minute_to_write <= 45 else 'second_half')
+            cur.execute('''
+                INSERT INTO live_snapshots (match_id, minute, period, home_score, away_score)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"]))
+        else:
+            cur.execute('''
+                SELECT minute, home_possession, away_possession, home_attacks, away_attacks,
+                       home_dangerous_attacks, away_dangerous_attacks, home_corners, away_corners,
+                       home_red_cards, away_red_cards, home_shots_on_target, away_shots_on_target,
+                       home_shots_off_target, away_shots_off_target, home_shots, away_shots,
+                       home_xg, away_xg, home_big_chances, away_big_chances
+                FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1
+            ''', (match_db_id,))
+            prev = cur.fetchone() or (0,) + (None,) * 20
+            minute_to_write = m["minute"] if m["minute"] is not None else (prev[0] or 0)
+            period = 'half_time' if m["status"] == "HT" else ('first_half' if minute_to_write <= 45 else 'second_half')
+            cur.execute('''
+                INSERT INTO live_snapshots (
+                    match_id, minute, period, home_score, away_score,
+                    home_possession, away_possession, home_attacks, away_attacks,
+                    home_dangerous_attacks, away_dangerous_attacks, home_corners, away_corners,
+                    home_red_cards, away_red_cards, home_shots_on_target, away_shots_on_target,
+                    home_shots_off_target, away_shots_off_target, home_shots, away_shots,
+                    home_xg, away_xg, home_big_chances, away_big_chances
+                ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
+            ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"], *prev[1:]))
+
+    conn.commit()
+    conn.close()
+    # istemci detayli istatistik taramasi icin batch slotlarini SADECE burada
+    # kabul edilen (is_known_match'ten gecen) maclara ayirsin diye - aksi
+    # halde filtrelenmis (obscure) maclar icin bosuna sayfa ziyareti yapip
+    # 404 aliyordu.
+    kabul_edilen = [m["event_id"][3:] for m in to_write]  # "fs_" onekini at
+    return {"success": True, "islenen": len(to_write), "yeni": yeni_sayisi, "kabul_edilen": kabul_edilen}
+
+
+_FS_STAT_FIELDS = {
+    "possession", "shots", "shots_on_target", "shots_off_target",
+    "corners", "red_cards", "attacks", "dangerous_attacks", "big_chances", "xg",
+}
+
+
+@app.post("/api/admin/live-stats-update")
+def live_stats_update(request: Request, payload: dict):
+    """flashscore_xg_client.py'nin bir macin istatistik sayfasindan scrape
+    ettigi degerleri (top hakimiyeti, sut, korner, xG vb. - hangileri
+    mevcutsa) yazar.
+
+    live_snapshots'a YENI SATIR eklemiyoruz - /api/admin/live-sync zaten her
+    dongude taze bir satir aciyor (bkz. o uc'un docstring'i). Burasi SADECE
+    EN SON satirin GELEN alanlarini UPDATE ediyor - Flashscore'un istatistik
+    widget'i macdan maca DEGISKEN kategoriler gosterdigi icin (bazen korner/
+    kart hic yok), gelmeyen alanlara DOKUNMUYORUZ (0 yazip UYDURMUYORUZ)."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    fs_id = payload.get("fs_id")
+    stats = payload.get("stats") or {}
+    if not fs_id or not stats:
+        return JSONResponse({"error": "fs_id/stats gerekli"}, status_code=400)
+
+    set_parts = []
+    params = []
+    for key, pair in stats.items():
+        if key not in _FS_STAT_FIELDS or not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            continue
+        set_parts.append(f"home_{key} = ?, away_{key} = ?")
+        params.extend([pair[0], pair[1]])
+    if not set_parts:
+        return JSONResponse({"error": "gecerli stat alani yok"}, status_code=400)
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM matches WHERE source_match_id = ?", ("fs_" + fs_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return JSONResponse({"error": "mac bulunamadi"}, status_code=404)
+    match_db_id = row[0]
+    sql = (f"UPDATE live_snapshots SET {', '.join(set_parts)} "
+           "WHERE id = (SELECT id FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1)")
+    params.append(match_db_id)
+    cur.execute(sql, params)
     updated = cur.rowcount
     conn.commit()
     conn.close()

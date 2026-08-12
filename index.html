@@ -1472,6 +1472,17 @@
 
             document.getElementById('homeIntro').style.display = (tab === 'today') ? '' : 'none';
 
+            // matchListContainer TUM sekmeler (today/open/results/stats/login/
+            // paywall) tarafindan PAYLASILAN tek bir div - fetchData() async
+            // oldugu icin, sekme degisiminde container'i HEMEN sifirlamazsak
+            // bir ONCEKI sekmenin icerigi (ozellikle login formu gibi tamamen
+            // farkli bir gorunum) yeni sekmenin verisi gelene kadar ekranda
+            // kaliyor, "yanlis sekme icerigi gorunuyor" izlenimi veriyordu.
+            if (['today', 'open', 'results'].includes(tab)) {
+                document.getElementById('matchListContainer').innerHTML =
+                    `<div class="loader"><i class="fa-solid fa-circle-notch"></i><p>Veriler Yükleniyor...</p></div>`;
+            }
+
             // Bir onceki sekmede olusan yatay kayma (icerik tasmasi) varsa,
             // sekme degisince ekran "saga kaymis" gibi kalmasin diye sifirla.
             document.documentElement.scrollLeft = 0;

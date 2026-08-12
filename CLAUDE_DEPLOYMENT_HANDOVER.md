@@ -48,3 +48,36 @@ Orkestratör bir maça zaman içinde birden fazla sinyal üretebiliyor (goller i
 - Git push/commit her zaman kullanıcı tarafından kendi terminalinden yapılıyor (Claude'un çalıştığı ortamda GitHub kimlik bilgisi ve dosya silme/unlink yetkisi yok).
 - Değişiklik yapmadan önce local'de (repo kopyası üzerinde) test edip, `python3 -m py_compile` ile syntax kontrolü yapmak faydalı oldu.
 - RapidAPI kotası sınırlı olabilir; "maç donmuş görünüyor" tarzı raporlarda önce kota/plan durumuna bakmak, veri kalitesi varsayımı yapmamak gerekiyor.
+
+## 5. 2026-08-12 Oturumu: TheSports çöktü → Flashscore mimarisi + iMac göçü
+
+**NOT (§1'i güncelleyen bilgi):** Veri kaynağı zinciri artık RapidAPI → TheSports → **Flashscore (yerel istemci)**. `v4_api_bot.py`/`thesports_bot.py` supervisor'da hâlâ dursun/durmasın tartışmasız kalabilir (zararsız, `ts_` önekiyle ayrı kayıt açıyor) ama **birincil canlı veri kaynağı artık Flashscore**.
+
+### 5.1 Kök neden: TheSports "yetkisiz" hatası
+`THESPORTS_USER`/`THESPORTS_SECRET` ile yapılan `/v1/football/match/detail_live` istekleri `{'err': 'URL is not authorized to access, please contact our business staff.'}` dönmeye başladı (muhtemelen abonelik/plan sorunu, kod tarafında hiçbir şey değişmedi). Railway loglarında görülebilir. Bu, `orchestrator`'ın veri girdisini tamamen kesti.
+
+### 5.2 Çözüm: Flashscore tabanlı yerel-istemci mimarisi
+- **`flashscore_xg_bot.py`**: Saf scraping yardımcıları (DOĞRUDAN ÇALIŞTIRILMAZ). `get_live_summary(page)` → TEK sayfa yüklemesiyle TÜM canlı maçların lig/takım/skor/dakika özetini çeker (selector'lar Playwright ile canlı sitede doğrulandı, tahmin değil). `_scrape_stats(page, mid)` → bir maçın istatistik sayfasını ziyaret edip GÖRÜNEN kategorileri (`_STAT_CATEGORY_MAP`) döner — Flashscore lige göre değişken sayıda kategori gösteriyor (bazı maçlarda sadece 5 kategori, korner/kart/atak hiç yok); görülmeyen alan için 0 UYDURULMUYOR.
+- **`flashscore_xg_client.py`**: YEREL makinede çalışır (artık iMac, `launchd` ile — bkz. §5.4). Her döngüde: (1) tüm canlı maç özetini `/api/admin/live-sync`'e gönderir, (2) sunucunun kabul ettiği (bkz. aşağı) maçlardan `BATCH_SIZE=6` tanesinin detaylı istatistiğini çekip `/api/admin/live-stats-update`'e gönderir.
+- **`api.py` yeni uçlar**:
+  - `POST /api/admin/live-sync`: `thesports_bot.process_matches` ile AYNI mantık (matches upsert + `is_known_match` filtresi + üç-aşamalı "database is locked" koruması + stale-kapama). Flashscore GERÇEK dakikayı doğrudan verdiği için elapsed-time formülüne gerek yok. **Önemli tasarım kararı**: `orchestrator.py`'nin momentum botları (`minute-5/10/15` sorguları, bkz. `app/core/orchestrator.py:184-198`) GERÇEK zaman-serisi satırlarına ihtiyaç duyuyor — bu yüzden her senkron turunda YENİ bir `live_snapshots` satırı açılıyor, ama istatistik kolonları bir önceki satırdan **carry-forward** ediliyor (kopyalanıyor), sparse yazım diğer botları aç bırakmasın diye. Yanıtta `kabul_edilen` (fs_id listesi) dönüyor — istemci detaylı istatistik taramasını SADECE bu maçlara yapıyor (aksi halde filtrelenmiş/obscure maçlara batch slotu boşa gidiyordu).
+  - `POST /api/admin/live-stats-update`: `fs_id` + `stats` dict alır, SADECE gelen alanları UPDATE eder (mevcut son `live_snapshots` satırının).
+  - Eski `/api/admin/xg-targets` ve `/api/admin/xg-update` (sadece xG içindi) bu ikisiyle DEĞİŞTİRİLDİ, kaldırıldı.
+- **Eski önemli hata (tespit edilip düzeltildi)**: `app/core/features.py`'de `isabet_orani = sot_toplam / sut_toplam` sadece `sut_toplam`'ı (paydayı) `if` ile kontrol ediyordu, `sot_toplam` (payı) None olabileceği kontrol edilmiyordu. Flashscore bazı maçlarda "Total shots" verip "Shots on target" vermediği için (yukarıdaki kategori değişkenliği) bu None/int çarpışması **orchestrator'ı HER TURDA çökertiyordu** (`unsupported operand type(s) for /: 'NoneType' and 'int'`) — deploy sonrası ~20 dakika HİÇ sinyal üretilmedi, Railway loglarında görülünce bulundu. Düzeltme: her iki taraf da `is not None` kontrolünden geçmeden bölme yapılmıyor.
+
+### 5.3 `match_filter.py`: Romanya deneyi
+Kullanıcı isteğiyle (`"romanya maçlarını çekelim, deneyelim"`) `is_known_match()`'e lig adında `"romania"` geçen maçları (örn. "Romanian Cup - Qualification") kabul eden bir istisna eklendi. **ÖLÇÜLMEDİ** — CLAUDE.md'nin "korelasyon 0.25 altıysa yazma" kuralı burada resmi olarak uygulanmadı, bilinçli bir deney olarak bırakıldı. Bu takımların çoğu `prematch.py`'nin arşiv-tabanlı profillerinde YOK, botlar sık sık `insufficient_data` dönebilir — bu beklenen, hata değil.
+
+### 5.4 index.html: Sekme geçişi bug'ı
+`matchListContainer` TÜM sekmeler (today/open/results/stats/login/paywall) tarafından paylaşılan TEK bir div; `fetchData()` async olduğu için `switchTab()` container'ı hemen sıfırlamıyordu — bir önceki sekmenin içeriği (örn. "Üye Ol" login formu) yeni sekmenin verisi gelene kadar ekranda kalıyordu. Kullanıcı "sayfalar arası geçişte hata" olarak bildirdi, Playwright ile canlı sitede tekrar üretildi (login → "Açık Tahminler" geçişinde login formu görünüyordu). Düzeltme: `switchTab()` artık today/open/results'a geçerken container'ı hemen yükleniyor-spinner'ına sıfırlıyor.
+
+### 5.5 iMac göçü (laptop elden çıkıyor)
+- Bu laptop kullanımdan kalkacağı için proje **iMac'e taşındı** (`haktanerdogan@192.168.1.195`, ev ağında `Haktan-iMac`). iMac'te 4 Ağustos'tan kalma ESKİ bir klon zaten vardı (muhtemelen iOS/Capacitor işi için) — `git pull` ile güncellendi (184 commit ileri), bekleyen önemsiz bir yerel değişiklik (geçici `DEMO_MODE` togglesı, zaten upstream'de kaldırılmıştı) stash ile güvenle temizlendi.
+- **`flashscore_xg_client.py` artık iMac'te `launchd` ile SÜREKLİ/OTOMATİK çalışıyor** — `~/Library/LaunchAgents/com.matchrix.flashscoreclient.plist` (`RunAtLoad` + `KeepAlive` true, log'lar `/tmp/flashscore_client.log` / `_err.log`). Bu, canlı veri akışının TEK kaynağı — bu servis dururursa sinyal üretimi tamamen durur (TheSports zaten çalışmıyor).
+- `iddaa` projesi (ayrı, git'siz, `/Users/sebnem/Desktop/iddaa` → iMac'te `~/Desktop/iddaa`) `rsync` ile taşındı, ayrı bir `.venv` kuruldu (pandas/numpy/requests/bs4/cloudscraper/openpyxl).
+- **Devralacak AI için önemli**: iMac'te bir şey bozulursa önce `launchctl list | grep matchrix` ve `tail -f /tmp/flashscore_client.log` ile bak. `BACKUP_SECRET` plist içine EnvironmentVariables olarak gömülü (Railway Variables'daki değerle aynı olmalı).
+
+### 5.6 Şu Anki Durum (2026-08-12 sonu itibarıyla)
+- Railway'de canlı, deploy'lar sorunsuz. Orchestrator çökmeden çalışıyor, sinyal üretiyor (Romanya dahil).
+- Bilinen sınırlama: xG SADECE Flashscore'un üst düzey ligler için gösterdiği bir kategori — küçük/bölgesel liglerde (Romanya dahil) hiç yok, `bot_xg_sniper`/`bot_finishing_gap` bu maçlarda oy veremiyor (kod hatası değil, veri gerçekten yok).
+- `thesports_bot.py` supervisor'da hâlâ çalışıyor (yetkisiz hatası vererek, zararsız) — TheSports hesabı düzelirse `ts_` önekli paralel kayıtlar açabilir, aynı gerçek maç için Flashscore (`fs_`) ile ÇİFT sinyal riski teorik olarak var ama şu an düşük öncelikli.

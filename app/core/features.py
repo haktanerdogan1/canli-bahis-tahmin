@@ -81,7 +81,8 @@ def extract(ctx: Dict[str, Any]) -> Dict[str, Optional[float]]:
     f["korner_hizi"] = round(f["korner_toplam"] / dk * 10, 3) if f["korner_toplam"] is not None else None
 
     # --- Verimlilik ailesi ---
-    f["isabet_orani"] = round(f["sot_toplam"] / f["sut_toplam"], 3) if f["sut_toplam"] else None
+    f["isabet_orani"] = (round(f["sot_toplam"] / f["sut_toplam"], 3)
+                          if (f["sot_toplam"] is not None and f["sut_toplam"]) else None)
     # Gol basina uretilen xG: yuksekse "hak edip atamamis" demektir
     f["xg_gol_farki"] = round(f["xg_toplam"] - f["toplam_gol"], 3) if f["xg_toplam"] is not None else None
 

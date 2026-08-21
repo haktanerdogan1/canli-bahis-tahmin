@@ -131,6 +131,7 @@
     <div class="tabs">
         <button class="tab-btn active" data-tab="uyeler" onclick="switchTab('uyeler')">Üyeler</button>
         <button class="tab-btn" data-tab="botlar" onclick="switchTab('botlar')">Bot Sinyalleri</button>
+        <button class="tab-btn" data-tab="istatistik" onclick="switchTab('istatistik')">İstatistikler</button>
     </div>
 
     <div class="panel-section active" id="sec-uyeler">
@@ -158,6 +159,37 @@
                 <tbody id="botlarBody"><tr><td colspan="9" class="loading">Yükleniyor...</td></tr></tbody>
             </table>
         </div>
+    </div>
+
+    <div class="panel-section" id="sec-istatistik">
+        <div class="warn-note" id="istatistikWarn" style="display:none;"></div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Günlük Özet</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Tarih</th><th>Paylaşılan</th><th>Kazandı</th><th>Kaybetti</th><th>Bekleyen</th><th>İsabet</th></tr></thead>
+                <tbody id="gunlukBody"><tr><td colspan="6" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Bot Bazlı İsabet ve Kalibrasyon</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Bot</th><th>Sinyal</th><th>İsabet</th><th>Ort. İddia</th><th>Kalibrasyon Farkı (puan)</th></tr></thead>
+                <tbody id="botPerfBody"><tr><td colspan="5" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Olasılık Aralığına Göre Kalibrasyon</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Aralık</th><th>Sinyal</th><th>İddia Edilen</th><th>Gerçekleşen</th></tr></thead>
+                <tbody id="kalibrasyonBody"><tr><td colspan="4" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Piyasa Karşılaştırması</h3>
+        <div class="table-wrap" id="piyasaWrap"><div class="loading">Yükleniyor...</div></div>
     </div>
 </div>
 
@@ -194,11 +226,17 @@ function logout() {
     location.reload();
 }
 
+let istatistikYuklendi = false;
+
 function switchTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('active'));
     document.getElementById('sec-' + tab).classList.add('active');
     if (tab === 'botlar') loadBotSinyalleri();
+    if (tab === 'istatistik' && !istatistikYuklendi) {
+        istatistikYuklendi = true;
+        loadIstatistikler();
+    }
 }
 
 function fmtPct(x) {
@@ -293,6 +331,74 @@ async function loadBotSinyalleri() {
             <td class="reasons">${(s.gerekce || []).join(' · ')}</td>
         </tr>
     `).join('');
+}
+
+async function loadIstatistikler() {
+    const d = await api('/api/admin/panel/istatistikler');
+    if (!d.success) return;
+
+    if (d.uyari) {
+        const w = document.getElementById('istatistikWarn');
+        w.style.display = 'block';
+        w.textContent = d.uyari;
+    }
+
+    const bugunStr = new Date().toISOString().slice(0, 10);
+    const gunlukBody = document.getElementById('gunlukBody');
+    if (!(d.gunluk_ozet || []).length) {
+        gunlukBody.innerHTML = '<tr><td colspan="6" class="empty">Henüz sinyal paylaşılmadı.</td></tr>';
+    } else {
+        gunlukBody.innerHTML = d.gunluk_ozet.map(g => `
+            <tr>
+                <td>${g.tarih}${g.tarih === bugunStr ? ' (bugün)' : ''}</td>
+                <td>${g.paylasilan}</td>
+                <td>${g.kazanan}</td>
+                <td>${g.kaybeden}</td>
+                <td>${g.bekleyen}</td>
+                <td>${fmtPct(g.isabet_orani)}</td>
+            </tr>
+        `).join('');
+    }
+
+    const botPerfBody = document.getElementById('botPerfBody');
+    if (!(d.bot_performansi || []).length) {
+        botPerfBody.innerHTML = '<tr><td colspan="5" class="empty">Henüz yeterli sonuçlanmış sinyal yok.</td></tr>';
+    } else {
+        botPerfBody.innerHTML = d.bot_performansi.map(b => {
+            const farkPuan = Math.round((b.asiri_iyimserlik || 0) * 100);
+            return `
+            <tr>
+                <td>${b.bot}</td>
+                <td>${b.sinyal_sayisi}</td>
+                <td>${fmtPct(b.isabet_orani)}</td>
+                <td>${fmtPct(b.ortalama_iddia)}</td>
+                <td>${farkPuan > 0 ? '+' : ''}${farkPuan}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    const kalibrasyonBody = document.getElementById('kalibrasyonBody');
+    if (!(d.kalibrasyon || []).length) {
+        kalibrasyonBody.innerHTML = '<tr><td colspan="4" class="empty">Veri yok.</td></tr>';
+    } else {
+        kalibrasyonBody.innerHTML = d.kalibrasyon.map(k => `
+            <tr>
+                <td>${k.olasilik_araligi}</td>
+                <td>${k.sinyal_sayisi}</td>
+                <td>${fmtPct(k.iddia_edilen)}</td>
+                <td>${fmtPct(k.gerceklesen)}</td>
+            </tr>
+        `).join('');
+    }
+
+    const piyasaWrap = document.getElementById('piyasaWrap');
+    const p = d.piyasa_karsilastirmasi;
+    piyasaWrap.innerHTML = p
+        ? `<div style="padding:0.9rem;">
+            <p style="margin:0 0 0.5rem;">${p.aciklama}</p>
+            <p style="color:var(--text-muted); font-size:0.8rem; margin:0;">Oran bulunan sinyal sayısı: ${p.oran_bulunan_sinyal}</p>
+           </div>`
+        : '<div class="empty">Piyasa oranıyla eşleşen sinyal yok.</div>';
 }
 
 function initPanel() {

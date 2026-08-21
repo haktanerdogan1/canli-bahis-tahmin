@@ -1084,9 +1084,10 @@ def get_daily_results(request: Request):
 def get_ozet():
     """Herkese acik sonuc ozeti - seffaflik kozu, UYELIK GEREKTIRMEZ.
 
-    /api/metrics'teki 'ozet' bloguyla ayni hesap; farki uyelik sarti olmamasi.
-    Bot bazli detay ve kalibrasyon gibi rekabete hassas veriler burada YOK,
-    onlar /api/metrics'te uyelere ozel kalmaya devam ediyor.
+    _hesapla_metrics()'teki 'ozet' bloguyla ayni hesap; farki uyelik/admin
+    sarti olmamasi. Bot bazli detay ve kalibrasyon gibi rekabete hassas
+    veriler burada YOK, onlar /api/admin/panel/istatistikler'de sadece
+    yoneticiye ozel kalmaya devam ediyor.
     """
     conn = connect()
     cur = conn.cursor()
@@ -1148,18 +1149,51 @@ def get_ozet():
     }
 
 
-@app.get("/api/metrics")
-def get_metrics(request: Request):
+@app.get("/api/ozet-donem")
+def get_ozet_donem(donem: str = "tum"):
+    """Ana sayfadaki tiklanabilir Bu Hafta/Bu Ay/Tum Zamanlar ozeti - herkese
+    acik, uyelik gerektirmez. Kullanici talebiyle (2026-08-21) bot bazli
+    detaylar/kalibrasyon admin paneline tasindi (bkz. /api/admin/panel/
+    istatistikler); ana sitede artik SADECE bu sadelestirilmis donem ozeti
+    gosteriliyor."""
+    if donem == "hafta":
+        # Bu haftanin Pazartesi'si (Turkiye saatiyle +3): 6 gun geri gidip
+        # ileri dogru en yakin Pazartesi'ye (weekday 1) yuvarla.
+        where = "date(created_at, '+3 hours') >= date('now', '+3 hours', '-6 days', 'weekday 1')"
+    elif donem == "ay":
+        where = "strftime('%Y-%m', created_at, '+3 hours') = strftime('%Y-%m', 'now', '+3 hours')"
+    else:
+        donem = "tum"
+        where = "1=1"
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT outcome, COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST') AND {where}
+        GROUP BY outcome
+    """)
+    tally = dict(cur.fetchall())
+    conn.close()
+
+    won = tally.get("WON", 0)
+    lost = tally.get("LOST", 0)
+    settled = won + lost
+    return {
+        "success": True, "donem": donem,
+        "kazanan": won, "kaybeden": lost, "sonuclanan": settled,
+        "isabet_orani": round(won / settled, 3) if settled else None,
+    }
+
+
+def _hesapla_metrics():
     """Bot bazli isabet orani + konsensus kalibrasyonu.
 
-    "Piyasanin en iyisi" iddiasi ancak olculebilirse anlamlidir. Bu uc, sonuclanmis
-    (outcome dolu) sinyaller uzerinden calisir - anlik tahmin degil, gecmis gercek.
-
-    Uyelere ozel: rakiplere veya rastgele ziyaretcilere sistemin ic performansini acmayiz.
-    """
-    if current_user_id(request) is None:
-        return {"success": False, "locked": True, "error": "Bu sayfa üyelere özel."}
-
+    "Piyasanin en iyisi" iddiasi ancak olculebilirse anlamlidir. Bu fonksiyon,
+    sonuclanmis (outcome dolu) sinyaller uzerinden calisir - anlik tahmin
+    degil, gecmis gercek. Eskiden /api/metrics olarak uye girisiyle
+    korunuyordu; kullanici talebiyle (2026-08-21) ana siteden tamamen
+    kaldirilip admin paneline tasindi (bkz. /api/admin/panel/istatistikler)."""
     conn = connect()
     cur = conn.cursor()
 
@@ -1332,6 +1366,18 @@ def get_metrics(request: Request):
         "gunluk_ozet": gunluk,
         "uyari": note,
     }
+
+
+@app.get("/api/admin/panel/istatistikler")
+def admin_panel_istatistikler(request: Request):
+    """Bot bazli isabet/kalibrasyon/piyasa karsilastirmasi - eskiden ana
+    sitede uye girisiyle goruluyordu, kullanici talebiyle (2026-08-21)
+    admin paneline tasindi (bkz. _hesapla_metrics)."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _hesapla_metrics()
+
 
 @app.get("/api/monitor")
 def get_monitor(request: Request):

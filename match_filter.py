@@ -80,28 +80,28 @@ def arsivde_var_mi(takim_adi):
 def is_known_match(league_name, home_name, away_name):
     """Mac takip edilmeye deger mi?
 
-    Dort kademe:
-      1. Lig adi tanidik bir turnuva mi (Sampiyonlar/Avrupa/Konferans Ligi)
-      2. Lig adi DENEY kapsamindaki bir ulkeye mi ait (bkz. asagida)
-      3. Takim adi elle tutulan buyuk kulup listesinde mi
-      4. Takim Iddaa arsivinde var mi (veriye dayali, en genis kapsam)
+    GENISLETME (kullanici talebi, 2026-08-13): "flashscore'dan her maci
+    cekelim" - filtre tamamen ACIK. Eskiden burada dort kademeli bir filtre
+    vardi (tanidik turnuva / Romanya deneyi / buyuk kulup listesi / Iddaa
+    arsivi) - asagida YORUM SATIRI olarak korunuyor, geri almak istenirse
+    tek yapilacak `return True` satirini silmek.
+
+    UYARI: cok sayida bilinmeyen/amator takim icin prematch.py'nin arsiv-
+    tabanli profilleri YOK - botlarin cogu boyle maclarda "insufficient_data"
+    donebilir, bu BEKLENEN bir sonuc (veri gercekten yoksa uydurulmuyor),
+    hata degil. Ayrica maç hacmi ciddi artabilir (Flashscore istemcisinin
+    BATCH_SIZE=6 sinirlamasi yuzunden detayli istatistik kapsamasi yavaslar).
     """
-    ln = (league_name or "").strip().lower()
-    if ln in KNOWN_LEAGUE_NAMES:
-        return True
+    return True
 
-    # DENEY (kullanici talebi, 2026-08-12): "Romanya maclarini da cekelim,
-    # sisteme analiz ettirelim, deneyelim bakalim" - Romanya Kupasi gibi
-    # bolgesel/amator maclar bilerek genisletildi. UYARI: bu kulupler
-    # buyuk ihtimalle prematch.py'nin Iddaa-arsiv-tabanli takim profillerinde
-    # HIC YOK - botlarin cogu "insufficient_data" donebilir, bu BEKLENEN bir
-    # sonuc (veri gercekten yoksa uydurulmuyor), hata degil.
-    if "romania" in ln:
-        return True
-
-    hn = (home_name or "").strip().lower()
-    an = (away_name or "").strip().lower()
-    if any(kw in hn or kw in an for kw in KNOWN_TEAMS):
-        return True
-
-    return arsivde_var_mi(home_name) or arsivde_var_mi(away_name)
+    # --- eski dort kademeli filtre (referans icin saklandi) ---
+    # ln = (league_name or "").strip().lower()
+    # if ln in KNOWN_LEAGUE_NAMES:
+    #     return True
+    # if "romania" in ln:
+    #     return True
+    # hn = (home_name or "").strip().lower()
+    # an = (away_name or "").strip().lower()
+    # if any(kw in hn or kw in an for kw in KNOWN_TEAMS):
+    #     return True
+    # return arsivde_var_mi(home_name) or arsivde_var_mi(away_name)

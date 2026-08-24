@@ -155,6 +155,13 @@ def run_orchestrator():
                 minute = match['minute']
                 aggregate_score = match['aggregate_score'] or ''
 
+                # Dakika bilinmiyorsa (ornegin mac ilk kez uzatma/penaltilar gibi
+                # parse edilemeyen bir "stage" metniyle kesfedildiginde, bkz.
+                # api.py: _fs_parse_stage) asagidaki karsilastirmalar cokerdi -
+                # gercek dakika gelene kadar bu maci atla.
+                if minute is None:
+                    continue
+
                 # Dakika 0 ama skor 0 degil: API'nin dakika alani guvenilmez demektir
                 # (mac gercekte devam ediyor ama "henuz baslamamis gibi" gorunuyor).
                 # Boyle bir durumda "minute <= 45 -> Ilk Yari" varsayimi yanlis sinyal

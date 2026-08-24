@@ -53,6 +53,17 @@ SERVICES = {
     "orchestrator": {
         "cmd": [PYTHON, "-u", "-m", "app.core.orchestrator"],
     },
+    # sevenm_client: 7msport.com canli veri kaynagi (bkz. sevenm_bot.py/
+    # sevenm_client.py docstring'leri - hic bot korumasi yok, Playwright
+    # GEREKTIRMIYOR, sadece `requests` ile iki duz JS dizi dosyasi cekiyor).
+    # Bu yuzden flashscore_xg_bot'un aksine Railway'in bellek limitine
+    # takilma riski yok - guvenle burada, ana 'web' servisinde calisabilir.
+    # 2026-08-24: kullanicinin "PC kapansa da calissin" talebiyle eklendi -
+    # oncesinde SADECE yerel makinede (launchd ile) calisiyordu, canli veri
+    # akisi kullanicinin bilgisayarina bagimliydi.
+    "sevenm_client": {
+        "cmd": [PYTHON, "-u", "sevenm_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
+    },
     # flashscore_xg_bot: GECICI OLARAK DEVRE DISI (bkz. git log). Ilk canli
     # denemede Chromium container'da tekrar tekrar "Page/Target crashed" verdi
     # ve servisin toplam bellek kullanimi 1GB limitine dayandi (0.999GB olculdu) -

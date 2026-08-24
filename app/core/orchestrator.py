@@ -355,14 +355,22 @@ def run_orchestrator():
             except Exception as de:
                 print(f"⚠️  VOID silme hatasi: {de}")
 
-            # Tum sinyalleri sonuclanmis maclari FINISHED'e kilitle - aksi
-            # halde RapidAPI'nin bir onceki gunden tasidigi stale kayitlar,
-            # sirf status='LIVE' oldugu icin restart-bypass'tan (tracked_ids)
-            # sonsuza kadar yararlanip her deploy'da ekrana geri donuyordu.
-            try:
-                settlement.finalize_fully_settled_matches()
-            except Exception as fe:
-                print(f"⚠️  Mac kilitleme hatasi: {fe}")
+            # settlement.finalize_fully_settled_matches() KASITLI OLARAK
+            # devre disi (2026-08-24, kullanici raporu: "sonuçlar ekranında
+            # kazanan/kaybeden mac devam ederken bile MS yaziyor"). Bu
+            # fonksiyon, macin TUM sinyalleri sonuclandiginda GERCEKTE hala
+            # oynanip oynanmadigina BAKMADAN matches.status='FINISHED'
+            # yaziyordu - amaci artik CALISMAYAN eski v4_api_bot.py'nin
+            # (RapidAPI) kendi bellek-ici tracked_ids restart-bypass'ini
+            # engellemekti (dunki mac her deploy'da geri donuyordu). Bugunku
+            # kaynaklar (fs_/7m_, bkz. api.py live_sync) boyle bir bypass
+            # kullanmiyor, durumu her turda kaynaktan taze yaziyor - yani bu
+            # guvenlik agina artik ihtiyac yok. Ote yandan matches.status
+            # frontend'in "MS/İY/CANLI" etiketini DOGRUDAN bu alandan
+            # okumasi yuzunden hala gercekten canli olan maclari erken
+            # FINISHED gostermeye devam ediyordu. bkz. settlement.py
+            # finalize_fully_settled_matches docstring'i (fonksiyon referans
+            # icin kod tabaninda duruyor, gerekirse geri acilabilir).
 
             # GUVENLIK AGI: match tracking katmaninda ne olursa olsun, hicbir
             # sinyal 3 saatten uzun PENDING kalamaz. Ayri try/except - biri

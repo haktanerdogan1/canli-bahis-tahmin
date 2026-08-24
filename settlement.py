@@ -348,7 +348,20 @@ def backfill_void_reconsidered(verbose=True):
 
 
 def finalize_fully_settled_matches(verbose=True):
-    """Butun sinyalleri sonuclanmis (hic PENDING kalmayan) maclarin durumunu
+    """ARTIK ORCHESTRATOR'DAN CAGRILMIYOR (2026-08-24, bkz. app/core/orchestrator.py
+    yorum satirlari) - referans/rollback icin kod tabaninda duruyor, v4_api_bot.py
+    ile ayni ilke. NEDEN KAPATILDI: bu fonksiyonun matches.status='FINISHED'
+    yazmasi, frontend'in "MS" etiketini DOGRUDAN bu alandan okumasi yuzunden
+    hala GERCEKTEN canli olan maclari erken bitmis gosteriyordu (kullanici
+    raporu: "sonuçlar ekranında kazanan/kaybeden mac devam ederken bile MS
+    yaziyor"). Asagidaki orijinal gerekce artik GECERSIZ - hedef aldigi
+    v4_api_bot.py (RapidAPI) zaten calistirilmiyor (bkz. supervisor.py),
+    bugunku kaynaklarin (fs_/7m_) tracked_ids tarzi bir restart-bypass'i yok.
+    Eger ileride yeniden acilirsa, matches.status yerine AYRI bir kolona
+    (ör. sinyaller_kilitli TIMESTAMP) yazmali - boylece frontend'in gercek
+    mac durumunu gosteren alan bundan etkilenmez.
+
+    Butun sinyalleri sonuclanmis (hic PENDING kalmayan) maclarin durumunu
     FINISHED yapar - v4_api_bot'un o an ne rapor ettiginden BAGIMSIZ.
 
     NEDEN GEREKLI: bir sinyalin outcome'u KALICI yazildiktan sonra bile,

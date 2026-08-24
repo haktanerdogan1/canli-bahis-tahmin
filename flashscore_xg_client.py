@@ -1,5 +1,11 @@
 """Flashscore canli veri istemcisi - YEREL makinede (terminalde) calisir, Railway'de DEGIL.
 
+NOT (2026-08-24): bu script Railway'de 'flashscore-worker' adinda ayri bir
+serviste de calistirilmisti (Chromium sürekli kaynak tukenip cokuyordu,
+bkz. git log). Kullanici talebiyle Railway kotasi bosa gitmesin diye o
+servis 'sleep infinity' ile boşta tutuluyor - bu script SADECE yerel
+launchd (com.matchrix.flashscoreclient) uzerinden calisiyor.
+
 TARIHCE: Once sadece xG zenginlestirmesi icin yazildi (flashscore_xg_bot.py'yi
 Railway'in 'web' servisine 4. surec olarak eklemek denendi - Chromium
 container'da "Page/Target crashed" verdi ve servisin toplam bellek kullanimi

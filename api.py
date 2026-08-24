@@ -509,6 +509,34 @@ def _iddaa_backfill_results(cur):
     return guncellenen
 
 
+@app.get("/api/odds-profile-fine-bins")
+def odds_profile_fine_bins():
+    """Kullanici talebi (2026-08-25): 'bugunku Iddaa maclarini arsivle
+    karsilastiran yerel bir arac' icin - odds_profile.py'nin %5'lik ince
+    dilim oranlarini (bin, ornek sayisi, IY gol orani, MS 1.5 ust orani)
+    DISARIYA acar. Admin secret GEREKTIRMIYOR - burada hicbir kisisel/
+    hassas veri yok, sadece 33k+ maclik arsivden onceden hesaplanmis
+    ozet/aggregate istatistik (zaten /api/ozet-donem gibi diger public
+    uclarla ayni hassasiyet seviyesinde). Yerel arac (iddaa_karsilastirma.py)
+    bunu + Iddaa.com'un kendi canli API'sini dogrudan cekip client-side
+    kiyaslama yapiyor."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT bin, ornek, iy_gol_orani, ms15_orani FROM odds_profile_rates_fine ORDER BY bin"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+    return {
+        "success": True,
+        "dilimler": [
+            {"bin": b, "ornek": n, "iy_gol_orani": round(iy, 4), "ms15_orani": round(ms, 4)}
+            for b, n, iy, ms in rows
+        ],
+    }
+
+
 @app.get("/api/admin/iddaa-odds-preview")
 def iddaa_odds_preview(request: Request, ornekler: int = 0):
     """Kullanici talebi (2026-08-24): 3 kaba bant yerine 33.525 maclik

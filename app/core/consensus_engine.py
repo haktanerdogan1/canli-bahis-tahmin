@@ -11,7 +11,7 @@ class ConsensusResult(BaseModel):
     negative_bot_count: int
     insufficient_data_count: int
     weighted_probability: float
-    signal_level: str  # "none", "izleme", "guclu_aday", "cok_guclu"
+    signal_level: str  # "none", "eksik_veri", "izleme", "guclu_aday" (eski "cok_guclu" kaldirildi - bkz. ConsensusEngine.evaluate)
     decision: str      # "signal", "no_signal"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -43,7 +43,11 @@ class ConsensusEngine:
             "bot_corner_pressure":     0.05,
             # Mac durumu ailesi (skor/sure, istatistikten bagimsiz)
             "bot_game_state":          0.07,
-            "bot_draw_breaker":        0.04,
+            # devre disi (2026-08-24 admin panel olcumu: 7 sinyalde %28.6 isabet,
+            # iddia ettigi guvenle [%64.7] gerceklesen arasindaki fark [+0.361]
+            # listedeki en kotusuydu - CLAUDE.md'nin "korelasyon <0.25 ise yazma"
+            # ilkesine gore zaten uretimde olmamasi gereken seviyede)
+            "bot_draw_breaker":        0.00,
             "bot_red_card":            0.03,
             # Zaman penceresi ailesi
             "bot_early_blitz":         0.03,
@@ -111,11 +115,15 @@ class ConsensusEngine:
         # hicbir zaman sinyal uretmez. Asagidaki esikler baslangic degeridir;
         # yeterli sonuclanmis sinyal birikince /api/metrics'teki kalibrasyon
         # verisine gore AYARLANMALIDIR (su an veri az, tahmin yurutmuyoruz).
+        # "cok_guclu" (mutabakat>=0.70 ve final_prob>=0.70) yukaridaki NOT'un
+        # dedigi gibi yeterli veri birikince olculdu (2026-08-24, 1292 sonuclanmis
+        # sinyal, admin panel): cok_guclu %68.1 isabet, guclu_aday %70.0 isabet -
+        # yani DAHA KATI esik DAHA KOTU sonuc veriyor. Ayirmak icin yeterli
+        # (mutabakat, final_prob) kombinasyonu bazinda ham veri yok - yeni sayilar
+        # uydurmak yerine (bkz. proje kurali: olcmeden iddia yok) kanitlanmamis
+        # ek katiligi kaldirdik. guclu_aday zaten tek sinyal esigi.
         if oy_veren < 5:
             signal_level = "eksik_veri"
-        elif mutabakat >= 0.70 and final_prob >= 0.70:
-            signal_level = "cok_guclu"
-            decision = "signal"
         elif mutabakat >= 0.50 and final_prob >= 0.63:
             signal_level = "guclu_aday"
             decision = "signal"

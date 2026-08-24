@@ -27,8 +27,13 @@ class ConsensusEngine:
             "bot_19_prematch_prophet": 0.12,
             # Olculmus tarihsel taban oran - sistemin "capasi", tek uydurmayan bot
             "bot_base_rate":            0.13,
-            # Piyasa fiyatindan arsiv esleme - out-of-sample dogrulandi, cokmedi
-            "bot_odds_profile":         0.00,  # devre disi (bkz. orchestrator.py)
+            # Piyasa fiyatindan arsiv esleme - out-of-sample dogrulandi, cokmedi.
+            # 2026-08-24: iddaa_odds_client.py (acilis orani) ile yeniden aktif
+            # edildi (bkz. orchestrator.py). Baslangic agirligi mutevazi tutuldu -
+            # yeterli sonuclanmis sinyal birikince (bkz. /api/admin/panel/
+            # istatistikler) olculup ayarlanmali, digerlerinden farkli olarak
+            # henuz CANLI performansi yok (sadece arsiv-ici out-of-sample var).
+            "bot_odds_profile":         0.06,
             "bot_form_asymmetry":      0.05,
             # Kalite ailesi (uretilen pozisyonun degeri)
             "bot_xg_sniper":           0.09,

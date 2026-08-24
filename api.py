@@ -393,6 +393,178 @@ def _fs_unknown_stage_kaydet(stage_text, source="fs"):
         pass
 
 
+def _iddaa_ensure_schema():
+    conn = connect()
+    for stmt in (
+        # KALICI ARSIV: her gun gordugumuz mac + acilis orani, sonuc belli
+        # olunca (kendi canli verimizle eslestirerek) sonuc da buraya yazilir -
+        # zamanla kendi Iddaa-kaynakli veri setimizi olusturur (bkz. kullanici
+        # talebi 2026-08-24). ISTATISTIKSEL KULLANIM icin (odds_profile.py'nin
+        # arsivini YENILEMEK, yeni bantlar/marketler denemek) ileride buradan
+        # beslenebilir - su an SADECE _iddaa_transfer_odds canliya gecis aninda
+        # 1X2'yi live_odds'a tasimak icin okuyor.
+        """CREATE TABLE IF NOT EXISTS iddaa_odds_archive (
+            iddaa_event_id INTEGER PRIMARY KEY,
+            home_raw TEXT, away_raw TEXT,
+            home_norm TEXT, away_norm TEXT,
+            league TEXT,
+            odd_1 REAL, odd_x REAL, odd_2 REAL,
+            fh_over_line REAL, fh_over_odd REAL, fh_under_odd REAL,
+            ms_over_line REAL, ms_over_odd REAL, ms_under_odd REAL,
+            first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            fh_home_score INTEGER, fh_away_score INTEGER,
+            ft_home_score INTEGER, ft_away_score INTEGER,
+            result_captured_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS live_odds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id INTEGER, market TEXT, selection TEXT, odds REAL,
+            captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ):
+        try:
+            conn.execute(stmt)
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+
+def _iddaa_transfer_odds(cur, match_db_id, home_raw, away_raw):
+    """Mac ilk kez CANLIYA gectiginde (live_sync'teki is_new dalindan
+    cagrilir) Iddaa arsivindeki (henuz baslamamisken cekilmis) en yakin
+    esan takim adiyla eslesen kaydi arar, bulursa TEK SEFERLIK live_odds'a
+    yazar - bu deger BIR DAHA GUNCELLENMEZ (acilis orani donduruldu, maç
+    ilerledikce degisen canli oran DEGIL - eski tasarimin "her mac zamanla
+    dengeli gorunuyor" sorunu buydu, bkz. orchestrator.py'deki eski NOT).
+    Eslesme bulunamazsa sessizce gecilir (bu mac icin bot_odds_profile
+    insufficient_data doner)."""
+    from flashscore_xg_bot import _normalize as _tnorm, MIN_MATCH_SCORE
+    import difflib
+    h_norm, a_norm = _tnorm(home_raw), _tnorm(away_raw)
+    cur.execute("SELECT home_norm, away_norm, odd_1, odd_x, odd_2 FROM iddaa_odds_archive")
+    best, best_score = None, 0.0
+    for hn, an, o1, ox, o2 in cur.fetchall():
+        score = (difflib.SequenceMatcher(None, h_norm, hn or "").ratio()
+                 + difflib.SequenceMatcher(None, a_norm, an or "").ratio()) / 2
+        if score > best_score:
+            best_score, best = score, (o1, ox, o2)
+    if not best or best_score < MIN_MATCH_SCORE:
+        return
+    o1, ox, o2 = best
+    cur.executemany(
+        "INSERT INTO live_odds (match_id, market, selection, odds) VALUES (?,?,?,?)",
+        [(match_db_id, "1x2", "1", o1), (match_db_id, "1x2", "x", ox), (match_db_id, "1x2", "2", o2)],
+    )
+
+
+def _iddaa_backfill_results(cur):
+    """Arsivde SONUCU henuz bilinmeyen (ft_home_score NULL) kayitlar icin
+    kendi matches tablomuzda (status='FINISHED') fuzzy takim adiyla eslesen
+    bir mac var mi diye bakar, varsa skoru (MS + IY) kopyalar. Ayri bir
+    "sonuc scraper"ina gerek yok - zaten canli takip ettigimiz maclarin
+    sonucunu KENDI verimizden ariyoruz. Iddaa'nin listeledigi ama bizim hic
+    canli gormedigimiz maclar (kucuk ligler, bizim kaynaklarimizin
+    kapsamadigi) sonucsuz kalir - bu BEKLENEN bir durum, uydurma yok."""
+    from flashscore_xg_bot import _normalize as _tnorm, MIN_MATCH_SCORE
+    import difflib
+    cur.execute('''
+        SELECT iddaa_event_id, home_norm, away_norm FROM iddaa_odds_archive
+        WHERE ft_home_score IS NULL
+          AND last_seen_at <= datetime('now', '-2 hours')
+    ''')
+    bekleyen = cur.fetchall()
+    if not bekleyen:
+        return 0
+    cur.execute('''
+        SELECT home_team_id, away_team_id, home_score, away_score,
+               first_half_home_score, first_half_away_score
+        FROM matches WHERE status='FINISHED'
+          AND last_seen_at >= datetime('now', '-3 days')
+    ''')
+    bitmis = cur.fetchall()
+    bitmis_norm = [(_tnorm(h), _tnorm(a), hs, as_, fhs, fas) for h, a, hs, as_, fhs, fas in bitmis]
+
+    guncellenen = 0
+    for eid, hn, an in bekleyen:
+        best, best_score = None, 0.0
+        for bh, ba, hs, as_, fhs, fas in bitmis_norm:
+            score = (difflib.SequenceMatcher(None, hn or "", bh).ratio()
+                     + difflib.SequenceMatcher(None, an or "", ba).ratio()) / 2
+            if score > best_score:
+                best_score, best = score, (hs, as_, fhs, fas)
+        if not best or best_score < MIN_MATCH_SCORE:
+            continue
+        hs, as_, fhs, fas = best
+        if hs is None or as_ is None:
+            continue
+        cur.execute('''
+            UPDATE iddaa_odds_archive
+            SET ft_home_score=?, ft_away_score=?, fh_home_score=?, fh_away_score=?,
+                result_captured_at=CURRENT_TIMESTAMP
+            WHERE iddaa_event_id=?
+        ''', (hs, as_, fhs, fas, eid))
+        guncellenen += 1
+    return guncellenen
+
+
+@app.post("/api/admin/iddaa-odds-sync")
+def iddaa_odds_sync(request: Request, payload: dict):
+    """iddaa_odds_client.py'den (Railway'de calisan, HER GUN oynanan
+    futbol maclarinin Iddaa oranlarini ceken istemciden) gelen toplu
+    guncellemeyi isler ve kalici arsive (iddaa_odds_archive) yazar.
+    bot_odds_profile.py bu arsivi DOGRUDAN kullanmaz - mac canliya
+    gectiginde live_sync icinde _iddaa_transfer_odds ile 1X2'si TEK
+    SEFERLIK live_odds'a aktarilir. Ayrica her cagrida _iddaa_backfill_results
+    ile SONUCU belli olan eski kayitlar kendi canli verimizden doldurulur -
+    zamanla buyuyen bagimsiz bir oran+sonuc arsivi olusturuyor."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _iddaa_ensure_schema()
+
+    events = payload.get("events") or []
+    conn = connect()
+    cur = conn.cursor()
+    yazilan = 0
+    from flashscore_xg_bot import _normalize as _tnorm
+    for e in events:
+        eid = e.get("event_id")
+        home = (e.get("home") or "").strip()
+        away = (e.get("away") or "").strip()
+        odd_1, odd_x, odd_2 = e.get("odd_1"), e.get("odd_x"), e.get("odd_2")
+        if not eid or not home or not away:
+            continue
+        cur.execute('''
+            INSERT INTO iddaa_odds_archive
+                (iddaa_event_id, home_raw, away_raw, home_norm, away_norm, league,
+                 odd_1, odd_x, odd_2, fh_over_line, fh_over_odd, fh_under_odd,
+                 ms_over_line, ms_over_odd, ms_under_odd, first_seen_at, last_seen_at)
+            VALUES (?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(iddaa_event_id) DO UPDATE SET
+                odd_1=excluded.odd_1, odd_x=excluded.odd_x, odd_2=excluded.odd_2,
+                fh_over_line=excluded.fh_over_line, fh_over_odd=excluded.fh_over_odd, fh_under_odd=excluded.fh_under_odd,
+                ms_over_line=excluded.ms_over_line, ms_over_odd=excluded.ms_over_odd, ms_under_odd=excluded.ms_under_odd,
+                last_seen_at=CURRENT_TIMESTAMP
+        ''', (eid, home, away, _tnorm(home), _tnorm(away), e.get("league") or "",
+              odd_1, odd_x, odd_2,
+              e.get("fh_over_line"), e.get("fh_over_odd"), e.get("fh_under_odd"),
+              e.get("ms_over_line"), e.get("ms_over_odd"), e.get("ms_under_odd")))
+        yazilan += 1
+
+    guncellenen = 0
+    try:
+        guncellenen = _iddaa_backfill_results(cur)
+    except Exception as e:
+        print(f"⚠️  Iddaa sonuc doldurma hatasi: {e}", flush=True)
+    conn.commit()
+    conn.close()
+    return {"success": True, "yazilan": yazilan, "sonuc_dolduruldu": guncellenen}
+
+
 def _fs_valid_source(source):
     """Kaynak onegi bir SQL LIKE deseni ve event_id parcasi olarak kullanilacak -
     sadece kucuk harf+rakamla sinirla, gecersizse guvenli varsayilana (fs) don."""
@@ -457,6 +629,7 @@ def live_sync(request: Request, payload: dict):
     if not expected or provided != expected:
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _fs_ensure_schema()
+    _iddaa_ensure_schema()
 
     source = _fs_valid_source(payload.get("source"))
     matches_in = payload.get("matches") or []
@@ -554,6 +727,10 @@ def live_sync(request: Request, payload: dict):
                 INSERT INTO live_snapshots (match_id, minute, period, home_score, away_score)
                 VALUES (?, ?, ?, ?, ?)
             ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"]))
+            try:
+                _iddaa_transfer_odds(cur, match_db_id, m["home"], m["away"])
+            except Exception as e:
+                print(f"⚠️  Iddaa oran aktarimi basarisiz: {e}", flush=True)
         else:
             cur.execute('''
                 SELECT minute, home_possession, away_possession, home_attacks, away_attacks,

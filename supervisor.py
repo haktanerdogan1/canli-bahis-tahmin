@@ -64,6 +64,12 @@ SERVICES = {
     "sevenm_client": {
         "cmd": [PYTHON, "-u", "sevenm_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
     },
+    # iddaa_odds_client: bot_odds_profile.py icin acilis oranlarini besler
+    # (bkz. iddaa_odds_client.py docstring'i). sevenm_client gibi Playwright
+    # GEREKTIRMEZ, bellek riski yok.
+    "iddaa_odds_client": {
+        "cmd": [PYTHON, "-u", "iddaa_odds_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
+    },
     # flashscore_xg_bot: GECICI OLARAK DEVRE DISI (bkz. git log). Ilk canli
     # denemede Chromium container'da tekrar tekrar "Page/Target crashed" verdi
     # ve servisin toplam bellek kullanimi 1GB limitine dayandi (0.999GB olculdu) -

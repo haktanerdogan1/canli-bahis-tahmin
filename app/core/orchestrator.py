@@ -123,13 +123,14 @@ def run_orchestrator():
     # geliyordu. Yeni kadroda her bot AYRI bir bilgi ailesine bakar ve baktigi
     # veri yoksa durustce cekilir. Bir toplulugun deger uretmesi, uyelerinin
     # BAGIMSIZ hatalar yapmasina baglidir.
-    # NOT: OddsProfileBot gecici olarak devre disi. Sebep: canli 1X2 oranini
-    # MAC ONCESI oran bantlariyla karsilastiriyordu; mac ilerledikce beraberlik
-    # favorilestigi icin her mac 'dengeli' gorunuyor ve bot ayirt edemiyordu.
-    # Ayrica guclu sinyal (ust/alt orani, 8.2 puan) canli API'de yok; elimizdeki
-    # 1X2 sadece 4.9 puanlik zayif sinyal veriyor. Dogru veri kaynagi bulununca
-    # yeniden ele alinacak.
-    bots = [PrematchProphetBot(), BaseRateBot()] + tum_uzmanlar()
+    # OddsProfileBot 2026-08-24'te yeniden aktif edildi. Eski devre-disi
+    # birakma sebebi: canli 1X2 orani SUREKLI GUNCELLENEN (in-play) bir
+    # kaynaktan geliyordu - mac ilerledikce beraberlik favorilesip her mac
+    # 'dengeli' gorunuyordu. Artik iddaa_odds_client.py MAC BASLAMADAN ONCEKI
+    # (acilis) Iddaa oranini cekiyor, api.py:_iddaa_transfer_odds mac canliya
+    # gectiginde bunu TEK SEFERLIK dondurup live_odds'a yaziyor - "ilerledikce
+    # bozulma" sorunu yok, ustelik arsivle AYNI kaynak (Iddaa).
+    bots = [PrematchProphetBot(), BaseRateBot(), OddsProfileBot()] + tum_uzmanlar()
 
     consensus_engine = ConsensusEngine()
     

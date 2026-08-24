@@ -74,9 +74,10 @@ body::after{
 @keyframes blink-dot{50%{opacity:0.15;}}
 
 /* ---------- Ozet seridi (ticker) ---------- */
-.stat-row{display:flex; padding:16px 20px 20px; gap:0; overflow-x:auto; border-bottom:1px solid var(--line);}
-.stat-pill{flex:1; min-width:76px; padding:0 14px; text-align:left; border-left:1px solid var(--line);}
-.stat-pill:first-child{border-left:none; padding-left:0;}
+.stat-row{display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--line);}
+.stat-pill{min-width:0; padding:16px 18px; text-align:left; border-top:1px solid var(--line); border-right:1px solid var(--line); overflow:hidden;}
+.stat-pill:nth-child(-n+2){border-top:none;}
+.stat-pill:nth-child(2n){border-right:none;}
 .stat-pill .v{font-family:'Syne'; font-weight:800; font-size:1.5rem; color:var(--ink); white-space:nowrap;}
 .stat-pill .l{font-size:0.56rem; color:var(--ink-soft); letter-spacing:1px; margin-top:3px; text-transform:uppercase;}
 .stat-pill.won .v{color:var(--accent);}
@@ -234,7 +235,7 @@ body::after{
 
 /* ---------- Istatistik ekrani ---------- */
 .big-stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:0; margin-bottom:22px; border-top:1px solid var(--line); border-left:1px solid var(--line);}
-.big-stat{padding:20px 16px; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line);}
+.big-stat{padding:20px 16px; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line); min-width:0; overflow:hidden;}
 .big-stat .v{font-family:'Syne'; font-weight:800; font-size:1.9rem; color:var(--ink);}
 .big-stat .l{font-size:0.58rem; color:var(--ink-soft); margin-top:6px; letter-spacing:1px; text-transform:uppercase;}
 .big-stat.accent .v{color:var(--accent);}

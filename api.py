@@ -510,23 +510,57 @@ def _iddaa_backfill_results(cur):
 
 
 @app.get("/api/admin/iddaa-odds-preview")
-def iddaa_odds_preview(request: Request):
+def iddaa_odds_preview(request: Request, ornekler: int = 0):
     """Kullanici talebi (2026-08-24): 3 kaba bant yerine 33.525 maclik
     arsivi favori gucune gore %5'lik ince dilimlerle tarayip, su an cache'te
     olan (henuz baslamamis) her Iddaa macinin gercek/olculmus IY gol oranini
     doner - buyukten kucuge siralanmis. Az orneli (FINE_MIN_ORNEK altinda)
-    dilimler HARIC tutulur (bkz. odds_profile.build_fine)."""
+    dilimler HARIC tutulur (bkz. odds_profile.build_fine).
+
+    ornekler>0 ise HER mac icin ayni ince dilime dusen GERCEK gecmis
+    maclardan (takim adi + skor) ornekler=N tanesini de ekler - kullanici
+    talebi: "eslesen maclari ve gecmisteki ayni oran maclarin skorlarinin
+    bulundugu liste hazirla"."""
     from fastapi.responses import JSONResponse
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
 
     import odds_profile
     odds_profile.build_fine()
+    ornekler = max(0, min(ornekler, 20))
 
     conn = connect()
     cur = conn.cursor()
     cur.execute("SELECT home_raw, away_raw, odd_1, odd_x, odd_2 FROM iddaa_odds_archive")
     rows = cur.fetchall()
+
+    # ornekler istendiyse: tum arsivi (oran+skor+takim adi) TEK seferde
+    # cekip bellekte dilime gore grupla - her mac icin ayri sorgu atmaktan
+    # cok daha ucuz (250 mac x ayri sorgu yerine 1 sorgu).
+    dilim_ornekleri = {}
+    if ornekler > 0:
+        cur.execute('''
+            SELECT o.home_win_odds, o.draw_odds, o.away_win_odds,
+                   m.home_team_id, m.away_team_id,
+                   m.first_half_home_score, m.first_half_away_score,
+                   m.home_score, m.away_score
+            FROM prematch_odds o JOIN matches m ON m.id = o.match_id
+            WHERE o.home_win_odds IS NOT NULL AND o.draw_odds IS NOT NULL
+              AND o.away_win_odds IS NOT NULL
+              AND m.first_half_home_score IS NOT NULL AND m.home_score IS NOT NULL
+        ''')
+        for ev, bx, dep, h, a, fhh, fha, hs, aws in cur.fetchall():
+            p = odds_profile.devig_1x2(ev, bx, dep)
+            if not p:
+                continue
+            favori = max(p[0], p[2])
+            b = odds_profile._fine_bin(favori)
+            lst = dilim_ornekleri.setdefault(b, [])
+            if len(lst) < ornekler:
+                lst.append({
+                    "ev_sahibi": h, "deplasman": a,
+                    "ilk_yari_skoru": f"{fhh}-{fha}", "mac_sonu_skoru": f"{hs}-{aws}",
+                })
     conn.close()
 
     sonuc = []
@@ -539,13 +573,16 @@ def iddaa_odds_preview(request: Request):
         if not fine:
             continue
         ornek, iy_orani, ms15_orani = fine
-        sonuc.append({
+        kayit = {
             "ev_sahibi": home, "deplasman": away,
             "oranlar": [o1, ox, o2], "favori_gucu": round(favori, 3),
             "ilk_yari_gol_orani": round(iy_orani, 3),
             "ms_15_ust_orani": round(ms15_orani, 3),
             "arsiv_ornek_sayisi": ornek,
-        })
+        }
+        if ornekler > 0:
+            kayit["gecmis_ornek_maclar"] = dilim_ornekleri.get(odds_profile._fine_bin(favori), [])
+        sonuc.append(kayit)
     sonuc.sort(key=lambda x: x["ilk_yari_gol_orani"], reverse=True)
     return {"success": True, "toplam": len(sonuc), "maclar": sonuc}
 

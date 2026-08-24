@@ -11,6 +11,15 @@ SofaScore bu tur otomatik istemcileri IP bazli hizla engelliyor (gozlemlenen:
 ~10-15 istek / birkac dakika icinde 403). Engellenirse COOLDOWN_ON_BLOCK_SECONDS
 kadar bekleyip warmup'i tekrar dener - surekli hata basıp CPU/log kirletmez.
 
+ILK SURUMDEKI HATA (2026-08-24, duzeltildi): bu istemci flashscore_xg_client.py'nin
+BATCH_SIZE disiplinini (bir turda SADECE birkac macin istatistigini cekmek)
+UYGULAMIYORDU - kabul edilen TUM canli maclarin istatistigini art arda cekiyordu
+(gozlemlenen: 76 mac = 76 ardisik istek TEK turda). Bu, engellenmenin asil
+sebebi olarak degerlendirildi. Artik Flashscore ile AYNI desen: kucuk bir
+BATCH_SIZE + en uzun suredir taranmayan mac once + istekler arasi rastgele
+bekleme (insan/organik taramaya benzesin diye, ardisik-hizli-istek deseni
+azalsin diye).
+
 KULLANIM:
     export BACKUP_SECRET=<Railway'deki BACKUP_SECRET degeri>
     python3 sofascore_client.py
@@ -19,6 +28,7 @@ KULLANIM:
 import os
 import sys
 import time
+import random
 import argparse
 
 import requests
@@ -29,6 +39,10 @@ from sofascore_bot import get_live_summary, scrape_stats, WARMUP_URL
 DEFAULT_API_BASE = "https://web-production-f1dba.up.railway.app"
 CYCLE_PAUSE_SECONDS = 300
 COOLDOWN_ON_BLOCK_SECONDS = 900
+BATCH_SIZE = 5
+BETWEEN_REQUEST_DELAY = (1.5, 4.0)  # (min, max) saniye - istekler arasi rastgele bekleme
+
+_last_scraped_at = {}
 
 
 def _live_sync_gonder(api_base, secret, live_summary):
@@ -66,9 +80,17 @@ def run_cycle(api_base, secret, page):
           f"({sonuc.get('yeni', 0)} yeni)", flush=True)
     kabul_edilen = set(sonuc.get("kabul_edilen") or [])
 
-    hedefler = [m for m in live_summary if m["mid"] in kabul_edilen]
+    # SADECE en uzun suredir taranmayan BATCH_SIZE kadar maci hedefle - flashscore_xg_client.py
+    # ile ayni ilke (tum canli maclara degil, kucuk bir gruba, zamanla hepsi kapsanir).
+    havuz = [m for m in live_summary if m["mid"] in kabul_edilen]
+    havuz.sort(key=lambda m: _last_scraped_at.get(m["mid"], 0))
+    hedefler = havuz[:BATCH_SIZE]
+
     islenen = basarili = 0
-    for m in hedefler:
+    for i, m in enumerate(hedefler):
+        if i > 0:
+            time.sleep(random.uniform(*BETWEEN_REQUEST_DELAY))
+        _last_scraped_at[m["mid"]] = time.time()
         islenen += 1
         try:
             stats = scrape_stats(page, m["mid"])
@@ -129,10 +151,13 @@ def main():
                 else:
                     print(f"⚠️  Dongu hatasi: {e}", flush=True)
             elapsed = time.time() - start
+            # Robotik/tam-saniyeli araliklardan kacinmak icin +-%15 jitter
+            # (surekli TAM ayni araliklarla istek atmak da tespit isareti olabilir).
+            pause_j = pause * random.uniform(0.85, 1.15)
             print(f"📊 {canli} canli mac, {islenen} istatistik icin denendi, "
-                  f"{basarili} basarili ({elapsed:.1f}sn). {pause}sn bekleniyor... "
+                  f"{basarili} basarili ({elapsed:.1f}sn). {pause_j:.0f}sn bekleniyor... "
                   f"(durdurmak icin Ctrl+C)", flush=True)
-            time.sleep(pause)
+            time.sleep(pause_j)
 
         browser.close()
 

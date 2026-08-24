@@ -3,7 +3,7 @@
   "appName": "Matchrix",
   "webDir": "www",
   "server": {
-    "url": "https://web-production-f1dba.up.railway.app",
+    "url": "https://web-production-f1dba.up.railway.app/app",
     "cleartext": false,
     "androidScheme": "https"
   },

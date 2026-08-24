@@ -643,6 +643,39 @@ def iddaa_odds_sync(request: Request, payload: dict):
     return {"success": True, "yazilan": yazilan, "sonuc_dolduruldu": guncellenen}
 
 
+def _capture_fh_score(cur, match_db_id, status, score_h, score_a):
+    """Mac devre arasina (HT) girdiginde o anki skoru matches.first_half_*
+    kolonlarina TEK SEFERLIK yazar. Bu kolonlar eskiden SADECE toplu arsiv
+    importunda (etl_archive.py) doluyordu - CANLI takip ettigimiz hicbir
+    mac icin hic yazilmiyordu (kullanici raporu 2026-08-24: /api/match/{id}
+    'Veri Bekleniyor' gosteriyor cunku team_match_history hic doluyor,
+    o da BUNA bagli). HT hic gozlemlenmediyse (once bagli kalindiysa) mac
+    FINISHED olduğunda son first_half doneminde kaydedilen skoru yedek
+    olarak kullanir - kusursuz degil ama hicten iyi."""
+    if status == "HT":
+        cur.execute(
+            "UPDATE matches SET first_half_home_score=?, first_half_away_score=? "
+            "WHERE id=? AND first_half_home_score IS NULL",
+            (score_h, score_a, match_db_id),
+        )
+    elif status == "FINISHED":
+        cur.execute("SELECT first_half_home_score FROM matches WHERE id=?", (match_db_id,))
+        row = cur.fetchone()
+        if row and row[0] is None:
+            cur.execute(
+                "SELECT home_score, away_score FROM live_snapshots "
+                "WHERE match_id=? AND period IN ('first_half','half_time') "
+                "ORDER BY id DESC LIMIT 1",
+                (match_db_id,),
+            )
+            fh = cur.fetchone()
+            if fh:
+                cur.execute(
+                    "UPDATE matches SET first_half_home_score=?, first_half_away_score=? WHERE id=?",
+                    (fh[0], fh[1], match_db_id),
+                )
+
+
 def _fs_valid_source(source):
     """Kaynak onegi bir SQL LIKE deseni ve event_id parcasi olarak kullanilacak -
     sadece kucuk harf+rakamla sinirla, gecersizse guvenli varsayilana (fs) don."""
@@ -805,6 +838,7 @@ def live_sync(request: Request, payload: dict):
                 INSERT INTO live_snapshots (match_id, minute, period, home_score, away_score)
                 VALUES (?, ?, ?, ?, ?)
             ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"]))
+            _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
             try:
                 _iddaa_transfer_odds(cur, match_db_id, m["home"], m["away"])
             except Exception as e:
@@ -831,6 +865,7 @@ def live_sync(request: Request, payload: dict):
                     home_xg, away_xg, home_big_chances, away_big_chances
                 ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
             ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"], *prev[1:]))
+            _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
 
     conn.commit()
     conn.close()

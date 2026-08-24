@@ -12,6 +12,7 @@ import prematch
 import odds as odds_mod
 import baserates
 import odds_profile
+import team_history
 
 from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
@@ -117,6 +118,12 @@ def run_orchestrator():
         odds_profile.build_fine()  # bkz. bot_odds_profile.py - artik ince dilimleri kullaniyor
     except Exception as e:
         print(f"⚠️  Oran profilleri hesaplanamadi: {e}")
+
+    # Takim mac gecmisi (/api/match/{id} formu icin - bkz. team_history.py)
+    try:
+        team_history.build()
+    except Exception as e:
+        print(f"⚠️  Takim mac gecmisi kurulamadi: {e}")
     
     # BOT KADROSU
     # Eski kadroda 18 bottan 12'si birebir ayni formulu kullaniyordu; bu yuzden

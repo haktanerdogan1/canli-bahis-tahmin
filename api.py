@@ -509,6 +509,47 @@ def _iddaa_backfill_results(cur):
     return guncellenen
 
 
+@app.get("/api/admin/iddaa-odds-preview")
+def iddaa_odds_preview(request: Request):
+    """Kullanici talebi (2026-08-24): 3 kaba bant yerine 33.525 maclik
+    arsivi favori gucune gore %5'lik ince dilimlerle tarayip, su an cache'te
+    olan (henuz baslamamis) her Iddaa macinin gercek/olculmus IY gol oranini
+    doner - buyukten kucuge siralanmis. Az orneli (FINE_MIN_ORNEK altinda)
+    dilimler HARIC tutulur (bkz. odds_profile.build_fine)."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    import odds_profile
+    odds_profile.build_fine()
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("SELECT home_raw, away_raw, odd_1, odd_x, odd_2 FROM iddaa_odds_archive")
+    rows = cur.fetchall()
+    conn.close()
+
+    sonuc = []
+    for home, away, o1, ox, o2 in rows:
+        p = odds_profile.devig_1x2(o1, ox, o2)
+        if not p:
+            continue
+        favori = max(p[0], p[2])
+        fine = odds_profile.fine_rate_for_favori(favori)
+        if not fine:
+            continue
+        ornek, iy_orani, ms15_orani = fine
+        sonuc.append({
+            "ev_sahibi": home, "deplasman": away,
+            "oranlar": [o1, ox, o2], "favori_gucu": round(favori, 3),
+            "ilk_yari_gol_orani": round(iy_orani, 3),
+            "ms_15_ust_orani": round(ms15_orani, 3),
+            "arsiv_ornek_sayisi": ornek,
+        })
+    sonuc.sort(key=lambda x: x["ilk_yari_gol_orani"], reverse=True)
+    return {"success": True, "toplam": len(sonuc), "maclar": sonuc}
+
+
 @app.post("/api/admin/iddaa-odds-sync")
 def iddaa_odds_sync(request: Request, payload: dict):
     """iddaa_odds_client.py'den (Railway'de calisan, HER GUN oynanan

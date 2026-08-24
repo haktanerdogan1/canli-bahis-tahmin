@@ -358,7 +358,7 @@ def _fs_ensure_schema():
 # flashscore_xg_bot.py docstring). Tanimadigimiz bir metin gelirse TAHMIN
 # ETMIYORUZ - LIVE/dakika bilinmiyor sayip stat_key_discovery'ye logluyoruz
 # (thesports_bot.py'deki "YENI STATUS_ID" deseniyle ayni ilke).
-def _fs_parse_stage(stage_text):
+def _fs_parse_stage(stage_text, source="fs"):
     st = (stage_text or "").strip()
     if st.isdigit():
         return int(st), True, "LIVE"
@@ -371,11 +371,11 @@ def _fs_parse_stage(stage_text):
         return None, False, "FINISHED"
     if "postponed" in stl or "cancel" in stl or "abandoned" in stl:
         return None, False, "ABANDONED"
-    _fs_unknown_stage_kaydet(st)
+    _fs_unknown_stage_kaydet(st, source)
     return None, False, "LIVE"
 
 
-def _fs_unknown_stage_kaydet(stage_text):
+def _fs_unknown_stage_kaydet(stage_text, source="fs"):
     if not stage_text:
         return
     try:
@@ -386,45 +386,63 @@ def _fs_unknown_stage_kaydet(stage_text):
         )""")
         cur.execute("""INSERT INTO stat_key_discovery (anahtar, gorulme) VALUES (?,1)
                        ON CONFLICT(anahtar) DO UPDATE SET gorulme = gorulme + 1""",
-                    (f"flashscore_stage_{stage_text}",))
+                    (f"{source}_stage_{stage_text}",))
         conn.commit()
         conn.close()
     except Exception:
         pass
 
 
-def _fs_close_stale(cursor, active_ids):
-    """thesports_bot._close_stale_missing ile AYNI mantik, ama SADECE fs_
-    onekli (Flashscore kaynakli) maclara uygulanir - ts_ maclara (TheSports
-    geri gelirse) dokunmamak icin."""
+def _fs_valid_source(source):
+    """Kaynak onegi bir SQL LIKE deseni ve event_id parcasi olarak kullanilacak -
+    sadece kucuk harf+rakamla sinirla, gecersizse guvenli varsayilana (fs) don."""
+    s = (source or "").strip().lower()
+    if s and s.isalnum() and len(s) <= 12:
+        return s
+    return "fs"
+
+
+def _fs_close_stale(cursor, active_ids, prefix="fs"):
+    """thesports_bot._close_stale_missing ile AYNI mantik, ama SADECE verilen
+    onekli (tek bir canli veri kaynagina ait) maclara uygulanir - diger
+    kaynaklarin (ör. ts_, ss_) maclarina dokunmamak icin (bkz. thesports_bot
+    ile fs_ kaynaklarinin birbirine karismamasi ilkesi)."""
     params = []
     active_clause = ""
     if active_ids:
         placeholders = ','.join('?' for _ in active_ids)
         active_clause = f"AND source_match_id NOT IN ({placeholders})"
         params.extend(active_ids)
+    like_pattern = prefix.replace('_', r'\_').replace('%', r'\%') + r'\_%'
     cursor.execute(f'''
         UPDATE matches
         SET status = CASE WHEN COALESCE(minute, 0) >= 85 THEN 'FINISHED' ELSE 'ABANDONED' END
         WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
-          AND source_match_id LIKE 'fs\\_%' ESCAPE '\\'
+          AND source_match_id LIKE ? ESCAPE '\\'
           AND last_seen_at IS NOT NULL
           AND last_seen_at <= datetime('now', '-{FS_MISSING_GRACE_MINUTES} minutes')
           {active_clause}
-    ''', params)
+    ''', [like_pattern] + params)
 
 
 @app.post("/api/admin/live-sync")
 def live_sync(request: Request, payload: dict):
-    """flashscore_xg_client.py'den (YEREL makineden, her dongude) gelen TUM
-    canli maclarin skor/dakika/lig ozetini isler.
+    """Herhangi bir YEREL canli veri istemcisinden (flashscore_xg_client.py,
+    veya ayni sozlesmeye uyan baska bir kaynak istemcisi - bkz. `source`
+    alani) gelen TUM canli maclarin skor/dakika/lig ozetini isler.
 
     NEDEN VAR: 2026-08-12'de TheSports hesabi "yetkisiz" hatasi vermeye
     basladi (abonelik/plan sorunu, bkz. Railway loglari) ve TUM canli veri
     kaynagi durdu. Bu uc, thesports_bot.process_matches ile AYNI ROLU
-    (matches tablosu upsert + is_known_match filtresi + stale-kapama) dolduruyor,
-    ama Flashscore ZATEN GERCEK dakikayi dogrudan veriyor (elapsed-time
-    formulune gerek yok).
+    (matches tablosu upsert + is_known_match filtresi + stale-kapama) dolduruyor.
+
+    COKLU KAYNAK: `payload["source"]` (varsayilan "fs") her kaynagi kendi
+    onekiyle (fs_, ss_, ...) IZOLE eder - bir kaynak coker/yanlis veri
+    gonderirse digerinin maclarina (stale-kapama dahil) DOKUNMAZ, ayni
+    ts_/fs_ ayrimi ilkesi. Ayni mac birden fazla kaynaktan geliyorsa
+    (ornegin hem Flashscore hem SofaScore) `matches` tablosunda kaynak
+    basina AYRI bir satir olusur - bilincli bir tercih (bkz. proje notlari:
+    "cift sinyal riski dusuk oncelikli").
 
     live_snapshots'a HER canli mac icin YENI bir satir eklenir (sparse UPDATE
     degil) - orchestrator.py'nin momentum botlari (bkz. app/core/orchestrator.py,
@@ -440,17 +458,18 @@ def live_sync(request: Request, payload: dict):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _fs_ensure_schema()
 
+    source = _fs_valid_source(payload.get("source"))
     matches_in = payload.get("matches") or []
     prepared = []
     active_ids = []
     for m in matches_in:
-        fs_id = m.get("fs_id")
+        ext_id = m.get("ext_id") or m.get("fs_id")
         home = (m.get("home") or "").strip()
         away = (m.get("away") or "").strip()
-        if not fs_id or not home or not away:
+        if not ext_id or not home or not away:
             continue
-        event_id = "fs_" + fs_id
-        minute, minute_ok, status = _fs_parse_stage(m.get("stage"))
+        event_id = f"{source}_{ext_id}"
+        minute, minute_ok, status = _fs_parse_stage(m.get("stage"), source)
         try:
             score_h = int(m.get("score_h") or 0)
             score_a = int(m.get("score_a") or 0)
@@ -458,7 +477,7 @@ def live_sync(request: Request, payload: dict):
             score_h, score_a = 0, 0
         active_ids.append(event_id)
         prepared.append({
-            "event_id": event_id, "home": home, "away": away,
+            "event_id": event_id, "ext_id": ext_id, "home": home, "away": away,
             "league": (m.get("league") or "Unknown League").strip(),
             "home_logo": m.get("home_logo") or "", "away_logo": m.get("away_logo") or "",
             "minute": minute, "minute_ok": minute_ok, "status": status,
@@ -476,7 +495,7 @@ def live_sync(request: Request, payload: dict):
             UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
             WHERE status IN ('LIVE','HT') AND source_match_id IN ({placeholders})
         ''', active_ids)
-    _fs_close_stale(cur, active_ids)
+    _fs_close_stale(cur, active_ids, source)
     existing_ids = set()
     if active_ids:
         cur.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
@@ -564,7 +583,7 @@ def live_sync(request: Request, payload: dict):
     # kabul edilen (is_known_match'ten gecen) maclara ayirsin diye - aksi
     # halde filtrelenmis (obscure) maclar icin bosuna sayfa ziyareti yapip
     # 404 aliyordu.
-    kabul_edilen = [m["event_id"][3:] for m in to_write]  # "fs_" onekini at
+    kabul_edilen = [m["ext_id"] for m in to_write]
     return {"success": True, "islenen": len(to_write), "yeni": yeni_sayisi, "kabul_edilen": kabul_edilen}
 
 
@@ -591,10 +610,11 @@ def live_stats_update(request: Request, payload: dict):
     if not expected or provided != expected:
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
 
-    fs_id = payload.get("fs_id")
+    source = _fs_valid_source(payload.get("source"))
+    ext_id = payload.get("ext_id") or payload.get("fs_id")
     stats = payload.get("stats") or {}
-    if not fs_id or not stats:
-        return JSONResponse({"error": "fs_id/stats gerekli"}, status_code=400)
+    if not ext_id or not stats:
+        return JSONResponse({"error": "ext_id/stats gerekli"}, status_code=400)
 
     set_parts = []
     params = []
@@ -608,7 +628,7 @@ def live_stats_update(request: Request, payload: dict):
 
     conn = connect()
     cur = conn.cursor()
-    cur.execute("SELECT id FROM matches WHERE source_match_id = ?", ("fs_" + fs_id,))
+    cur.execute("SELECT id FROM matches WHERE source_match_id = ?", (f"{source}_{ext_id}",))
     row = cur.fetchone()
     if not row:
         conn.close()

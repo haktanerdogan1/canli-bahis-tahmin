@@ -643,6 +643,95 @@ def iddaa_odds_sync(request: Request, payload: dict):
     return {"success": True, "yazilan": yazilan, "sonuc_dolduruldu": guncellenen}
 
 
+@app.post("/api/admin/archive-csv-import")
+def archive_csv_import(request: Request, payload: dict):
+    """Kullanicinin elle indirip gonderdigi hazir mac arsivlerini (ornegin
+    football-data.co.uk formatinda Div/Date/HomeTeam/AwayTeam/FTHG/FTAG/
+    HTHG/HTAG/B365... CSV'leri) kalici arsive ekler - etl_archive.py'nin
+    (Iddaa arsivi icin yazilmis, sadece YEREL calisan) ayni ilkesinin
+    Railway'deki KALICI veritabanina yazan, tekrar tekrar guvenle
+    calistirilabilen (idempotent) HTTP karsiligi.
+
+    Beklenen payload: {"league_name": "...", "matches": [
+        {"home","away","date","time","fthg","ftag","hthg","htag",
+         "odds_h","odds_d","odds_a","odds_o25","odds_u25"}, ...
+    ]}
+
+    Takim kimligi flashscore_xg_bot._normalize ile ayni kurala tabi -
+    boylece bu arsivdeki takimlar canli takip ettigimiz maclarla AYNI
+    team_id altinda birlesip team_history.py'nin form hesabina da
+    katkida bulunabiliyor (etl_archive.py'nin eski kaba normalize_name'i
+    yerine bu kullanildi)."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    from flashscore_xg_bot import _normalize as _tnorm
+
+    league_name = (payload.get("league_name") or "").strip()
+    rows = payload.get("matches") or []
+    conn = connect()
+    cur = conn.cursor()
+    yeni = 0
+    zaten_vardi = 0
+    for m in rows:
+        home = (m.get("home") or "").strip()
+        away = (m.get("away") or "").strip()
+        date_str = (m.get("date") or "").strip()
+        time_str = (m.get("time") or "").strip()
+        if not home or not away or not date_str:
+            continue
+        try:
+            fthg = int(m.get("fthg"))
+            ftag = int(m.get("ftag"))
+        except (TypeError, ValueError):
+            continue
+        try:
+            hthg = int(m.get("hthg"))
+            htag = int(m.get("htag"))
+        except (TypeError, ValueError):
+            hthg, htag = None, None
+
+        home_id, away_id = _tnorm(home), _tnorm(away)
+        source_id = f"csv_{home_id}_{away_id}_{date_str}_{time_str}"
+        kickoff = f"{date_str} {time_str}".strip()
+
+        cur.execute('''
+            INSERT OR IGNORE INTO matches
+                (source_match_id, home_team_id, away_team_id, kickoff_time, status,
+                 home_score, away_score, first_half_home_score, first_half_away_score,
+                 league_name, last_seen_at)
+            VALUES (?,?,?,?, 'FINISHED', ?,?,?,?, ?, ?)
+        ''', (source_id, home_id, away_id, kickoff, fthg, ftag, hthg, htag,
+              league_name, kickoff))
+
+        if cur.rowcount == 0:
+            zaten_vardi += 1
+            continue
+        yeni += 1
+
+        cur.execute("SELECT id FROM matches WHERE source_match_id=?", (source_id,))
+        row = cur.fetchone()
+        if not row:
+            continue
+        match_id = row[0]
+
+        odds_h, odds_d, odds_a = m.get("odds_h"), m.get("odds_d"), m.get("odds_a")
+        odds_o25, odds_u25 = m.get("odds_o25"), m.get("odds_u25")
+        if odds_h and odds_d and odds_a:
+            cur.execute('''
+                INSERT INTO prematch_odds
+                    (match_id, home_win_odds, draw_odds, away_win_odds, over_25_odds, under_25_odds)
+                VALUES (?,?,?,?,?,?)
+            ''', (match_id, odds_h, odds_d, odds_a, odds_o25, odds_u25))
+
+    conn.commit()
+    conn.close()
+    return {"success": True, "yeni": yeni, "zaten_vardi": zaten_vardi, "toplam": len(rows)}
+
+
 def _capture_fh_score(cur, match_db_id, status, score_h, score_a):
     """Mac devre arasina (HT) girdiginde o anki skoru matches.first_half_*
     kolonlarina TEK SEFERLIK yazar. Bu kolonlar eskiden SADECE toplu arsiv

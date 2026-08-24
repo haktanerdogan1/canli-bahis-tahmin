@@ -253,7 +253,9 @@ def canli_1x2(match_id_db):
 
 
 def profil_orani(match_id_db):
-    """Canli oranlardan arsiv profilini bulur.
+    """Canli oranlardan arsiv profilini bulur (KABA 3 bant - dengeli/
+    dengesiz/cok_dengesiz). Geriye donuk uyumluluk icin duruyor, bot_odds_profile
+    artik profil_orani_fine kullaniyor (bkz. o fonksiyonun docstring'i).
 
     Doner: (band, ornek, iy_orani, ms15_orani) veya None
     """
@@ -268,3 +270,27 @@ def profil_orani(match_id_db):
         return None
     n, iy, ms = veri
     return band, n, iy, ms
+
+
+def profil_orani_fine(match_id_db):
+    """profil_orani ile AYNI is ama KABA 3 bant yerine favori gucune gore
+    %5'lik ince dilimlerle (bkz. build_fine) - cok daha ayirt edici (kullanici
+    talebi 2026-08-24: "IY gol olan maclara sinyal verip botu tetikleyip
+    macı takip etmesini saglayalim" - 3 bantli sistemin tavani %65.4 idi,
+    SINYAL_ESIGI olan %62'yi zar zor geciyordu; ince dilimlerle bircok
+    net-favorili mac gercekte %72+ cikiyor).
+
+    Doner: (bin_etiketi, ornek, iy_orani, ms15_orani) veya None
+    """
+    o = canli_1x2(match_id_db)
+    if not o:
+        return None
+    p = devig_1x2(*o)
+    if not p:
+        return None
+    favori = max(p[0], p[2])
+    fine = fine_rate_for_favori(favori)
+    if not fine:
+        return None
+    ornek, iy, ms = fine
+    return _fine_bin(favori), ornek, iy, ms

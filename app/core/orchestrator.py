@@ -114,6 +114,7 @@ def run_orchestrator():
     try:
         odds_profile.build()
         odds_profile.tazele()
+        odds_profile.build_fine()  # bkz. bot_odds_profile.py - artik ince dilimleri kullaniyor
     except Exception as e:
         print(f"⚠️  Oran profilleri hesaplanamadi: {e}")
     

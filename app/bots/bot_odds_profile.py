@@ -2,11 +2,19 @@
 bot_odds_profile — Oran Profili botu.
 
 ISI:
-  O an oynanan macin CANLI 1X2 oranini alir, marjdan arindirir ve arsivdeki
-  33.525 mac icinde AYNI DENGE PROFILINE sahip maclarin tarihsel sonucuna bakar.
+  Macin CANLI (aslinda: mac baslamadan hemen once dondurulmus Iddaa acilis)
+  1X2 oranini alir, marjdan arindirir ve arsivdeki 33.525 mac icinde AYNI
+  FAVORI GUCUNE (bkz. odds_profile.profil_orani_fine, %5'lik ince dilimler)
+  sahip maclarin tarihsel sonucuna bakar.
 
   "Bu maca bahisci su fiyati veriyor. Gecmiste ayni fiyat verilen maclarin
    yuzde kacinda ilk yari golu geldi?"
+
+  2026-08-24: eskiden 3 kaba banda (dengeli/dengesiz/cok_dengesiz, tavan
+  %65.4) bakiyordu - net favorili maclar birbirinden ayirt edilemiyor,
+  SINYAL_ESIGI (%62) zar zor geciliyordu. Artik %5'lik ince dilimler
+  kullaniliyor (bkz. odds_profile.build_fine) - net favorili maclarda
+  gercek arsiv orani %72+'ye cikabiliyor.
 
 NEDEN DIGERLERINDEN FARKLI:
   * bot_base_rate      -> sadece dakika+skora bakar (macin kim oldugunu bilmez)
@@ -51,14 +59,14 @@ class OddsProfileBot(BaseGoalBot):
                                  confidence="low", data_quality=0.0, reasons=[sebep])
 
         try:
-            sonuc = odds_profile.profil_orani(ctx.get("match_id_db"))
+            sonuc = odds_profile.profil_orani_fine(ctx.get("match_id_db"))
         except Exception as e:
             return bos(f"Oran profili okunamadi: {e}")
 
         if not sonuc:
             return bos("Bu mac icin canli oran kaydi yok - profil eslesmesi yapilamadi.")
 
-        band, ornek, iy_oran, ms_oran = sonuc
+        dilim, ornek, iy_oran, ms_oran = sonuc
 
         # Ilk yarida ve henuz golsuzse "ilk yari golu", aksi halde "mac sonu" sorusu
         if minute <= 45 and gol == 0:
@@ -74,10 +82,6 @@ class OddsProfileBot(BaseGoalBot):
         p = max(0.05, min(0.92, p))
         kalite = min(1.0, ornek / 2000.0)
 
-        band_adi = {"cok_dengesiz": "çok dengesiz (net favori)",
-                    "dengesiz": "dengesiz",
-                    "dengeli": "dengeli"}.get(band, band)
-
         return BotPrediction(
             **ortak,
             decision="goal" if p >= 0.62 else "no_goal",
@@ -85,8 +89,8 @@ class OddsProfileBot(BaseGoalBot):
             confidence="high" if p >= 0.75 else ("medium" if p >= 0.62 else "low"),
             data_quality=round(max(0.3, kalite), 2),
             reasons=[
-                f"Piyasa bu maci '{band_adi}' fiyatliyor.",
-                f"Arsivde ayni profildeki {ornek:,} macin %{100*iy_oran:.1f}'inde "
+                f"Piyasa favorisini %{dilim} guclukte fiyatliyor.",
+                f"Arsivde ayni dilimdeki {ornek:,} macin %{100*iy_oran:.1f}'inde "
                 f"ilk yari golu gelmis ({hedef} beklentisi %{100*p:.0f}).",
             ],
             sample_size=ornek,

@@ -7,29 +7,33 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
 :root{
-  --bg:#0E0E10;
-  --surface:#18181B;
-  --ink:#F4F2EC;
-  --ink-soft:#9A968C;
-  --accent:#3D63FF;
-  --line:rgba(255,255,255,0.14);
-  --shimmer:rgba(255,255,255,0.07);
+  --bg:#0a0b0a;
+  --surface:#0d0f0d;
+  --ink:#ece9e2;
+  --ink-soft:#8b8f89;
+  --ink-faint:#565a55;
+  --accent:#4ade80;
+  --amber:#e8a33d;
+  --red:#e0524a;
+  --line:#24271f;
+  --shimmer:rgba(74,222,128,0.06);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;height:100%;}
 body{
   background:var(--bg);
   color:var(--ink);
-  font-family:'Space Grotesk',sans-serif;
+  font-family:'IBM Plex Mono',monospace;
   font-size:16px;
   min-height:100vh;
   overflow-x:hidden;
   padding-bottom:80px;
   position:relative;
+  -webkit-font-smoothing:antialiased;
 }
 ::-webkit-scrollbar{display:none;}
 a{color:inherit;text-decoration:none;}
@@ -40,47 +44,80 @@ body::before{
   content:'';
   position:fixed; inset:0; pointer-events:none; z-index:0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+    linear-gradient(rgba(74,222,128,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74,222,128,0.035) 1px, transparent 1px);
   background-size:32px 32px;
 }
-/* ---------- grain / noise dokusu (koyu zeminde "screen" ile aciyor) ---------- */
-body::after{
-  content:'';
-  position:fixed; inset:0; pointer-events:none; z-index:60;
-  opacity:0.04; mix-blend-mode:screen;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+
+/* ---------- imlec isik/parcacik izi (kullanici talebi 2026-08-25:
+   "antigravity sayfasindaki mous gibi isik sacsin") - mousemove ile
+   #cursorGlow konumlanir, JS'de yumusak gecikmeyle (lerp) takip eder. ---------- */
+#cursorGlow{
+  position:fixed; top:0; left:0; width:340px; height:340px; margin:-170px 0 0 -170px;
+  border-radius:50%; pointer-events:none; z-index:55; opacity:0; transition:opacity .4s ease;
+  background:radial-gradient(circle, rgba(74,222,128,0.14) 0%, rgba(74,222,128,0.05) 38%, transparent 70%);
+  will-change:transform;
 }
+#cursorGlow.active{opacity:1;}
+#cursorDot{
+  position:fixed; top:0; left:0; width:6px; height:6px; margin:-3px 0 0 -3px;
+  border-radius:50%; background:var(--accent); pointer-events:none; z-index:56; opacity:0;
+  box-shadow:0 0 10px 2px rgba(74,222,128,0.7);
+  transition:opacity .4s ease;
+}
+#cursorDot.active{opacity:1;}
+@media (hover:none){ #cursorGlow, #cursorDot{ display:none; } }
 
 /* ---------- Top bar ---------- */
 .topbar{
   position:sticky; top:0; z-index:20;
   display:flex; align-items:flex-end; justify-content:space-between;
-  padding:22px 20px 14px;
+  padding:16px 20px 12px;
   background:var(--bg);
-  border-bottom:2px solid var(--ink);
+  border-bottom:1px solid var(--line);
 }
 .brand{display:flex; align-items:center; gap:10px;}
 .brand-mark{
   width:32px; height:32px; border-radius:0;
-  background:var(--ink); color:var(--bg);
+  background:transparent; color:var(--accent); border:1px solid rgba(74,222,128,0.35);
   display:flex; align-items:center; justify-content:center;
-  font-family:'Syne'; font-weight:800; font-size:1.05rem;
+  font-family:'Space Grotesk'; font-weight:700; font-size:1rem;
 }
-.brand-text{font-family:'Syne',sans-serif; font-weight:800; font-size:1.55rem; letter-spacing:-0.5px; line-height:1;}
-.brand-sub{font-size:0.6rem; color:var(--ink-soft); letter-spacing:3px; margin-top:4px; font-weight:600;}
-.live-chip{display:flex; align-items:center; gap:6px; font-size:0.62rem; font-weight:700; letter-spacing:1.5px; color:var(--ink); padding-bottom:4px;}
-.live-dot{width:7px;height:7px;background:var(--accent); flex:0 0 auto; animation:blink-dot 1.2s steps(2) infinite;}
-@keyframes blink-dot{50%{opacity:0.15;}}
+.brand-text{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:1.25rem; letter-spacing:-0.01em; line-height:1;}
+.brand-sub{font-size:0.5rem; color:var(--ink-faint); letter-spacing:3px; margin-top:4px; font-weight:600;}
+.live-chip{display:flex; align-items:center; gap:6px; font-size:0.58rem; font-weight:600; letter-spacing:1.5px; color:var(--accent); padding-bottom:4px;}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--accent); flex:0 0 auto; animation:blink-dot 1.4s ease-in-out infinite;}
+@keyframes blink-dot{50%{opacity:0.2;}}
+
+/* ---------- Ticker (gercek /api/ozet verisiyle beslenir) ---------- */
+.ticker-wrap{border-bottom:1px solid var(--line); overflow:hidden; white-space:nowrap; background:var(--surface); position:relative; z-index:1;}
+.ticker-track{display:inline-block; padding:7px 0; animation:ticker-scroll 26s linear infinite; font-size:0.66rem;}
+.ticker-track span{padding:0 18px; color:var(--ink-soft);}
+.ticker-track span b{color:var(--ink); font-weight:600;}
+.ticker-track .up{color:var(--accent);}
+@keyframes ticker-scroll{from{transform:translateX(0);} to{transform:translateX(-50%);}}
+
+/* ---------- Manifesto / tanitim karti (donen M logosu arka planda) ---------- */
+.intro-card{
+  margin:16px 20px 6px; border:1px solid var(--line); background:var(--surface);
+  position:relative; overflow:hidden; padding:20px 18px; min-height:170px;
+  display:flex; align-items:center; z-index:1;
+}
+.intro-mark{position:absolute; top:50%; left:50%; width:200px; height:200px; transform:translate(-50%,-50%); animation:intro-spin 42s linear infinite; opacity:0.16; z-index:0; pointer-events:none;}
+@keyframes intro-spin{from{transform:translate(-50%,-50%) rotate(0deg);} to{transform:translate(-50%,-50%) rotate(360deg);}}
+.intro-text{position:relative; z-index:1;}
+.intro-tag{font-size:0.6rem; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin-bottom:8px; font-weight:600;}
+.intro-h{font-family:'Space Grotesk'; font-weight:600; font-size:1.15rem; line-height:1.3; margin-bottom:8px;}
+.intro-p{font-size:0.72rem; color:var(--ink-soft); line-height:1.6; max-width:280px;}
 
 /* ---------- Ozet seridi (ticker) ---------- */
 .stat-row{display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--line);}
 .stat-pill{min-width:0; padding:16px 18px; text-align:left; border-top:1px solid var(--line); border-right:1px solid var(--line); overflow:hidden;}
 .stat-pill:nth-child(-n+2){border-top:none;}
 .stat-pill:nth-child(2n){border-right:none;}
-.stat-pill .v{font-family:'Syne'; font-weight:800; font-size:1.5rem; color:var(--ink); white-space:nowrap;}
+.stat-pill .v{font-family:'Space Grotesk'; font-weight:700; font-size:1.5rem; color:var(--ink); white-space:nowrap;}
 .stat-pill .l{font-size:0.56rem; color:var(--ink-soft); letter-spacing:1px; margin-top:3px; text-transform:uppercase;}
-.stat-pill.won .v{color:var(--accent);}
+.stat-pill.won .v{color:var(--amber);}
 .stat-pill.lost .v{color:var(--ink); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--ink-soft);}
 .stat-pill.rate .v{color:var(--accent);}
 
@@ -88,7 +125,7 @@ body::after{
 .tab-panel{padding:0 20px; position:relative; z-index:1; display:none; opacity:0; transform:translateY(8px); transition:opacity .22s ease, transform .22s ease;}
 .tab-panel.active{opacity:1; transform:translateY(0);}
 .section-title{
-  font-family:'Syne'; font-weight:700; font-size:0.72rem; letter-spacing:2px; color:var(--ink);
+  font-family:'Space Grotesk'; font-weight:700; font-size:0.72rem; letter-spacing:2px; color:var(--ink);
   margin:22px 0 12px; padding-bottom:8px; border-bottom:1px solid var(--line);
   display:flex; align-items:center; gap:8px; text-transform:uppercase;
 }
@@ -120,15 +157,22 @@ body::after{
 .card-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
 .badge-status{font-size:0.6rem; font-weight:700; letter-spacing:1px; padding:0; text-transform:uppercase; font-family:'Space Grotesk';}
 .badge-live{color:var(--accent);}
-.badge-won{color:var(--accent); border-bottom:2px solid var(--accent); padding-bottom:1px;}
-.badge-lost{color:var(--ink-soft); text-decoration:line-through;}
+.badge-won{color:var(--amber); border-bottom:2px solid var(--amber); padding-bottom:1px;}
+.badge-lost{color:var(--red);}
+/* mac durumuna gore sol renk cizgisi (kullanici talebi 2026-08-25 terminal
+   konsept: canli=yesil nabiz, kazandi=yesil, kaybetti=kirmizi) - JS'e
+   dokunmadan :has() ile mevcut badge siniflarindan turetiliyor. */
+.flip-face.front{border-left:3px solid var(--ink-faint);}
+.flip-face.front:has(.badge-live){border-left-color:var(--accent);}
+.flip-face.front:has(.badge-won){border-left-color:var(--amber);}
+.flip-face.front:has(.badge-lost){border-left-color:var(--red);}
 .badge-min{font-size:0.66rem; color:var(--ink-soft); font-weight:600;}
 
 .teams-row{display:flex; align-items:center; gap:10px;}
 .team-col{flex:1; display:flex; align-items:center; gap:8px; min-width:0;}
 .team-col img{width:20px;height:20px;border-radius:0;background:#fff;flex:0 0 auto; border:1px solid var(--line);}
 .team-name{font-size:0.85rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.score-col{font-family:'Syne'; font-weight:800; font-size:1.25rem; padding:0 10px; color:var(--ink);}
+.score-col{font-family:'Space Grotesk'; font-weight:700; font-size:1.25rem; padding:0 10px; color:var(--ink);}
 .vs-divider{color:var(--ink-soft); font-size:0.78rem;}
 
 .card-bottom{display:flex; align-items:center; justify-content:space-between; margin-top:14px; gap:10px; padding-top:12px; border-top:1px solid var(--line);}
@@ -140,7 +184,7 @@ body::after{
 
 /* ---------- Olasilik gostergesi (tipografik - halka/glow yok) ---------- */
 .gauge{display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex:0 0 auto;}
-.gauge .pctnum{font-family:'Syne'; font-weight:800; font-size:1.2rem; color:var(--ink);}
+.gauge .pctnum{font-family:'Space Grotesk'; font-weight:700; font-size:1.2rem; color:var(--ink);}
 .gauge .bar{width:50px; height:3px; background:var(--line); display:block;}
 .gauge .bar i{display:block; height:100%; background:var(--accent);}
 
@@ -148,7 +192,8 @@ body::after{
 .locked-card{
   position:relative; overflow:hidden; min-height:132px; padding:18px;
   display:flex; flex-direction:column; justify-content:center; align-items:flex-start; gap:10px; cursor:pointer;
-  background:repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 11px);
+  background:repeating-linear-gradient(135deg, rgba(74,222,128,0.05) 0 1px, transparent 1px 11px);
+  border-style:dashed;
 }
 .locked-card i.fa-lock{font-size:1.05rem; color:var(--ink);}
 .locked-card .lbl{font-size:0.64rem; color:var(--ink); font-weight:700; letter-spacing:1.5px; text-transform:uppercase;}
@@ -162,7 +207,7 @@ body::after{
 /* KAZANDI aninda kisa bir vurgu flasi (renkli glow ring yok) */
 .celebrate{animation:celebrate-pulse 1.4s ease-out 1;}
 @keyframes celebrate-pulse{
-  0%{background:rgba(61,99,255,0.16);}
+  0%{background:rgba(232,163,61,0.2);}
   100%{background:transparent;}
 }
 
@@ -170,10 +215,10 @@ body::after{
 .bot-back-head{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
 .bot-back-avatar{
   width:38px; height:38px; display:flex; align-items:center; justify-content:center;
-  font-family:'Syne'; font-weight:800; font-size:0.85rem; flex:0 0 auto;
+  font-family:'Space Grotesk'; font-weight:700; font-size:0.85rem; flex:0 0 auto;
   border:1px solid var(--ink); color:var(--ink); border-radius:0;
 }
-.bot-back-name{font-family:'Syne'; font-size:0.82rem; font-weight:700;}
+.bot-back-name{font-family:'Space Grotesk'; font-size:0.82rem; font-weight:700;}
 .bot-back-code{font-size:0.64rem; color:var(--ink-soft);}
 .bot-back-desc{
   font-size:0.78rem; color:var(--ink-soft); line-height:1.45;
@@ -186,7 +231,7 @@ body::after{
   position:fixed; left:0; right:0; bottom:0; z-index:30;
   display:flex; justify-content:space-around; align-items:center;
   padding:8px 6px calc(8px + env(safe-area-inset-bottom));
-  background:var(--bg); border-top:2px solid var(--ink);
+  background:var(--bg); border-top:1px solid var(--line);
 }
 .nav-btn{
   display:flex; flex-direction:column; align-items:center; gap:4px; background:none; border:none;
@@ -236,7 +281,7 @@ body::after{
 /* ---------- Istatistik ekrani ---------- */
 .big-stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:0; margin-bottom:22px; border-top:1px solid var(--line); border-left:1px solid var(--line);}
 .big-stat{padding:20px 16px; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line); min-width:0; overflow:hidden;}
-.big-stat .v{font-family:'Syne'; font-weight:800; font-size:1.9rem; color:var(--ink);}
+.big-stat .v{font-family:'Space Grotesk'; font-weight:700; font-size:1.9rem; color:var(--ink);}
 .big-stat .l{font-size:0.58rem; color:var(--ink-soft); margin-top:6px; letter-spacing:1px; text-transform:uppercase;}
 .big-stat.accent .v{color:var(--accent);}
 
@@ -247,7 +292,7 @@ body::after{
 .squad-full-item.offline{opacity:0.4;}
 .squad-full-avatar{
   width:38px; height:38px; display:flex; align-items:center; justify-content:center;
-  font-family:'Syne'; font-weight:800; font-size:0.82rem; flex:0 0 auto; border:1px solid var(--ink); color:var(--ink);
+  font-family:'Space Grotesk'; font-weight:700; font-size:0.82rem; flex:0 0 auto; border:1px solid var(--ink); color:var(--ink);
 }
 .squad-full-info{flex:1; min-width:0;}
 .squad-full-name{font-family:'Space Grotesk'; font-size:0.78rem; font-weight:700;}
@@ -258,7 +303,7 @@ body::after{
 
 /* ---------- Hesap ---------- */
 .acc-card{padding:0; margin-top:6px;}
-.acc-title{font-family:'Syne'; font-size:1.5rem; font-weight:800; margin-bottom:8px; letter-spacing:-0.3px;}
+.acc-title{font-family:'Space Grotesk'; font-size:1.5rem; font-weight:700; margin-bottom:8px; letter-spacing:-0.3px;}
 .acc-sub{font-size:0.8rem; color:var(--ink-soft); margin-bottom:26px; line-height:1.45;}
 .field{margin-bottom:18px;}
 .field label{display:block; font-size:0.6rem; color:var(--ink-soft); margin-bottom:7px; letter-spacing:1.5px; text-transform:uppercase; font-weight:700;}
@@ -268,7 +313,7 @@ body::after{
 }
 .field input:focus{outline:none; border-bottom-color:var(--accent);}
 .btn-primary{
-  width:100%; padding:14px; border:none; font-family:'Syne'; font-weight:700;
+  width:100%; padding:14px; border:none; font-family:'Space Grotesk'; font-weight:700;
   font-size:0.8rem; letter-spacing:1px; text-transform:uppercase; background:var(--ink);
   color:var(--bg); border-radius:0; margin-top:6px;
 }
@@ -282,7 +327,7 @@ body::after{
 .err-msg{color:var(--ink); font-weight:700; font-size:0.76rem; margin-top:8px; min-height:1em;}
 .logged-avatar{
   width:60px; height:60px; margin:0 0 16px; display:flex; align-items:center; justify-content:center;
-  font-family:'Syne'; font-weight:800; font-size:1.3rem; background:var(--ink); color:var(--bg); border-radius:0;
+  font-family:'Space Grotesk'; font-weight:700; font-size:1.3rem; background:var(--ink); color:var(--bg); border-radius:0;
 }
 .btn-logout{
   width:100%; padding:12px; border-radius:0; margin-top:20px; border:1.5px solid var(--ink);
@@ -297,13 +342,13 @@ body::after{
 .modal-overlay.active{display:flex;}
 .modal-sheet{
   width:100%; max-width:520px; max-height:86vh; overflow-y:auto; border-radius:0;
-  background:var(--bg); border-top:2px solid var(--ink);
+  background:var(--bg); border-top:1px solid var(--accent);
   padding:26px 20px calc(24px + env(safe-area-inset-bottom));
   animation:sheet-up .28s ease-out;
 }
 @keyframes sheet-up{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
 .modal-close{position:absolute; top:18px; right:20px; font-size:1.1rem; color:var(--ink);}
-.modal-title{font-family:'Syne'; font-size:1.1rem; font-weight:800; margin-bottom:20px; padding-right:30px;}
+.modal-title{font-family:'Space Grotesk'; font-size:1.1rem; font-weight:700; margin-bottom:20px; padding-right:30px;}
 .stat-bar-row{margin-bottom:16px;}
 .stat-bar-labels{display:flex; justify-content:space-between; font-size:0.78rem; font-weight:700; margin-bottom:6px;}
 .stat-bar-track{height:5px; background:var(--line); overflow:hidden; display:flex;}
@@ -334,8 +379,43 @@ body::after{
   <div class="live-chip"><span class="live-dot"></span>CANLI</div>
 </div>
 
+<!-- Ticker - gercek /api/ozet verisiyle loadOzetStrip() tarafindan doldurulur -->
+<div class="ticker-wrap"><div class="ticker-track" id="tickerTrack">
+  <span>YÜKLENİYOR…</span>
+</div></div>
+
 <!-- ================= SİNYALLER (today) ================= -->
 <div class="tab-panel active" id="tab-today" style="display:block;">
+  <div class="intro-card">
+    <svg class="intro-mark" viewBox="0 0 240 200" aria-hidden="true">
+      <defs>
+        <linearGradient id="mLogoGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#38bdf8" /><stop offset="50%" stop-color="#22d3aa" /><stop offset="100%" stop-color="#22c55e" />
+        </linearGradient>
+        <filter id="mGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5" /></filter>
+      </defs>
+      <polyline points="20,165 20,45 65,105 110,60 155,105 200,45 200,165" fill="none" stroke="url(#mLogoGrad)" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" />
+      <line x1="20" y1="45" x2="110" y2="60" stroke="url(#mLogoGrad)" stroke-width="2.4" opacity="0.55" />
+      <line x1="110" y1="60" x2="200" y2="45" stroke="url(#mLogoGrad)" stroke-width="2.4" opacity="0.55" />
+      <line x1="20" y1="165" x2="65" y2="105" stroke="url(#mLogoGrad)" stroke-width="2.4" opacity="0.4" />
+      <line x1="200" y1="165" x2="155" y2="105" stroke="url(#mLogoGrad)" stroke-width="2.4" opacity="0.4" />
+      <g>
+        <circle cx="20" cy="165" r="11" fill="#1d4ed8" filter="url(#mGlow)" opacity="0.7" /><circle cx="20" cy="45" r="11" fill="#38bdf8" filter="url(#mGlow)" opacity="0.7" />
+        <circle cx="65" cy="105" r="11" fill="#2dd4bf" filter="url(#mGlow)" opacity="0.7" /><circle cx="110" cy="60" r="11" fill="#10b981" filter="url(#mGlow)" opacity="0.7" />
+        <circle cx="155" cy="105" r="11" fill="#16a34a" filter="url(#mGlow)" opacity="0.7" /><circle cx="200" cy="45" r="11" fill="#22c55e" filter="url(#mGlow)" opacity="0.7" />
+        <circle cx="200" cy="165" r="11" fill="#15803d" filter="url(#mGlow)" opacity="0.7" />
+      </g>
+      <g>
+        <circle cx="20" cy="165" r="6" fill="#1d4ed8" /><circle cx="20" cy="45" r="6" fill="#38bdf8" /><circle cx="65" cy="105" r="6" fill="#2dd4bf" />
+        <circle cx="110" cy="60" r="6" fill="#10b981" /><circle cx="155" cy="105" r="6" fill="#16a34a" /><circle cx="200" cy="45" r="6" fill="#22c55e" /><circle cx="200" cy="165" r="6" fill="#15803d" />
+      </g>
+    </svg>
+    <div class="intro-text">
+      <div class="intro-tag">Manifesto</div>
+      <div class="intro-h">Tahmin etmiyoruz.<br>Ölçüyoruz.</div>
+      <div class="intro-p">Sahada olan biteni onlarca uzman birim aynı anda okur — biri xG birikimini, biri temponun değişimini, biri son dakikanın baskısını izler. Hiçbiri yorum yapmaz; her biri yalnız kendi ölçtüğü şeyi bilir. Sinyal, bu sessiz konsensüsün ortak sesidir.</div>
+    </div>
+  </div>
   <div class="stat-row" id="statRowToday"></div>
   <div class="section-title"><i class="fa-solid fa-satellite-dish"></i> BUGÜNKÜ SİNYALLER</div>
   <div id="listToday"></div>
@@ -388,6 +468,9 @@ body::after{
     <div id="botModalBody"></div>
   </div>
 </div>
+
+<div id="cursorGlow"></div>
+<div id="cursorDot"></div>
 
 <script>
 // ======================================================================
@@ -676,6 +759,19 @@ async function loadOzetStrip(){
       <div class="big-stat"><div class="v">${d.kazanan}</div><div class="l">KAZANAN</div></div>
       <div class="big-stat"><div class="v" style="text-decoration:line-through; text-decoration-color:var(--ink-soft);">${d.kaybeden}</div><div class="l">KAYBEDEN</div></div>
     `;
+    // Ticker - hepsi /api/ozet'ten gelen GERCEK veri (kullanici talebi
+    // 2026-08-25: "verilerin hepsi gercek olsun") - JS scroll icin icerik
+    // 2 kez tekrarlanir (CSS animasyonu -50% kaydiriyor, boylece dikis
+    // gorunmuyor).
+    const rate = d.isabet_orani!=null ? Math.round(d.isabet_orani*100)+'%' : '—';
+    const parts = [
+      `<span>GENEL İSABET <b>${rate}</b> <span class="up">▲</span></span>`,
+      `<span>BUGÜN <b>${d.bugun_kazanan} KAZANAN</b> / ${d.bugun_kaybeden} KAYBEDEN</span>`,
+      `<span>CANLI TAKİP <b>${d.bekleyen}</b> SİNYAL</span>`,
+      `<span>TOPLAM SONUÇLANAN <b>${d.sonuclanan}</b></span>`,
+    ];
+    const tickerHtml = parts.join('') ;
+    document.getElementById('tickerTrack').innerHTML = tickerHtml + tickerHtml;
   }catch(e){}
 }
 function loadStats(){ loadOzetStrip(); renderSquadFull(); }
@@ -819,6 +915,42 @@ document.addEventListener('visibilitychange', () => {
     ozetTimer = setInterval(loadOzetStrip, 30000);
   }
 });
+
+// ======================================================================
+// İMLEÇ IŞIK İZİ (kullanici talebi 2026-08-25: "antigravity sayfasindaki
+// mous gibi hareket ve isik sacsin"). Buyuk glow yumusak gecikmeyle (lerp)
+// takip eder, kucuk nokta aninda takip eder - "agirlik" hissi verir.
+// Dokunmatik cihazlarda CSS (@media hover:none) zaten gizliyor, burada
+// da mousemove hic gelmeyecegi icin ek bir dal gerekmiyor.
+// ======================================================================
+(function(){
+  const glow = document.getElementById('cursorGlow');
+  const dot = document.getElementById('cursorDot');
+  if(!glow || !dot) return;
+  let tx = 0, ty = 0, gx = 0, gy = 0, active = false;
+  document.addEventListener('mousemove', (e) => {
+    tx = e.clientX; ty = e.clientY;
+    if(!active){
+      active = true;
+      glow.classList.add('active');
+      dot.classList.add('active');
+      gx = tx; gy = ty;
+    }
+    dot.style.transform = `translate(${tx}px, ${ty}px)`;
+  });
+  document.addEventListener('mouseleave', () => {
+    active = false;
+    glow.classList.remove('active');
+    dot.classList.remove('active');
+  });
+  function raf(){
+    gx += (tx - gx) * 0.09;
+    gy += (ty - gy) * 0.09;
+    glow.style.transform = `translate(${gx}px, ${gy}px)`;
+    requestAnimationFrame(raf);
+  }
+  requestAnimationFrame(raf);
+})();
 </script>
 </body>
 </html>

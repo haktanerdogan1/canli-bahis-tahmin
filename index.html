@@ -8,35 +8,35 @@
     <meta name="apple-mobile-web-app-title" content="Matchrix">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#030712">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="theme-color" content="#0a0b0a">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --bg-base: #030712;
-            --bg-surface: #111827;
-            --bg-elevated: #1f2937;
-            --text-primary: #f9fafb;
-            --text-secondary: #9ca3af;
-            --text-muted: #4b5563;
-            
-            --accent-brand: #00e5ff; /* Holographic Cyan */
-            --accent-brand-hover: #00b8cc;
-            --accent-success: #10b981;
-            --accent-danger: #f43f5e;
-            --accent-warning: #f59e0b;
-            
-            --border-light: rgba(255, 255, 255, 0.04);
-            --border-strong: rgba(255, 255, 255, 0.1);
-            
-            --radius-md: 14px;
-            --radius-lg: 20px;
-            --radius-full: 9999px;
-            
-            --shadow-subtle: 0 8px 30px rgba(0, 0, 0, 0.4);
-            --shadow-glow: 0 0 25px rgba(0, 229, 255, 0.25);
-            --shadow-danger: 0 0 20px rgba(244, 63, 94, 0.3);
+            --bg-base: #0a0b0a;
+            --bg-surface: #0d0f0d;
+            --bg-elevated: #14160f;
+            --text-primary: #ece9e2;
+            --text-secondary: #8b8f89;
+            --text-muted: #565a55;
+
+            --accent-brand: #4ade80; /* Signal Green */
+            --accent-brand-hover: #3bcf6e;
+            --accent-success: #4ade80;
+            --accent-danger: #e0524a;
+            --accent-warning: #e8a33d;
+
+            --border-light: rgba(74, 222, 128, 0.08);
+            --border-strong: rgba(236, 233, 226, 0.16);
+
+            --radius-md: 0px;
+            --radius-lg: 0px;
+            --radius-full: 0px;
+
+            --shadow-subtle: none;
+            --shadow-glow: none;
+            --shadow-danger: none;
         }
 
         * {
@@ -51,25 +51,44 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             background-color: var(--bg-base);
             color: var(--text-primary);
             -webkit-font-smoothing: antialiased;
-            background-image:
-                radial-gradient(circle at 15% 50%, rgba(0, 229, 255, 0.05), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(0, 229, 255, 0.03), transparent 25%);
-            background-attachment: fixed;
             min-height: 100vh;
         }
+
+        body::before {
+            content: '';
+            position: fixed; inset: 0; pointer-events: none; z-index: 0;
+            background-image:
+                linear-gradient(rgba(74,222,128,0.035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(74,222,128,0.035) 1px, transparent 1px);
+            background-size: 32px 32px;
+        }
+
+        #cursorGlow {
+            position: fixed; top: 0; left: 0; width: 340px; height: 340px; margin: -170px 0 0 -170px;
+            border-radius: 50%; pointer-events: none; z-index: 90; opacity: 0; transition: opacity .4s ease;
+            background: radial-gradient(circle, rgba(74,222,128,0.14) 0%, rgba(74,222,128,0.05) 38%, transparent 70%);
+            will-change: transform;
+        }
+        #cursorGlow.active { opacity: 1; }
+        #cursorDot {
+            position: fixed; top: 0; left: 0; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+            border-radius: 50%; background: var(--accent-brand); pointer-events: none; z-index: 91; opacity: 0;
+            box-shadow: 0 0 10px 2px rgba(74,222,128,0.7);
+            transition: opacity .4s ease;
+        }
+        #cursorDot.active { opacity: 1; }
+        @media (hover: none) { #cursorGlow, #cursorDot { display: none; } }
 
         /* --- Navbar --- */
         .navbar {
             position: sticky;
             top: 0;
             z-index: 50;
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: rgba(10, 11, 10, 0.97);
             border-bottom: 1px solid var(--border-light);
             padding: calc(1rem + env(safe-area-inset-top)) 0 1rem;
             margin-bottom: 2rem;
@@ -85,7 +104,7 @@
         }
 
         .brand {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-size: 1.5rem;
             font-weight: 800;
             display: flex;
@@ -95,9 +114,7 @@
         }
 
         .brand span {
-            background: linear-gradient(135deg, #fff, #94a3b8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--text-primary);
         }
 
         /* --- Bottom Navigation --- */
@@ -108,9 +125,7 @@
             bottom: 0;
             z-index: 60;
             display: flex;
-            background: rgba(15, 23, 42, 0.92);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            background: rgba(10, 11, 10, 0.97);
             border-top: 1px solid var(--border-light);
             padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
         }
@@ -125,7 +140,7 @@
             background: transparent;
             border: none;
             color: var(--text-secondary);
-            font-family: 'Inter', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             font-size: 0.72rem;
             font-weight: 600;
             padding: 8px 4px 6px;
@@ -140,7 +155,7 @@
 
         .bnav-btn.active {
             color: var(--accent-brand);
-            background: rgba(0, 229, 255, 0.08);
+            background: rgba(74, 222, 128, 0.08);
         }
 
         /* --- Main Container --- */
@@ -152,13 +167,12 @@
 
         /* --- Hero Banner --- */
         .hero-banner {
-            background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(0,0,0,0.8));
+            background: var(--bg-surface);
             border: 1px solid var(--border-strong);
             border-radius: var(--radius-lg);
             padding: 2rem;
             margin-bottom: 2rem;
             text-align: center;
-            box-shadow: var(--shadow-glow);
             position: relative;
             overflow: hidden;
         }
@@ -183,7 +197,7 @@
             align-items: center;
             gap: 8px;
             background: rgba(0,0,0,0.3);
-            border: 1px solid rgba(0,229,255,0.25);
+            border: 1px solid rgba(74,222,128,0.25);
             color: var(--accent-brand);
             font-size: 0.78rem;
             font-weight: 700;
@@ -198,13 +212,13 @@
             height: 7px;
             border-radius: 50%;
             background: var(--accent-success);
-            box-shadow: 0 0 6px 2px rgba(16,185,129,0.7);
-            animation: botPulse 1.6s ease-in-out infinite;
+            animation: blink-dot 1.4s ease-in-out infinite;
         }
+        @keyframes blink-dot { 50% { opacity: 0.2; } }
 
         .hero-title {
             position: relative;
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-size: 2.5rem;
             font-weight: 800;
             margin-bottom: 0.5rem;
@@ -228,13 +242,13 @@
             align-items: center;
             gap: 12px;
             padding: 12px 16px;
-            background: linear-gradient(90deg, var(--bg-elevated), transparent);
+            background: var(--bg-elevated);
             border-radius: var(--radius-md) var(--radius-md) 0 0;
             border-bottom: 2px solid var(--accent-brand);
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-weight: 700;
             font-size: 1.1rem;
-            color: #fff;
+            color: var(--text-primary);
         }
 
         .league-header img {
@@ -294,7 +308,7 @@
             color: #ffc400;
             border: 1px solid rgba(255,196,0,0.4);
             padding: 2px 8px;
-            border-radius: 999px;
+            border-radius: 0;
             font-size: 0.7rem;
             font-weight: 700;
             margin-left: 8px;
@@ -303,7 +317,7 @@
         /* Time */
         .match-time {
             text-align: center;
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-weight: 800;
             font-size: 1rem;
             color: var(--accent-success);
@@ -336,13 +350,13 @@
         }
 
         .team-score {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-weight: 700;
             font-size: 1.15rem;
             color: var(--accent-brand);
-            background: rgba(59, 130, 246, 0.1);
+            background: rgba(74, 222, 128, 0.1);
             padding: 2px 8px;
-            border-radius: 6px;
+            border-radius: 0;
             min-width: 32px;
             text-align: center;
         }
@@ -358,7 +372,7 @@
             color: var(--text-primary);
             border: 1px solid var(--border-strong);
             padding: 6px 12px;
-            border-radius: 6px;
+            border-radius: 0;
             font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
@@ -375,8 +389,8 @@
         .radar-panel {
             position: relative;
             grid-column: 1 / -1;
-            background: rgba(239, 68, 68, 0.05);
-            border-top: 1px dashed rgba(239, 68, 68, 0.3);
+            background: rgba(224, 82, 74, 0.06);
+            border-top: 1px dashed rgba(224, 82, 74, 0.3);
             padding: 12px 16px;
             display: flex;
             justify-content: space-between;
@@ -417,8 +431,7 @@
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(8px);
+            background: rgba(10, 11, 10, 0.9);
             z-index: 100;
             display: none;
             justify-content: center;
@@ -437,8 +450,7 @@
             width: 100%;
             max-width: 600px;
             border-radius: var(--radius-lg);
-            border: 1px solid var(--border-light);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-strong);
             transform: scale(0.95);
             transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             overflow: hidden;
@@ -458,7 +470,7 @@
         }
 
         .modal-title {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-size: 1.2rem;
             font-weight: 700;
             display: flex;
@@ -505,7 +517,7 @@
         }
 
         .stat-card h4 {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             color: var(--text-secondary);
             font-size: 0.85rem;
             text-transform: uppercase;
@@ -540,7 +552,7 @@
         .live-stat-bar {
             background: rgba(0,0,0,0.2);
             height: 6px;
-            border-radius: 3px;
+            border-radius: 0;
             margin-top: 4px;
             display: flex;
             overflow: hidden;
@@ -554,7 +566,7 @@
             text-align: center;
             padding: 3rem;
             color: var(--text-secondary);
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-weight: 500;
         }
         
@@ -570,7 +582,7 @@
         @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
 
         /* Status Colors */
-        .status-won { color: var(--accent-success); }
+        .status-won { color: var(--accent-warning); }
         .status-lost { color: var(--text-muted); }
 
         /* --- Uye olmayanlar icin kilitli tahmin gorunumu --- */
@@ -598,18 +610,18 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
-            background: linear-gradient(90deg, rgba(3,7,18,0.55), rgba(3,7,18,0.75));
+            background: linear-gradient(90deg, rgba(10,11,10,0.6), rgba(10,11,10,0.85));
             cursor: pointer;
             z-index: 2;
         }
 
         .lock-btn {
             background: var(--accent-brand);
-            color: #001014;
+            color: var(--bg-base);
             border: none;
             padding: 7px 18px;
             border-radius: var(--radius-full);
-            font-family: 'Inter', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             font-size: 0.85rem;
             font-weight: 700;
             cursor: pointer;
@@ -627,14 +639,13 @@
             background: var(--bg-surface);
             border: 1px solid var(--border-strong);
             border-radius: var(--radius-lg);
-            box-shadow: 0 25px 60px rgba(0,0,0,0.6), var(--shadow-glow);
             width: 100%;
             max-width: 400px;
             padding: 2rem;
         }
 
         .auth-title {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-size: 1.5rem;
             font-weight: 800;
             margin-bottom: 0.4rem;
@@ -658,7 +669,7 @@
             border: 1px solid rgba(0,0,0,0.1);
             border-radius: var(--radius-md);
             padding: 11px;
-            font-family: 'Inter', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             font-weight: 600;
             font-size: 0.92rem;
             text-decoration: none;
@@ -667,7 +678,7 @@
             margin-bottom: 1.25rem;
         }
 
-        .btn-google:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+        .btn-google:hover { border-color: var(--accent-brand); }
         .btn-google:active { transform: scale(0.98); }
 
         .plan-grid {
@@ -688,11 +699,11 @@
             transition: border-color 0.15s, background 0.15s;
         }
 
-        .plan-card:hover { border-color: rgba(0,229,255,0.4); }
+        .plan-card:hover { border-color: rgba(74,222,128,0.4); }
 
         .plan-card.selected {
             border-color: var(--accent-brand);
-            background: rgba(0,229,255,0.06);
+            background: rgba(74,222,128,0.06);
             box-shadow: 0 0 0 1px var(--accent-brand);
         }
 
@@ -701,7 +712,7 @@
             top: -9px;
             left: 10px;
             background: var(--accent-brand);
-            color: #001014;
+            color: var(--bg-base);
             font-size: 0.62rem;
             font-weight: 800;
             letter-spacing: 0.02em;
@@ -718,7 +729,7 @@
         }
 
         .plan-price {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-size: 1.15rem;
             font-weight: 800;
             color: #fff;
@@ -773,8 +784,8 @@
             width: 52px;
             height: 52px;
             border-radius: 50%;
-            background: rgba(0,229,255,0.1);
-            border: 1px solid rgba(0,229,255,0.3);
+            background: rgba(74,222,128,0.1);
+            border: 1px solid rgba(74,222,128,0.3);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -803,7 +814,7 @@
         }
 
         .account-badge.is-pro {
-            background: rgba(0,229,255,0.15);
+            background: rgba(74,222,128,0.15);
             color: var(--accent-brand);
         }
 
@@ -834,7 +845,7 @@
             border-top: 1px solid var(--border-light);
             color: var(--text-primary);
             padding: 13px 16px;
-            font-family: 'Inter', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             font-size: 0.92rem;
             cursor: pointer;
             text-align: left;
@@ -920,7 +931,7 @@
             color: var(--text-secondary);
             padding: 9px;
             border-radius: var(--radius-full);
-            font-family: 'Inter', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             font-weight: 600;
             font-size: 0.9rem;
             cursor: pointer;
@@ -929,7 +940,7 @@
 
         .auth-tab.active {
             background: var(--accent-brand);
-            color: #001014;
+            color: var(--bg-base);
         }
 
         .auth-field { margin-bottom: 1rem; }
@@ -951,7 +962,7 @@
             border-radius: var(--radius-md);
             padding: 12px 14px;
             color: var(--text-primary);
-            font-family: 'Inter', sans-serif;
+            font-family: 'IBM Plex Mono', monospace;
             font-size: 0.95rem;
             outline: none;
             transition: border-color 0.2s;
@@ -962,11 +973,11 @@
         .auth-submit {
             width: 100%;
             background: var(--accent-brand);
-            color: #001014;
+            color: var(--bg-base);
             border: none;
             padding: 13px;
             border-radius: var(--radius-md);
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Space Grotesk', sans-serif;
             font-weight: 700;
             font-size: 1rem;
             cursor: pointer;
@@ -977,8 +988,8 @@
         .auth-submit:disabled { opacity: 0.55; cursor: not-allowed; }
 
         .auth-error {
-            background: rgba(244, 63, 94, 0.1);
-            border: 1px solid rgba(244, 63, 94, 0.35);
+            background: rgba(224, 82, 74, 0.1);
+            border: 1px solid rgba(224, 82, 74, 0.35);
             color: var(--accent-danger);
             padding: 10px 12px;
             border-radius: var(--radius-md);
@@ -1034,14 +1045,14 @@
             border: 1px solid var(--border-light);
             color: var(--text-secondary);
             padding: 0.45rem 1.1rem;
-            border-radius: 20px;
+            border-radius: 0;
             font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
         }
         .period-btn.active {
             background: var(--accent-brand);
-            color: #04121a;
+            color: var(--bg-base);
             border-color: var(--accent-brand);
         }
 
@@ -1066,7 +1077,7 @@
         }
 
         .ozet-item b { color: var(--text-primary); font-weight: 700; }
-        .ozet-item.ozet-win b { color: var(--accent-success); }
+        .ozet-item.ozet-win b { color: var(--accent-warning); }
         .ozet-item.ozet-loss b { color: var(--accent-danger); }
         .ozet-sep { color: var(--text-muted); }
 
@@ -1081,11 +1092,14 @@
 </head>
 <body>
 
+<div id="cursorGlow"></div>
+<div id="cursorDot"></div>
+
     <!-- Navbar -->
     <nav class="navbar">
         <div class="navbar-content">
             <div class="brand">
-                <img src="/apple-touch-icon.png" alt="Matchrix" style="width: 28px; height: 28px; border-radius: 8px;">
+                <img src="/apple-touch-icon.png" alt="Matchrix" style="width: 28px; height: 28px; border-radius: 0;">
                 <span style="color: #fff;">MATCHRIX</span>
             </div>
             <button class="btn-notif" id="notifToggle" onclick="toggleNotifications()" title="Tahmin ve kazanma bildirimlerini aç">
@@ -1131,8 +1145,8 @@
                     hazır analizleri incelemek kalır.
                 </p>
                 <div style="position:relative; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-                    <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> +500 Veri Kaynağı</span>
-                    <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
+                    <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 0; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> +500 Veri Kaynağı</span>
+                    <span style="background: rgba(74,222,128,0.1); padding: 8px 16px; border-radius: 0; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(74,222,128,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
                 </div>
             </div>
 
@@ -1175,10 +1189,10 @@
                 </div>
                 
                 <!-- Momentum Section -->
-                <div class="stat-card" style="margin-bottom: 1.5rem; background: rgba(0,0,0,0.6); border: 1px solid var(--border-strong); box-shadow: 0 0 15px rgba(0, 229, 255, 0.05);">
+                <div class="stat-card" style="margin-bottom: 1.5rem; background: rgba(0,0,0,0.6); border: 1px solid var(--border-strong);">
                     <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h4 style="color: var(--accent-brand); font-size:1.1rem; margin:0;">MOMENTUM YÜKSELİYOR</h4>
-                        <span style="background: var(--accent-brand); color:#000; padding:4px 8px; border-radius:12px; font-weight:bold; font-size:0.85rem;" id="momentumScore">%-- &uarr;</span>
+                        <span style="background: var(--accent-brand); color:#000; padding:4px 8px; border-radius:0; font-weight:bold; font-size:0.85rem;" id="momentumScore">%-- &uarr;</span>
                     </div>
                     <div id="momentumContainer" style="display: flex; align-items: flex-end; justify-content: space-between; gap: 4px; height: 60px; padding-top: 10px;">
                         <!-- JS will inject dynamic bars here -->
@@ -1855,7 +1869,7 @@
                 container.innerHTML = `
                     <div style="text-align:center; padding: 4rem 1rem; color: var(--text-muted);">
                         <i class="fa-solid fa-futbol" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
-                        <h3 style="font-family:'Outfit', sans-serif; font-weight:500;">Şu an gösterilecek maç yok</h3>
+                        <h3 style="font-family:'Space Grotesk', sans-serif; font-weight:500;">Şu an gösterilecek maç yok</h3>
                     </div>`;
                 return;
             }
@@ -2013,14 +2027,14 @@
                             <div class="match-teams">
                                 <div class="team">
                                     <span class="team-name">
-                                        <img src="${m.home_logo || ''}" onerror="this.style.display='none'" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;border-radius:2px;background:#fff;">
+                                        <img src="${m.home_logo || ''}" onerror="this.style.display='none'" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;border-radius:0;background:#fff;">
                                         ${m.home_team}${xgBadgeHtml}
                                     </span>
                                     <span class="team-score">${m.home_score}</span>
                                 </div>
                                 <div class="team">
                                     <span class="team-name">
-                                        <img src="${m.away_logo || ''}" onerror="this.style.display='none'" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;border-radius:2px;background:#fff;">
+                                        <img src="${m.away_logo || ''}" onerror="this.style.display='none'" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;border-radius:0;background:#fff;">
                                         ${m.away_team}
                                     </span>
                                     <span class="team-score">${m.away_score}</span>
@@ -2075,8 +2089,8 @@
             const modal = document.getElementById('matchModal');
             modal.classList.add('active');
             
-            const homeImg = homeLogo ? `<img src="${homeLogo}" style="width:20px;height:20px;vertical-align:middle;margin-right:6px;border-radius:2px;background:#fff;" onerror="this.style.display='none'">` : '';
-            const awayImg = awayLogo ? `<img src="${awayLogo}" style="width:20px;height:20px;vertical-align:middle;margin-right:6px;border-radius:2px;background:#fff;" onerror="this.style.display='none'">` : '';
+            const homeImg = homeLogo ? `<img src="${homeLogo}" style="width:20px;height:20px;vertical-align:middle;margin-right:6px;border-radius:0;background:#fff;" onerror="this.style.display='none'">` : '';
+            const awayImg = awayLogo ? `<img src="${awayLogo}" style="width:20px;height:20px;vertical-align:middle;margin-right:6px;border-radius:0;background:#fff;" onerror="this.style.display='none'">` : '';
             
             document.getElementById('modalTitle').innerHTML = `${homeImg}${homeName} <span style="color:var(--text-muted);margin:0 5px;">-</span> ${awayImg}${awayName} <small style="color:var(--accent-brand);">Premium Analiz</small>`;
             
@@ -2131,9 +2145,9 @@
                                 datasets: [{
                                     label: homeName,
                                     data: homeData,
-                                    backgroundColor: 'rgba(0, 229, 255, 0.2)',
-                                    borderColor: 'rgba(0, 229, 255, 1)',
-                                    pointBackgroundColor: 'rgba(0, 229, 255, 1)',
+                                    backgroundColor: 'rgba(74, 222, 128, 0.2)',
+                                    borderColor: 'rgba(74, 222, 128, 1)',
+                                    pointBackgroundColor: 'rgba(74, 222, 128, 1)',
                                     borderWidth: 2
                                 }, {
                                     label: awayName,
@@ -2151,12 +2165,12 @@
                                     r: {
                                         angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
                                         grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                                        pointLabels: { color: '#a0a0a0', font: { family: 'Outfit', size: 11, weight: '600' } },
+                                        pointLabels: { color: '#a0a0a0', font: { family: 'Space Grotesk', size: 11, weight: '600' } },
                                         ticks: { display: false, max: 100, min: 0 }
                                     }
                                 },
                                 plugins: {
-                                    legend: { labels: { color: '#fff', font: { family: 'Outfit' } } }
+                                    legend: { labels: { color: '#fff', font: { family: 'Space Grotesk' } } }
                                 }
                             }
                         });
@@ -2171,7 +2185,7 @@
                             // Increasing trend
                             let h = baseHeight + (i * 8) + (Math.random() * 10);
                             if(h > 100) h = 100;
-                            momentumHtml += `<div style="width: 12%; height: ${h}%; background: var(--accent-brand); border-radius: 4px 4px 0 0; opacity: ${0.4 + (i*0.08)};"></div>`;
+                            momentumHtml += `<div style="width: 12%; height: ${h}%; background: var(--accent-brand); border-radius: 0; opacity: ${0.4 + (i*0.08)};"></div>`;
                         }
                         momentumContainer.innerHTML = momentumHtml;
                         
@@ -2230,14 +2244,14 @@
             window.addEventListener('resize', resize);
 
             function tick() {
-                ctx.fillStyle = 'rgba(3, 7, 18, 0.18)';
+                ctx.fillStyle = 'rgba(10, 11, 10, 0.18)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.font = fontSize + 'px monospace';
                 for (let i = 0; i < cols; i++) {
                     const char = Math.random() > 0.5 ? '1' : '0';
                     const x = i * fontSize;
                     const y = drops[i] * fontSize;
-                    ctx.fillStyle = Math.random() > 0.92 ? '#ffffff' : '#00e5ff';
+                    ctx.fillStyle = Math.random() > 0.92 ? '#ffffff' : '#4ade80';
                     ctx.fillText(char, x, y);
                     if (y > canvas.height && Math.random() > 0.975) drops[i] = 0;
                     drops[i]++;
@@ -2252,6 +2266,37 @@
         checkAuth().then(fetchData);
         setInterval(fetchData, 15000);
         startHeroMatrixRain();
+
+        // Imlec isik izi (mobile_app.html'deki /app ile ayni efekt - buyuk glow
+        // yumusak gecikmeyle/lerp, kucuk nokta aninda takip eder).
+        (function(){
+            const glow = document.getElementById('cursorGlow');
+            const dot = document.getElementById('cursorDot');
+            if(!glow || !dot) return;
+            let tx = 0, ty = 0, gx = 0, gy = 0, active = false;
+            document.addEventListener('mousemove', (e) => {
+                tx = e.clientX; ty = e.clientY;
+                if(!active){
+                    active = true;
+                    glow.classList.add('active');
+                    dot.classList.add('active');
+                    gx = tx; gy = ty;
+                }
+                dot.style.transform = `translate(${tx}px, ${ty}px)`;
+            });
+            document.addEventListener('mouseleave', () => {
+                active = false;
+                glow.classList.remove('active');
+                dot.classList.remove('active');
+            });
+            function raf(){
+                gx += (tx - gx) * 0.09;
+                gy += (ty - gy) * 0.09;
+                glow.style.transform = `translate(${gx}px, ${gy}px)`;
+                requestAnimationFrame(raf);
+            }
+            requestAnimationFrame(raf);
+        })();
     </script>
 </body>
 </html>

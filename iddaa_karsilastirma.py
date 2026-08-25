@@ -161,8 +161,11 @@ PAGE_TEMPLATE = """<!doctype html>
   <div class="toolbar">
     <label for="market">Market:</label>
     <select id="market"></select>
+    <label for="esik">Eşik:</label>
+    <input type="number" id="esik" value="55" min="0" max="100" step="1" style="width:60px;background:#1c1c1c;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 8px;">
+    <span style="color:#888;">%</span>
     <div class="tabs">
-      <button class="tab active" id="tabEslesen" data-mod="eslesen">Uyuşan Maçlar</button>
+      <button class="tab active" id="tabEslesen" data-mod="eslesen">Eşik Üstü</button>
       <button class="tab" id="tabTumu" data-mod="tumu">Tüm Maçlar</button>
     </div>
     <span id="ornekBilgi" style="color:#888;font-size:12px;"></span>
@@ -303,24 +306,25 @@ let filtreMod = 'eslesen';
 
 function render() {{
   const market = document.getElementById('market').value;
+  const esik = (Number(document.getElementById('esik').value) || 0) / 100;
   let rows = matches.map(m => {{
     const sonuc = lookup(market, m.favori);
     return {{...m, sonuc}};
   }});
   const toplamSayisi = rows.length;
+  const esikUstuSayisi = rows.filter(r => r.sonuc && r.sonuc.oran >= esik).length;
   if (filtreMod === 'eslesen') {{
-    rows = rows.filter(r => r.sonuc);
+    rows = rows.filter(r => r.sonuc && r.sonuc.oran >= esik);
   }}
   rows.sort((a, b) => {{
     const oa = a.sonuc ? a.sonuc.oran : -1;
     const ob = b.sonuc ? b.sonuc.oran : -1;
     return ob - oa;
   }});
-  const uyusanSayisi = matches.filter(m => lookup(market, m.favori)).length;
   document.getElementById('ornekBilgi').textContent =
     filtreMod === 'eslesen'
-      ? `${{uyusanSayisi}} / ${{toplamSayisi}} mac bu markette arsiv verisiyle uyusuyor`
-      : `${{toplamSayisi}} mac gosteriliyor (${{uyusanSayisi}} tanesi bu markette uyusuyor)`;
+      ? `${{esikUstuSayisi}} / ${{toplamSayisi}} mac %${{(esik * 100).toFixed(0)}} esigini geciyor`
+      : `${{toplamSayisi}} mac gosteriliyor (${{esikUstuSayisi}} tanesi %${{(esik * 100).toFixed(0)}} esigini geciyor)`;
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = rows.map((r, i) => {{
     let oranTxt = '<span class="veriyok">veri yok</span>';
@@ -364,6 +368,7 @@ Object.entries(marketLabels).forEach(([key, label]) => {{
 }});
 sel.value = 'iy_over_05';
 sel.addEventListener('change', () => {{ closeModal(); render(); }});
+document.getElementById('esik').addEventListener('input', () => {{ closeModal(); render(); }});
 
 document.querySelectorAll('.tab').forEach(btn => {{
   btn.addEventListener('click', () => {{

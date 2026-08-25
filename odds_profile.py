@@ -202,11 +202,16 @@ def build_fine(verbose=True):
 # (ilk yari verisi olmayan 62k mac) DAHIL tum arsivi kullanabilir, daha genis
 # ornek. 'iy_'/'iyms_' ile baslayanlar ilk yari skoru gerektirir - sadece
 # main_leagues (46k mac, first_half_home_score dolu olanlar) kullanilabilir.
+# Etiketler kasten UZUN/acik yazildi (kullanici raporu 2026-08-25: "2.Y KG
+# Var" -> "2 Yarida da KG" diye okunup "Ilk Yari + Ikinci Yari KG Var"
+# (iy_ve_iy2_kg) ile karistirildi). Kisaltma YOK - "Ikinci Yari" ile "Ikisi
+# de (Ilk+Ikinci)" arasindaki fark tek bakista net olsun diye.
 MARKET_LABELS = {
-    "ms_kg": "MS KG Var", "ms_over_05": "MS 0.5 Üst", "ms_over_15": "MS 1.5 Üst",
-    "ms_over_25": "MS 2.5 Üst", "ms_over_35": "MS 3.5 Üst", "ms_over_45": "MS 4.5 Üst",
-    "iy_kg": "İY KG Var", "iy2_kg": "2.Y KG Var", "iy_ve_iy2_kg": "İY+2.Y KG Var",
-    "iy_over_05": "İY 0.5 Üst", "iy_over_15": "İY 1.5 Üst", "iy_over_25": "İY 2.5 Üst",
+    "ms_kg": "Maç Sonu KG Var", "ms_over_05": "Maç Sonu 0.5 Üst", "ms_over_15": "Maç Sonu 1.5 Üst",
+    "ms_over_25": "Maç Sonu 2.5 Üst", "ms_over_35": "Maç Sonu 3.5 Üst", "ms_over_45": "Maç Sonu 4.5 Üst",
+    "iy_kg": "İlk Yarı KG Var", "iy2_kg": "İkinci Yarı KG Var",
+    "iy_ve_iy2_kg": "İlk Yarı VE İkinci Yarı KG Var (ikisi de)",
+    "iy_over_05": "İlk Yarı 0.5 Üst", "iy_over_15": "İlk Yarı 1.5 Üst", "iy_over_25": "İlk Yarı 2.5 Üst",
     "iyms_11": "İY/MS 1/1", "iyms_10": "İY/MS 1/0", "iyms_12": "İY/MS 1/2",
     "iyms_01": "İY/MS 0/1", "iyms_00": "İY/MS 0/0", "iyms_02": "İY/MS 0/2",
     "iyms_21": "İY/MS 2/1", "iyms_20": "İY/MS 2/0", "iyms_22": "İY/MS 2/2",

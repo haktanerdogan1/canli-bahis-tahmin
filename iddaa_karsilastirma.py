@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""Bugunku Iddaa.com maclarini bizim 33k+ maclik arsivle (odds_profile.py'nin
-%5'lik ince dilimleri) canli olarak kiyaslayip yerel bir HTML sayfasi acan
-arac (kullanici talebi 2026-08-25: "eldeki idda verilerini bugun icin idda.com
-maclariyla karsilastir, bana bunu yapan bir local ac").
+"""Bugunku Iddaa.com maclarini bizim arsivle (odds_profile.py'nin %5'lik ince
+dilimleri) canli olarak kiyaslayip yerel bir HTML sayfasi acan arac.
+
+2026-08-25 guncellemesi (kullanici talebi): artik tek market (IY gol/MS 1.5)
+degil, sayfa icinde SECILEBILIR 21 market var - MS KG Var, MS 0.5/1.5/2.5/
+3.5/4.5 Ust, IY 0.5/1.5/2.5 Ust, IY KG Var, 2.Y KG Var, IY+2.Y KG Var, ve
+IY/MS 9'lu kombinasyon (0/1, 1/2 gibi - 0=beraberlik). Her mac icin ONCEDEN
+hesaplanmis favori gucu, TUM marketlerin dilim verisiyle birlikte sayfaya
+gomuluyor - market degistirmek yeniden veri cekmeden, aninda JS ile oluyor.
+
+ESLESME ETIKETI: bir macin favori gucu dustugu %5'lik dilimde secili market
+icin yeterli ornek varsa "birebir uyusma", yoksa komsu dilime (±0.05
+tolerans) bakilip bulunursa "toleranslı" yaziliyor, o da yoksa "veri yok".
 
 NASIL CALISIR:
-  1) Iddaa.com'un kendi canli API'sinden (sportsbookv2.iddaa.com) BUGUN
-     (Turkiye takvim gunu) oynanacak, henuz baslamamis futbol maclarinin
-     1X2 acilis oranlarini ceker (iddaa_odds_client.py ile AYNI kaynak).
-  2) Railway'deki /api/odds-profile-fine-bins'ten (admin secret GEREKMEZ,
-     sadece aggregate arsiv istatistigi) guncel %5'lik dilim oranlarini ceker.
-  3) Her mac icin oranlari marjdan arindirip (de-vig) favori gucunu bulur,
-     ayni dilime dusen arsiv IY gol / MS 1.5 ust oranini eslestirir.
-  4) Sonucu IY gol olasiligina gore siralayip tek sayfalik bir HTML olarak
-     yazar ve tarayicida acar.
+  1) Iddaa.com'un kendi canli API'sinden BUGUN oynanacak, henuz baslamamis
+     maclarin 1X2 acilis oranlarini ceker (iddaa_odds_client.py ile AYNI
+     kaynak) ve favori gucunu (de-vig) hesaplar.
+  2) Railway'deki /api/archive-market-bins'ten (admin secret GEREKMEZ) TUM
+     marketlerin %5'lik dilim oranlarini ceker.
+  3) Ikisini tek bir HTML sayfasina gomer, tarayicida acar - market secimi
+     ve siralama sayfa icinde JS ile aninda calisir.
 
-Bu arac canli-bahis-tahmin'in KENDI arsiv mantigini (odds_profile.py)
-kullaniyor ama hicbir sinyal/bot'a yazmiyor - sadece goruntuleme.
+Bu arac canli-bahis-tahmin'in KENDI arsiv mantigini kullaniyor ama hicbir
+sinyale/bota yazmiyor - sadece goruntuleme.
 
 KULLANIM:
     python3 iddaa_karsilastirma.py
@@ -34,8 +41,6 @@ IDDAA_EVENTS_URL = "https://sportsbookv2.iddaa.com/sportsbook/events?st=1&type=0
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
 TR_TZ = datetime.timezone(datetime.timedelta(hours=3))
 
-FINE_BIN_SIZE = 0.05
-
 
 def devig_1x2(ev, beraberlik, dep):
     try:
@@ -48,17 +53,10 @@ def devig_1x2(ev, beraberlik, dep):
     return [x / s for x in t]
 
 
-def fine_bin(favori):
-    lo = int(favori / FINE_BIN_SIZE) * FINE_BIN_SIZE
-    lo = min(lo, 0.95)
-    return f"{lo:.2f}-{lo + FINE_BIN_SIZE:.2f}"
-
-
-def fetch_fine_bins():
-    r = requests.get(f"{API_BASE}/api/odds-profile-fine-bins", timeout=20)
+def fetch_market_bins():
+    r = requests.get(f"{API_BASE}/api/archive-market-bins", timeout=20)
     r.raise_for_status()
-    data = r.json()
-    return {d["bin"]: d for d in data.get("dilimler", [])}
+    return r.json()
 
 
 def _pick_1x2(markets):
@@ -96,86 +94,154 @@ def fetch_today_matches():
         o1, ox, o2 = _pick_1x2(e.get("m") or [])
         if not (o1 and ox and o2):
             continue
+        p = devig_1x2(o1, ox, o2)
+        if not p:
+            continue
         out.append({
             "home": e.get("hn"), "away": e.get("an"),
-            "kickoff": kickoff, "odd_1": o1, "odd_x": ox, "odd_2": o2,
+            "saat": kickoff.strftime("%H:%M"),
+            "odd_1": o1, "odd_x": ox, "odd_2": o2,
+            "favori": round(max(p[0], p[2]), 4),
         })
+    out.sort(key=lambda m: m["saat"])
     return out
 
 
-def build_html(rows):
-    def esc(s):
-        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    body_rows = []
-    for r in rows:
-        renk = "#0a7d2c" if r["iy_orani"] and r["iy_orani"] >= 0.65 else ("#8a6d00" if r["iy_orani"] and r["iy_orani"] >= 0.55 else "#555")
-        iy_txt = f'%{r["iy_orani"]*100:.1f}' if r["iy_orani"] is not None else "veri yok"
-        ms_txt = f'%{r["ms15_orani"]*100:.1f}' if r["ms15_orani"] is not None else "veri yok"
-        ornek_txt = r["ornek"] if r["ornek"] is not None else "-"
-        body_rows.append(f"""
-        <tr>
-          <td>{r['kickoff'].strftime('%H:%M')}</td>
-          <td>{esc(r['home'])} - {esc(r['away'])}</td>
-          <td>{r['odd_1']:.2f} / {r['odd_x']:.2f} / {r['odd_2']:.2f}</td>
-          <td>%{r['favori']*100:.1f}</td>
-          <td style="color:{renk};font-weight:600">{iy_txt}</td>
-          <td>{ms_txt}</td>
-          <td>{ornek_txt}</td>
-        </tr>""")
-
-    return f"""<!doctype html>
+PAGE_TEMPLATE = """<!doctype html>
 <html lang="tr"><head><meta charset="utf-8">
-<title>Iddaa Arsiv Karsilastirma - {datetime.datetime.now(TR_TZ).strftime('%d/%m/%Y')}</title>
+<title>Iddaa Arsiv Karsilastirma - {tarih}</title>
 <style>
   body {{ font-family: -apple-system, sans-serif; background:#111; color:#eee; margin:0; padding:24px; }}
   h1 {{ font-size:20px; margin-bottom:4px; }}
   p.sub {{ color:#999; margin-top:0; }}
-  table {{ border-collapse: collapse; width:100%; margin-top:16px; }}
+  .toolbar {{ display:flex; gap:12px; align-items:center; margin:16px 0; flex-wrap:wrap; }}
+  select {{ background:#1c1c1c; color:#eee; border:1px solid #444; padding:8px 12px; border-radius:6px; font-size:14px; }}
+  table {{ border-collapse: collapse; width:100%; margin-top:8px; }}
   th, td {{ padding:8px 12px; text-align:left; border-bottom:1px solid #333; font-size:14px; }}
-  th {{ color:#aaa; font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:0.05em; }}
+  th {{ color:#aaa; font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:0.05em; cursor:pointer; }}
   tr:hover {{ background:#1a1a1a; }}
+  .birebir {{ color:#0a7d2c; font-weight:600; }}
+  .toleransli {{ color:#c98a00; font-weight:600; }}
+  .veriyok {{ color:#666; }}
+  .badge {{ font-size:10px; padding:2px 6px; border-radius:4px; margin-left:6px; }}
+  .badge.birebir {{ background:#0a7d2c22; }}
+  .badge.toleransli {{ background:#c98a0022; }}
   .not {{ color:#777; font-size:12px; margin-top:20px; }}
 </style></head>
 <body>
   <h1>Iddaa vs Arsiv Karsilastirma</h1>
-  <p class="sub">{datetime.datetime.now(TR_TZ).strftime('%d %B %Y, %A')} - IY gol olasiligina gore siralandi ({len(rows)} mac)</p>
+  <p class="sub">{tarih_okunur} - {mac_sayisi} mac</p>
+  <div class="toolbar">
+    <label for="market">Market:</label>
+    <select id="market"></select>
+    <span id="ornekBilgi" style="color:#888;font-size:12px;"></span>
+  </div>
   <table>
-    <tr><th>Saat</th><th>Mac</th><th>1X2 (acilis)</th><th>Favori Gucu</th><th>Arsiv: IY Gol</th><th>Arsiv: MS 1.5 Ust</th><th>Ornek</th></tr>
-    {''.join(body_rows)}
+    <thead><tr>
+      <th>Saat</th><th>Mac</th><th>1X2 (acilis)</th><th>Favori Gucu</th><th>Arsiv Orani</th><th>Ornek</th><th>Eslesme</th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
   </table>
-  <p class="not">Favori gucu = oranlar marjdan arindirilip (de-vig) favorinin gercek kazanma ihtimali. "Arsiv" kolonlari
-  33.000+ maclik gecmis Iddaa arsivinde AYNI favori gucune (%5'lik dilim) sahip maclarin gercek sonuc oranidir
-  (odds_profile.py / bkz. canli-bahis-tahmin projesi). Bu sayfa hicbir sinyale/bota baglanmiyor, sadece bilgi amaclidir.</p>
+  <p class="not">Favori gucu = 1X2 oranlari marjdan arindirilip (de-vig) favorinin gercek kazanma ihtimali.
+  Arsiv oranlari 33.000+ (bazi marketlerde 100.000+) maclik gecmis arsivde AYNI favori gucune (%5'lik dilim)
+  sahip maclarin gercek sonuc oranidir. "Birebir uyuşma" = o dilimde yeterli ornek var. "Toleranslı" = o dilim
+  zayifti, komsu (±0.05) dilime bakildi. Bu sayfa hicbir sinyale/bota baglanmiyor, sadece bilgi amaclidir.</p>
+
+<script>
+const marketLabels = {market_labels_json};
+const bins = {bins_json};
+const matches = {matches_json};
+
+function binKeyFor(favori) {{
+  let lo = Math.min(Math.floor(favori / 0.05) * 0.05, 0.95);
+  return lo.toFixed(2) + '-' + (lo + 0.05).toFixed(2);
+}}
+
+function lookup(market, favori) {{
+  const marketBins = bins[market] || {{}};
+  const exactKey = binKeyFor(favori);
+  if (marketBins[exactKey]) {{
+    return {{...marketBins[exactKey], eslesme: 'birebir', dilim: exactKey}};
+  }}
+  const idx = Math.floor(favori / 0.05);
+  for (const d of [-1, 1]) {{
+    const nIdx = Math.max(0, Math.min(idx + d, 19));
+    const lo = nIdx * 0.05;
+    const key = lo.toFixed(2) + '-' + (lo + 0.05).toFixed(2);
+    if (marketBins[key]) {{
+      return {{...marketBins[key], eslesme: 'toleransli', dilim: key}};
+    }}
+  }}
+  return null;
+}}
+
+function render() {{
+  const market = document.getElementById('market').value;
+  const rows = matches.map(m => {{
+    const sonuc = lookup(market, m.favori);
+    return {{...m, sonuc}};
+  }});
+  rows.sort((a, b) => {{
+    const oa = a.sonuc ? a.sonuc.oran : -1;
+    const ob = b.sonuc ? b.sonuc.oran : -1;
+    return ob - oa;
+  }});
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = rows.map(r => {{
+    let oranTxt = '<span class="veriyok">veri yok</span>';
+    let ornekTxt = '-';
+    let eslesmeTxt = '<span class="veriyok">-</span>';
+    if (r.sonuc) {{
+      const cls = r.sonuc.eslesme === 'birebir' ? 'birebir' : 'toleransli';
+      oranTxt = `<span class="${{cls}}">%${{(r.sonuc.oran * 100).toFixed(1)}}</span>`;
+      ornekTxt = r.sonuc.ornek.toLocaleString('tr-TR');
+      const etiket = r.sonuc.eslesme === 'birebir' ? 'birebir uyuşma' : 'toleranslı';
+      eslesmeTxt = `<span class="badge ${{cls}}">${{etiket}}</span>`;
+    }}
+    return `<tr>
+      <td>${{r.saat}}</td>
+      <td>${{r.home}} - ${{r.away}}</td>
+      <td>${{r.odd_1.toFixed(2)}} / ${{r.odd_x.toFixed(2)}} / ${{r.odd_2.toFixed(2)}}</td>
+      <td>%${{(r.favori * 100).toFixed(1)}}</td>
+      <td>${{oranTxt}}</td>
+      <td>${{ornekTxt}}</td>
+      <td>${{eslesmeTxt}}</td>
+    </tr>`;
+  }}).join('');
+}}
+
+const sel = document.getElementById('market');
+Object.entries(marketLabels).forEach(([key, label]) => {{
+  const opt = document.createElement('option');
+  opt.value = key; opt.textContent = label;
+  sel.appendChild(opt);
+}});
+sel.value = 'iy_over_05';
+sel.addEventListener('change', render);
+render();
+</script>
 </body></html>"""
 
 
 def main():
-    print("[iddaa_karsilastirma] Arsiv dilim oranlari cekiliyor...")
-    bins = fetch_fine_bins()
-    print(f"[iddaa_karsilastirma] {len(bins)} dilim yuklendi.")
+    print("[iddaa_karsilastirma] Arsiv market dilimleri cekiliyor...")
+    market_data = fetch_market_bins()
+    print(f"[iddaa_karsilastirma] {len(market_data.get('bins', {}))} market yuklendi.")
 
     print("[iddaa_karsilastirma] Iddaa.com'dan bugunku maclar cekiliyor...")
     matches = fetch_today_matches()
     print(f"[iddaa_karsilastirma] {len(matches)} mac bulundu (bugun, henuz baslamamis).")
 
-    rows = []
-    for m in matches:
-        p = devig_1x2(m["odd_1"], m["odd_x"], m["odd_2"])
-        if not p:
-            continue
-        favori = max(p[0], p[2])
-        b = bins.get(fine_bin(favori))
-        rows.append({
-            **m, "favori": favori,
-            "iy_orani": b["iy_gol_orani"] if b else None,
-            "ms15_orani": b["ms15_orani"] if b else None,
-            "ornek": b["ornek"] if b else None,
-        })
+    now = datetime.datetime.now(TR_TZ)
+    html = PAGE_TEMPLATE.format(
+        tarih=now.strftime("%d/%m/%Y"),
+        tarih_okunur=now.strftime("%d %B %Y, %A"),
+        mac_sayisi=len(matches),
+        market_labels_json=json.dumps(market_data.get("market_labels", {}), ensure_ascii=False),
+        bins_json=json.dumps(market_data.get("bins", {}), ensure_ascii=False),
+        matches_json=json.dumps(matches, ensure_ascii=False),
+    )
 
-    rows.sort(key=lambda r: (r["iy_orani"] is None, -(r["iy_orani"] or 0)))
-
-    html = build_html(rows)
     fd, path = tempfile.mkstemp(suffix=".html", prefix="iddaa_karsilastirma_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(html)

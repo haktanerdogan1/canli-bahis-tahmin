@@ -119,6 +119,16 @@ def run_orchestrator():
     except Exception as e:
         print(f"⚠️  Oran profilleri hesaplanamadi: {e}")
 
+    # Cok-market ince dilimler (kullanici talebi 2026-08-25: yerel
+    # iddaa_karsilastirma.py aracinda MS 4.5 Ust, IY 1.5 Ust, IY/2Y KG,
+    # IY-MS kombinasyonlari secilebilsin) - bkz. odds_profile.MARKET_LABELS.
+    # Hicbir bota/sinyale baglanmiyor, sadece /api/archive-market-bins
+    # ucundan yerel araca servis ediliyor.
+    try:
+        odds_profile.build_market_fine()
+    except Exception as e:
+        print(f"⚠️  Cok-market ince dilimler hesaplanamadi: {e}")
+
     # Takim mac gecmisi (/api/match/{id} formu icin - bkz. team_history.py)
     try:
         team_history.build()

@@ -192,6 +192,120 @@ def build_fine(verbose=True):
     return len(satirlar)
 
 
+# Kullanici talebi (2026-08-25): yerel iddaa_karsilastirma.py aracinda
+# sadece IY gol/MS 1.5 degil, secilebilir cok sayida market (MS 4.5 Ust,
+# IY 1.5 Ust, IY/2Y KG, IY-MS 9'lu kombinasyon vb.) gosterilsin. Her market
+# icin AYNI %5'lik favori-gucu dilimlemesi kullanilir - tek geçişte (fetch)
+# tum marketler hesaplanir, N ayri sorgu yerine.
+#
+# 'ms_' ile baslayanlar SADECE mac sonu skoruna ihtiyac duyar - extra_leagues
+# (ilk yari verisi olmayan 62k mac) DAHIL tum arsivi kullanabilir, daha genis
+# ornek. 'iy_'/'iyms_' ile baslayanlar ilk yari skoru gerektirir - sadece
+# main_leagues (46k mac, first_half_home_score dolu olanlar) kullanilabilir.
+MARKET_LABELS = {
+    "ms_kg": "MS KG Var", "ms_over_05": "MS 0.5 Üst", "ms_over_15": "MS 1.5 Üst",
+    "ms_over_25": "MS 2.5 Üst", "ms_over_35": "MS 3.5 Üst", "ms_over_45": "MS 4.5 Üst",
+    "iy_kg": "İY KG Var", "iy2_kg": "2.Y KG Var", "iy_ve_iy2_kg": "İY+2.Y KG Var",
+    "iy_over_05": "İY 0.5 Üst", "iy_over_15": "İY 1.5 Üst", "iy_over_25": "İY 2.5 Üst",
+    "iyms_11": "İY/MS 1/1", "iyms_10": "İY/MS 1/0", "iyms_12": "İY/MS 1/2",
+    "iyms_01": "İY/MS 0/1", "iyms_00": "İY/MS 0/0", "iyms_02": "İY/MS 0/2",
+    "iyms_21": "İY/MS 2/1", "iyms_20": "İY/MS 2/0", "iyms_22": "İY/MS 2/2",
+}
+FH_REQUIRED_MARKETS = {k for k in MARKET_LABELS if k.startswith("iy_") or k.startswith("iy2_") or k.startswith("iyms_")}
+
+
+def ensure_schema_market_fine():
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS market_fine_bins (
+            market TEXT, bin TEXT, ornek INTEGER, oran REAL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (market, bin)
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def _1x_sonuc(h, a):
+    if h > a:
+        return "1"
+    if h == a:
+        return "0"
+    return "2"
+
+
+def _market_outcomes(hs, aws, fhh, fha):
+    """Tek bir macin skorlarindan TUM marketlerin (bilinen olanlar) 0/1
+    sonucunu doner - fh skorlari yoksa (None) sadece 'ms_' marketleri doner."""
+    out = {
+        "ms_kg": 1 if (hs > 0 and aws > 0) else 0,
+        "ms_over_05": 1 if (hs + aws) > 0.5 else 0,
+        "ms_over_15": 1 if (hs + aws) > 1.5 else 0,
+        "ms_over_25": 1 if (hs + aws) > 2.5 else 0,
+        "ms_over_35": 1 if (hs + aws) > 3.5 else 0,
+        "ms_over_45": 1 if (hs + aws) > 4.5 else 0,
+    }
+    if fhh is None or fha is None:
+        return out
+    ikinci_h, ikinci_a = hs - fhh, aws - fha
+    out.update({
+        "iy_kg": 1 if (fhh > 0 and fha > 0) else 0,
+        "iy2_kg": 1 if (ikinci_h > 0 and ikinci_a > 0) else 0,
+        "iy_ve_iy2_kg": 1 if (fhh > 0 and fha > 0 and ikinci_h > 0 and ikinci_a > 0) else 0,
+        "iy_over_05": 1 if (fhh + fha) > 0.5 else 0,
+        "iy_over_15": 1 if (fhh + fha) > 1.5 else 0,
+        "iy_over_25": 1 if (fhh + fha) > 2.5 else 0,
+    })
+    iy_s, ms_s = _1x_sonuc(fhh, fha), _1x_sonuc(hs, aws)
+    for k in MARKET_LABELS:
+        if k.startswith("iyms_"):
+            out[k] = 1 if k == f"iyms_{iy_s}{ms_s}" else 0
+    return out
+
+
+def build_market_fine(verbose=True):
+    ensure_schema_market_fine()
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT o.home_win_odds, o.draw_odds, o.away_win_odds,
+               m.home_score, m.away_score, m.first_half_home_score, m.first_half_away_score
+        FROM prematch_odds o JOIN matches m ON m.id = o.match_id
+        WHERE o.home_win_odds IS NOT NULL AND o.draw_odds IS NOT NULL
+          AND o.away_win_odds IS NOT NULL AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+    ''')
+    kova = {}  # {market: {bin: [n, hit]}}
+    for ev, bx, dep, hs, aws, fhh, fha in cur.fetchall():
+        p = devig_1x2(ev, bx, dep)
+        if not p:
+            continue
+        favori = max(p[0], p[2])
+        b = _fine_bin(favori)
+        for market, sonuc in _market_outcomes(hs, aws, fhh, fha).items():
+            k = kova.setdefault(market, {}).setdefault(b, [0, 0])
+            k[0] += 1
+            k[1] += sonuc
+
+    satirlar = [
+        (market, b, n, h / n)
+        for market, dilimler in kova.items()
+        for b, (n, h) in dilimler.items()
+        if n >= FINE_MIN_ORNEK
+    ]
+    cur.executemany(
+        "INSERT INTO market_fine_bins (market, bin, ornek, oran, updated_at) VALUES (?,?,?,?,CURRENT_TIMESTAMP) "
+        "ON CONFLICT(market, bin) DO UPDATE SET ornek=excluded.ornek, oran=excluded.oran, updated_at=CURRENT_TIMESTAMP",
+        satirlar,
+    )
+    conn.commit()
+    conn.close()
+    if verbose:
+        print(f"[odds_profile] {len(MARKET_LABELS)} market x dilim -> {len(satirlar)} guvenilir hucre hesaplandi.", flush=True)
+    return len(satirlar)
+
+
 def fine_rate_for_favori(favori):
     """Bir favori gucu (0-1) icin ince dilimden (ornegi yeterliyse) IY gol
     oranini ve ornek sayisini doner, yoksa None."""

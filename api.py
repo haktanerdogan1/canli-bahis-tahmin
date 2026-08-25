@@ -537,6 +537,33 @@ def odds_profile_fine_bins():
     }
 
 
+@app.get("/api/archive-market-bins")
+def archive_market_bins():
+    """Kullanici talebi (2026-08-25): yerel iddaa_karsilastirma.py aracinda
+    MS 4.5 Ust, IY 1.5 Ust, IY/2Y KG Var, IY-MS 9'lu kombinasyon (0/1, 1/2 gibi)
+    secilebilsin. odds_profile.build_market_fine()'in onceden hesapladigi TUM
+    marketlerin %5'lik dilim oranlarini tek seferde disari acar (public,
+    admin secret gerektirmiyor - sadece aggregate arsiv istatistigi, ayni
+    /api/odds-profile-fine-bins ile ayni hassasiyet seviyesinde). Kesin/
+    toleranslı esleme MANTIGI (bir dilimde yeterli ornek yoksa komsu dilime
+    bak) bilerek CLIENT tarafinda (yerel arac) yapiliyor - boylece tek istekle
+    tum mac x market kombinasyonlari aninda hesaplanabiliyor."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT market, bin, ornek, oran FROM market_fine_bins ORDER BY market, bin"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+
+    from odds_profile import MARKET_LABELS
+    bins = {}
+    for market, b, ornek, oran in rows:
+        bins.setdefault(market, {})[b] = {"ornek": ornek, "oran": round(oran, 4)}
+    return {"success": True, "market_labels": MARKET_LABELS, "bins": bins}
+
+
 @app.get("/api/admin/iddaa-odds-preview")
 def iddaa_odds_preview(request: Request, ornekler: int = 0):
     """Kullanici talebi (2026-08-24): 3 kaba bant yerine 33.525 maclik

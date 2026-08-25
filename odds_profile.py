@@ -207,6 +207,7 @@ def build_fine(verbose=True):
 # (iy_ve_iy2_kg) ile karistirildi). Kisaltma YOK - "Ikinci Yari" ile "Ikisi
 # de (Ilk+Ikinci)" arasindaki fark tek bakista net olsun diye.
 MARKET_LABELS = {
+    "ms_1": "Maç Sonu 1 (Ev Kazandı)", "ms_x": "Maç Sonu X (Beraberlik)", "ms_2": "Maç Sonu 2 (Deplasman Kazandı)",
     "ms_kg": "Maç Sonu KG Var", "ms_over_05": "Maç Sonu 0.5 Üst", "ms_over_15": "Maç Sonu 1.5 Üst",
     "ms_over_25": "Maç Sonu 2.5 Üst", "ms_over_35": "Maç Sonu 3.5 Üst", "ms_over_45": "Maç Sonu 4.5 Üst",
     "iy_kg": "İlk Yarı KG Var", "iy2_kg": "İkinci Yarı KG Var",
@@ -256,6 +257,9 @@ def _market_outcomes(hs, aws, fhh, fha):
     """Tek bir macin skorlarindan TUM marketlerin (bilinen olanlar) 0/1
     sonucunu doner - fh skorlari yoksa (None) sadece 'ms_' marketleri doner."""
     out = {
+        "ms_1": 1 if hs > aws else 0,
+        "ms_x": 1 if hs == aws else 0,
+        "ms_2": 1 if hs < aws else 0,
         "ms_kg": 1 if (hs > 0 and aws > 0) else 0,
         "ms_over_05": 1 if (hs + aws) > 0.5 else 0,
         "ms_over_15": 1 if (hs + aws) > 1.5 else 0,

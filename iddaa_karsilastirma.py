@@ -254,6 +254,9 @@ function sonuc1x2(h, a) {{
 
 function marketOutcomes(hs, aws, fhh, fha) {{
   const out = {{
+    ms_1: hs > aws ? 1 : 0,
+    ms_x: hs === aws ? 1 : 0,
+    ms_2: hs < aws ? 1 : 0,
     ms_kg: (hs > 0 && aws > 0) ? 1 : 0,
     ms_over_05: (hs + aws) > 0.5 ? 1 : 0,
     ms_over_15: (hs + aws) > 1.5 ? 1 : 0,
@@ -335,9 +338,18 @@ const KUPON_MIN_ORNEK = 300;  // az orneke dayali "guvenli" secim olmasin
 // 1 gol, ~%55-70) BUNUN GIBI DEGIL - projenin ana konusu, trivial degil,
 // disarida BIRAKILMADI (once yanlislikla ikisi de haric tutulmustu).
 const KUPON_HARIC_MARKET = new Set(['ms_over_05']);
+// Kullanici geri bildirimi (2026-08-25): "1/1 kombinasyonu riskli, KG Var/
+// MS1/IY 0.5 Ust daha banko". IY/MS 9'lu kombinasyonlar main_leagues
+// arsivini (46k mac) 9'a boldugu icin AYNI ornek sayisinda (KUPON_MIN_ORNEK
+// esigini gecse bile) daha az istikrarli/daha noktasal bir tahmin - kupon
+// sihirbazlarindan tamamen cikarildi (ana tabloda/manuel incelemede hala
+// secilebilirler, sadece otomatik sihirbaz onerilerinde yok).
+function kuponIcinUygunMu(mk) {{
+  return !KUPON_HARIC_MARKET.has(mk) && !mk.startsWith('iyms_');
+}}
 
 function tumMarketSecenekleri(m) {{
-  return Object.keys(marketLabels).filter(mk => !KUPON_HARIC_MARKET.has(mk)).map(mk => {{
+  return Object.keys(marketLabels).filter(kuponIcinUygunMu).map(mk => {{
     const s = lookup(mk, m.favori);
     return (s && s.ornek >= KUPON_MIN_ORNEK) ? {{market: mk, ...s}} : null;
   }}).filter(Boolean);

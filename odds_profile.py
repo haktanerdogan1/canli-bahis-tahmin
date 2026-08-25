@@ -212,9 +212,20 @@ MARKET_LABELS = {
     "iy_kg": "İlk Yarı KG Var", "iy2_kg": "İkinci Yarı KG Var",
     "iy_ve_iy2_kg": "İlk Yarı VE İkinci Yarı KG Var (ikisi de)",
     "iy_over_05": "İlk Yarı 0.5 Üst", "iy_over_15": "İlk Yarı 1.5 Üst", "iy_over_25": "İlk Yarı 2.5 Üst",
-    "iyms_11": "İY/MS 1/1", "iyms_10": "İY/MS 1/0", "iyms_12": "İY/MS 1/2",
-    "iyms_01": "İY/MS 0/1", "iyms_00": "İY/MS 0/0", "iyms_02": "İY/MS 0/2",
-    "iyms_21": "İY/MS 2/1", "iyms_20": "İY/MS 2/0", "iyms_22": "İY/MS 2/2",
+    # NOT (kullanici raporu 2026-08-25): "0/2" gibi kodlar SKOR DEGIL, IY/MS
+    # SONUC KODU (1=ev kazandi, 0=beraberlik, 2=deplasman kazandi). Ornegin
+    # ilk yaride 0-1 yenilen bir mac (deplasman zaten onde) "0/x" DEGIL "2/x"
+    # sayilir - beraberlik degil deplasman galibiyeti. Etiketler artik kodun
+    # yaninda ACIK ACIKLAMA da tasiyor, yanlis anlasilmasin diye.
+    "iyms_11": "İY/MS 1/1 (İY Ev Önde, MS Ev Kazandı)",
+    "iyms_10": "İY/MS 1/0 (İY Ev Önde, MS Beraberlik)",
+    "iyms_12": "İY/MS 1/2 (İY Ev Önde, MS Deplasman Kazandı)",
+    "iyms_01": "İY/MS 0/1 (İY Beraberlik, MS Ev Kazandı)",
+    "iyms_00": "İY/MS 0/0 (İY Beraberlik, MS Beraberlik)",
+    "iyms_02": "İY/MS 0/2 (İY Beraberlik, MS Deplasman Kazandı)",
+    "iyms_21": "İY/MS 2/1 (İY Deplasman Önde, MS Ev Kazandı)",
+    "iyms_20": "İY/MS 2/0 (İY Deplasman Önde, MS Beraberlik)",
+    "iyms_22": "İY/MS 2/2 (İY Deplasman Önde, MS Deplasman Kazandı)",
 }
 FH_REQUIRED_MARKETS = {k for k in MARKET_LABELS if k.startswith("iy_") or k.startswith("iy2_") or k.startswith("iyms_")}
 

@@ -9,9 +9,14 @@ IY/MS 9'lu kombinasyon (0/1, 1/2 gibi - 0=beraberlik). Her mac icin ONCEDEN
 hesaplanmis favori gucu, TUM marketlerin dilim verisiyle birlikte sayfaya
 gomuluyor - market degistirmek yeniden veri cekmeden, aninda JS ile oluyor.
 
-ESLESME ETIKETI: bir macin favori gucu dustugu %5'lik dilimde secili market
-icin yeterli ornek varsa "birebir uyusma", yoksa komsu dilime (±0.05
-tolerans) bakilip bulunursa "toleranslı" yaziliyor, o da yoksa "veri yok".
+ESLESME ETIKETI: TUM arsiv oranlari %5'lik bir BANT icindeki (ornegin
+0.65-0.70 favori gucune sahip TUM gecmis maclar) sonuc oranidir - hicbir
+zaman birebir/ozdes oran eslesmesi degildir. Bir macin dustugu bantta
+secili market icin yeterli ornek varsa "kendi dilimi (guvenilir)", yoksa
+komsu banda (±0.05) bakilip bulunursa "komsu dilimden (az ornek)"
+yaziliyor, o da yoksa "veri yok" (kullanici raporu 2026-08-25: "birebir"
+etiketi yanlis izlenim veriyordu, sanki ayni oranli maclar bulunuyormus
+gibi - oysa hep %5'lik bant kullaniliyor).
 
 GECMIS ORNEK MACLAR (kullanici talebi 2026-08-25): bir maca tiklayinca
 AYNI dilime dusen gercek gecmis maclar (takim adi + IY/MS skoru) acilir -
@@ -125,6 +130,9 @@ PAGE_TEMPLATE = """<!doctype html>
   h1 {{ font-size:20px; margin-bottom:4px; }}
   p.sub {{ color:#999; margin-top:0; }}
   .toolbar {{ display:flex; gap:12px; align-items:center; margin:16px 0; flex-wrap:wrap; }}
+  .tabs {{ display:flex; gap:4px; background:#1c1c1c; border:1px solid #444; border-radius:6px; padding:3px; }}
+  .tab {{ background:none; border:none; color:#aaa; padding:6px 14px; border-radius:4px; font-size:13px; cursor:pointer; }}
+  .tab.active {{ background:#0038ff; color:#fff; }}
   select {{ background:#1c1c1c; color:#eee; border:1px solid #444; padding:8px 12px; border-radius:6px; font-size:14px; }}
   table {{ border-collapse: collapse; width:100%; margin-top:8px; }}
   th, td {{ padding:8px 12px; text-align:left; border-bottom:1px solid #333; font-size:14px; }}
@@ -153,6 +161,10 @@ PAGE_TEMPLATE = """<!doctype html>
   <div class="toolbar">
     <label for="market">Market:</label>
     <select id="market"></select>
+    <div class="tabs">
+      <button class="tab active" id="tabEslesen" data-mod="eslesen">Uyuşan Maçlar</button>
+      <button class="tab" id="tabTumu" data-mod="tumu">Tüm Maçlar</button>
+    </div>
     <span id="ornekBilgi" style="color:#888;font-size:12px;"></span>
   </div>
   <table>
@@ -162,10 +174,12 @@ PAGE_TEMPLATE = """<!doctype html>
     <tbody id="tbody"></tbody>
   </table>
   <p class="not">Favori gucu = 1X2 oranlari marjdan arindirilip (de-vig) favorinin gercek kazanma ihtimali.
-  Arsiv oranlari 33.000+ (bazi marketlerde 100.000+) maclik gecmis arsivde AYNI favori gucune (%5'lik dilim)
-  sahip maclarin gercek sonuc oranidir. "Birebir uyuşma" = o dilimde yeterli ornek var. "Toleranslı" = o dilim
-  zayifti, komsu (±0.05) dilime bakildi. Bir satira tiklayinca ayni dilime dusen gercek gecmis maclari
-  gorebilirsin. Bu sayfa hicbir sinyale/bota baglanmiyor, sadece bilgi amaclidir.</p>
+  Arsiv oranlari BUTUN durumlarda %5'lik bir BANT icindeki (ornegin 0.65-0.70 arasi favori gucune sahip TUM
+  maclar) gecmis maclarin gercek sonuc oranidir - hicbir zaman birebir/ozdes oran eslesmesi degildir.
+  "Kendi dilimi (guvenilir)" = macin dustugu bu 5 puanlik bantta tek basina yeterli ornek var. "Komsu dilimden
+  (az ornek)" = kendi banti zayifti, ±0.05 uzaktaki komsu banttan oran alindi. Bir satira tiklayinca ayni
+  banda dusen gercek gecmis maclari gorebilirsin. Bu sayfa hicbir sinyale/bota baglanmiyor, sadece bilgi
+  amaclidir.</p>
 
   <div id="modalOverlay" class="modal-overlay" style="display:none;">
     <div class="modal">
@@ -175,7 +189,7 @@ PAGE_TEMPLATE = """<!doctype html>
       </div>
       <p class="hint" id="modalHint"></p>
       <table>
-        <thead><tr><th>Tarih</th><th>Mac</th><th>Lig</th><th>İY</th><th>MS</th><th>Secili markette</th></tr></thead>
+        <thead><tr><th>Tarih</th><th>Mac</th><th>Lig</th><th>İY (sonuç)</th><th>MS (sonuç)</th><th>Seçili markette</th></tr></thead>
         <tbody id="modalBody"></tbody>
       </table>
     </div>
@@ -240,26 +254,41 @@ function marketOutcomes(hs, aws, fhh, fha) {{
   return out;
 }}
 
+const SONUC_ADI = {{'1': 'Ev Kazandı', '0': 'Beraberlik', '2': 'Deplasman Kazandı'}};
+
 function openModal(dilim, macAdi) {{
   const market = document.getElementById('market').value;
-  const ornekler = binExamples[dilim] || [];
+  let ornekler = (binExamples[dilim] || []).map(o => {{
+    const sonuc = marketOutcomes(o.ms_h, o.ms_a, o.iy_h, o.iy_a);
+    return {{...o, tutti: sonuc[market]}};
+  }});
+  // Tutanlar (1) en ustte, sonra bilinmeyen (undefined), sonra tutmayanlar (0)
+  ornekler.sort((a, b) => {{
+    const va = a.tutti === 1 ? 2 : (a.tutti === 0 ? 0 : 1);
+    const vb = b.tutti === 1 ? 2 : (b.tutti === 0 ? 0 : 1);
+    return vb - va;
+  }});
   document.getElementById('modalTitle').textContent = `${{macAdi}} — favori dilimi ${{dilim}}`;
   document.getElementById('modalHint').textContent =
-    `Ayni dilime dusen ${{ornekler.length}} gercek gecmis mac, "${{marketLabels[market]}}" marketine gore:`;
+    `Ayni dilime dusen ${{ornekler.length}} gercek gecmis mac, "${{marketLabels[market]}}" marketine gore (tutanlar en ustte):`;
   document.getElementById('modalBody').innerHTML = ornekler.map(o => {{
-    const sonuc = marketOutcomes(o.ms_h, o.ms_a, o.iy_h, o.iy_a);
-    const tutti = sonuc[market];
     let sonucTxt = '<span class="veriyok">bilinmiyor</span>';
-    if (tutti !== undefined) {{
-      sonucTxt = tutti ? '<span class="hit">✓ tuttu</span>' : '<span class="miss">✗ tutmadi</span>';
+    if (o.tutti !== undefined) {{
+      sonucTxt = o.tutti ? '<span class="hit">✓ tuttu</span>' : '<span class="miss">✗ tutmadi</span>';
     }}
-    const iyTxt = (o.iy_h === null || o.iy_h === undefined) ? '-' : `${{o.iy_h}}-${{o.iy_a}}`;
+    let iyTxt = '-';
+    if (o.iy_h !== null && o.iy_h !== undefined) {{
+      const iyKod = sonuc1x2(o.iy_h, o.iy_a);
+      iyTxt = `${{o.iy_h}}-${{o.iy_a}} <span style="color:#888">(${{SONUC_ADI[iyKod]}})</span>`;
+    }}
+    const msKod = sonuc1x2(o.ms_h, o.ms_a);
+    const msTxt = `${{o.ms_h}}-${{o.ms_a}} <span style="color:#888">(${{SONUC_ADI[msKod]}})</span>`;
     return `<tr>
       <td>${{(o.tarih || '').slice(0, 10)}}</td>
       <td>${{o.ev_sahibi}} - ${{o.deplasman}}</td>
       <td>${{o.lig || '-'}}</td>
       <td>${{iyTxt}}</td>
-      <td>${{o.ms_h}}-${{o.ms_a}}</td>
+      <td>${{msTxt}}</td>
       <td>${{sonucTxt}}</td>
     </tr>`;
   }}).join('') || '<tr><td colspan="6" class="veriyok">Bu dilim icin ornek yok.</td></tr>';
@@ -270,17 +299,28 @@ function closeModal() {{
   document.getElementById('modalOverlay').style.display = 'none';
 }}
 
+let filtreMod = 'eslesen';
+
 function render() {{
   const market = document.getElementById('market').value;
-  const rows = matches.map(m => {{
+  let rows = matches.map(m => {{
     const sonuc = lookup(market, m.favori);
     return {{...m, sonuc}};
   }});
+  const toplamSayisi = rows.length;
+  if (filtreMod === 'eslesen') {{
+    rows = rows.filter(r => r.sonuc);
+  }}
   rows.sort((a, b) => {{
     const oa = a.sonuc ? a.sonuc.oran : -1;
     const ob = b.sonuc ? b.sonuc.oran : -1;
     return ob - oa;
   }});
+  const uyusanSayisi = matches.filter(m => lookup(market, m.favori)).length;
+  document.getElementById('ornekBilgi').textContent =
+    filtreMod === 'eslesen'
+      ? `${{uyusanSayisi}} / ${{toplamSayisi}} mac bu markette arsiv verisiyle uyusuyor`
+      : `${{toplamSayisi}} mac gosteriliyor (${{uyusanSayisi}} tanesi bu markette uyusuyor)`;
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = rows.map((r, i) => {{
     let oranTxt = '<span class="veriyok">veri yok</span>';
@@ -290,7 +330,7 @@ function render() {{
       const cls = r.sonuc.eslesme === 'birebir' ? 'birebir' : 'toleransli';
       oranTxt = `<span class="${{cls}}">%${{(r.sonuc.oran * 100).toFixed(1)}}</span>`;
       ornekTxt = r.sonuc.ornek.toLocaleString('tr-TR');
-      const etiket = r.sonuc.eslesme === 'birebir' ? 'birebir uyuşma' : 'toleranslı';
+      const etiket = r.sonuc.eslesme === 'birebir' ? 'kendi dilimi (güvenilir)' : 'komşu dilimden (az örnek)';
       eslesmeTxt = `<span class="badge ${{cls}}">${{etiket}}</span>`;
     }}
     const tiklanabilir = r.sonuc ? 'tiklanabilir' : '';
@@ -324,6 +364,16 @@ Object.entries(marketLabels).forEach(([key, label]) => {{
 }});
 sel.value = 'iy_over_05';
 sel.addEventListener('change', () => {{ closeModal(); render(); }});
+
+document.querySelectorAll('.tab').forEach(btn => {{
+  btn.addEventListener('click', () => {{
+    filtreMod = btn.dataset.mod;
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+    closeModal();
+    render();
+  }});
+}});
+
 render();
 </script>
 </body></html>"""

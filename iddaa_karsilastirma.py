@@ -133,6 +133,18 @@ PAGE_TEMPLATE = """<!doctype html>
   .tabs {{ display:flex; gap:4px; background:#1c1c1c; border:1px solid #444; border-radius:6px; padding:3px; }}
   .tab {{ background:none; border:none; color:#aaa; padding:6px 14px; border-radius:4px; font-size:13px; cursor:pointer; }}
   .tab.active {{ background:#0038ff; color:#fff; }}
+  .wizard-bar {{ display:flex; gap:12px; margin:20px 0; flex-wrap:wrap; }}
+  .wizard-btn {{ flex:1; min-width:220px; padding:14px 18px; border-radius:10px; border:1px solid #444;
+    font-size:15px; font-weight:600; cursor:pointer; color:#fff; text-align:left; }}
+  .wizard-btn.guvenli {{ background:linear-gradient(135deg,#0a5c20,#0a7d2c); }}
+  .wizard-btn.riskli {{ background:linear-gradient(135deg,#8a5200,#c98a00); }}
+  #kuponPanel {{ margin-bottom:8px; }}
+  .kupon-box {{ background:#181818; border:1px solid #333; border-radius:10px; padding:18px; margin-bottom:12px; }}
+  .kupon-box h3 {{ margin:0 0 10px 0; font-size:16px; }}
+  .kupon-ozet {{ display:flex; gap:24px; margin-top:12px; flex-wrap:wrap; }}
+  .kupon-ozet .kutu {{ background:#111; border:1px solid #333; border-radius:8px; padding:10px 16px; }}
+  .kupon-ozet .kutu .deger {{ font-size:20px; font-weight:700; }}
+  .kupon-ozet .kutu .etiket {{ color:#888; font-size:11px; text-transform:uppercase; }}
   select {{ background:#1c1c1c; color:#eee; border:1px solid #444; padding:8px 12px; border-radius:6px; font-size:14px; }}
   table {{ border-collapse: collapse; width:100%; margin-top:8px; }}
   th, td {{ padding:8px 12px; text-align:left; border-bottom:1px solid #333; font-size:14px; }}
@@ -158,6 +170,13 @@ PAGE_TEMPLATE = """<!doctype html>
 <body>
   <h1>Iddaa vs Arsiv Karsilastirma</h1>
   <p class="sub">{tarih_okunur} - {mac_sayisi} mac</p>
+
+  <div class="wizard-bar">
+    <button class="wizard-btn guvenli" id="btnGuvenli">🛡️ Günün En Güvenli Kuponu</button>
+    <button class="wizard-btn riskli" id="btnYuksekOran">🎯 Denenecek Yüksek Oranlı Kupon</button>
+  </div>
+  <div id="kuponPanel"></div>
+
   <div class="toolbar">
     <label for="market">Market:</label>
     <select id="market"></select>
@@ -301,6 +320,120 @@ function openModal(dilim, macAdi) {{
 function closeModal() {{
   document.getElementById('modalOverlay').style.display = 'none';
 }}
+
+// Kupon sihirbazlari (kullanici talebi 2026-08-25): "gunun en guvenli
+// kuponu" ve "yuksek oran denenecek kupon". ONEMLI DURUSTLUK NOTU: burada
+// gosterilen "kombine oran" GERCEK Iddaa odeme orani DEGIL - sadece
+// arsiv olasiliklarinin (bagimsizlik varsayimiyla) carpimindan NAIF
+// turetilmis bir tahmin (marj/korelasyon yok). Gercek market bazli Iddaa
+// oranlarini (sadece 1X2'yi degil) cekmiyoruz - bu yuzden "kesin oran"
+// diye sunulmuyor, sadece fikir/siralama amacli.
+const KUPON_MIN_ORNEK = 300;  // az orneke dayali "guvenli" secim olmasin
+// "MS/IY 0.5 Ust" (en az 1 gol) neredeyse her zaman tutuyor (%95+) - gercek
+// bahiste odemesi de yok denecek kadar dusuk (~1.02). Kupon sihirbazlarinda
+// anlamli bir secim degil, disariya birakildi.
+const KUPON_HARIC_MARKET = new Set(['ms_over_05', 'iy_over_05']);
+
+function tumMarketSecenekleri(m) {{
+  return Object.keys(marketLabels).filter(mk => !KUPON_HARIC_MARKET.has(mk)).map(mk => {{
+    const s = lookup(mk, m.favori);
+    return (s && s.ornek >= KUPON_MIN_ORNEK) ? {{market: mk, ...s}} : null;
+  }}).filter(Boolean);
+}}
+
+function enGuvenliKuponUret() {{
+  // Kullanici talebi: sabit 5 bacak degil, kombine oran EN AZ 5.00 olana
+  // kadar en guvenli (en yuksek olasilikli) bacaklari sirayla ekle - kac
+  // bacak gerekirse.
+  const HEDEF_ORAN = 5.0;
+  const MAKS_BACAK = 30;  // guvenlik siniri - hicbir zaman bu kadar surmez ama garanti olsun
+  const adaylar = matches.map(m => {{
+    const secenekler = tumMarketSecenekleri(m).filter(s => s.eslesme === 'birebir');
+    if (!secenekler.length) return null;
+    secenekler.sort((a, b) => b.oran - a.oran);
+    return {{...m, secim: secenekler[0]}};
+  }}).filter(Boolean);
+  adaylar.sort((a, b) => b.secim.oran - a.secim.oran);
+
+  const secilenler = [];
+  let kombineOran = 1;
+  for (const aday of adaylar) {{
+    if (kombineOran >= HEDEF_ORAN || secilenler.length >= MAKS_BACAK) break;
+    secilenler.push(aday);
+    kombineOran *= (1 / aday.secim.oran);
+  }}
+  return secilenler;
+}}
+
+function yuksekOranliKuponUret() {{
+  // Dar bant + az bacak (4) - genis bant/cok bacak (5) kombine olasiligi
+  // ~%0.5'e kadar dusurup 180x gibi gerceklikten kopuk oranlar veriyordu.
+  // Amac "yuksek ama hala akla yatkin denenecek" bir kupon.
+  const MIN_OLASILIK = 0.42, MAX_OLASILIK = 0.60;
+  const adaylar = matches.map(m => {{
+    const secenekler = tumMarketSecenekleri(m).filter(s => s.oran >= MIN_OLASILIK && s.oran <= MAX_OLASILIK);
+    if (!secenekler.length) return null;
+    secenekler.sort((a, b) => a.oran - b.oran);
+    return {{...m, secim: secenekler[0]}};
+  }}).filter(Boolean);
+  adaylar.sort((a, b) => a.secim.oran - b.secim.oran);
+  return adaylar.slice(0, 4);
+}}
+
+function renderKupon(legs, baslik, renkSinif) {{
+  const panel = document.getElementById('kuponPanel');
+  if (!legs.length) {{
+    panel.innerHTML = `<div class="kupon-box"><h3>${{baslik}}</h3>
+      <p class="veriyok">Bugunku maclarda bu kriterlere uyan yeterli secenek bulunamadi.</p></div>`;
+    return;
+  }}
+  const kombineOlasilik = legs.reduce((acc, l) => acc * l.secim.oran, 1);
+  const kombineOran = 1 / kombineOlasilik;
+  panel.innerHTML = `<div class="kupon-box">
+    <h3>${{baslik}}</h3>
+    <table>
+      <thead><tr><th>Saat</th><th>Mac</th><th>Market</th><th>Olasilik</th><th>Ornek</th><th>Guven</th></tr></thead>
+      <tbody>
+        ${{legs.map(l => `<tr>
+          <td>${{l.saat}}</td>
+          <td>${{l.home}} - ${{l.away}}</td>
+          <td>${{marketLabels[l.secim.market]}}</td>
+          <td class="${{renkSinif}}">%${{(l.secim.oran * 100).toFixed(1)}}</td>
+          <td>${{l.secim.ornek.toLocaleString('tr-TR')}}</td>
+          <td>${{l.secim.eslesme === 'birebir' ? 'kendi dilimi' : 'komşu dilimden'}}</td>
+        </tr>`).join('')}}
+      </tbody>
+    </table>
+    <div class="kupon-ozet">
+      <div class="kutu"><div class="deger">${{legs.length}}</div><div class="etiket">Bacak Sayısı</div></div>
+      <div class="kutu"><div class="deger">%${{(kombineOlasilik * 100).toFixed(1)}}</div><div class="etiket">Tahmini Toplam Olasılık</div></div>
+      <div class="kutu"><div class="deger">${{kombineOran.toFixed(2)}}</div><div class="etiket">Naif Kombine Oran</div></div>
+      <div class="kutu">
+        <div class="etiket">Yatırım (₺)</div>
+        <input type="number" id="yatirimMiktari" value="100" min="0" step="10"
+          style="width:90px;background:#111;color:#eee;border:1px solid #333;border-radius:6px;padding:4px 8px;font-size:16px;">
+      </div>
+      <div class="kutu"><div class="deger" id="potansiyelKazanc">${{(100 * kombineOran).toFixed(0)}} ₺</div><div class="etiket">Tahmini Getiri</div></div>
+    </div>
+    <p class="not" style="margin-top:12px;">⚠️ Bu bir Iddaa kuponu DEĞİL - "Naif Kombine Oran" gerçek Iddaa ödeme
+    oranlarından değil, arşiv olasılıklarının (bağımsızlık varsayımıyla) çarpımından hesaplandı. Gerçek market
+    bazlı Iddaa oranlarını çekmiyoruz, marj/korelasyon içermiyor - gerçek kuponda oran ve getiri FARKLI olacaktır.
+    Sadece hangi maçların/marketlerin arşive göre daha güvenli ya da daha yüksek potansiyelli olduğunu
+    göstermek için.</p>
+  </div>`;
+
+  document.getElementById('yatirimMiktari').addEventListener('input', (e) => {{
+    const yatirim = Number(e.target.value) || 0;
+    document.getElementById('potansiyelKazanc').textContent = `${{(yatirim * kombineOran).toFixed(0)}} ₺`;
+  }});
+}}
+
+document.getElementById('btnGuvenli').addEventListener('click', () => {{
+  renderKupon(enGuvenliKuponUret(), '🛡️ Günün En Güvenli Kuponu (kombine oran en az 5.00 olacak şekilde en güvenli seçimler)', 'birebir');
+}});
+document.getElementById('btnYuksekOran').addEventListener('click', () => {{
+  renderKupon(yuksekOranliKuponUret(), '🎯 Denenecek Yüksek Oranlı Kupon (orta olasılıklı, yüksek potansiyel 4 seçim)', 'toleransli');
+}});
 
 let filtreMod = 'eslesen';
 

@@ -329,10 +329,12 @@ function closeModal() {{
 // oranlarini (sadece 1X2'yi degil) cekmiyoruz - bu yuzden "kesin oran"
 // diye sunulmuyor, sadece fikir/siralama amacli.
 const KUPON_MIN_ORNEK = 300;  // az orneke dayali "guvenli" secim olmasin
-// "MS/IY 0.5 Ust" (en az 1 gol) neredeyse her zaman tutuyor (%95+) - gercek
-// bahiste odemesi de yok denecek kadar dusuk (~1.02). Kupon sihirbazlarinda
-// anlamli bir secim degil, disariya birakildi.
-const KUPON_HARIC_MARKET = new Set(['ms_over_05', 'iy_over_05']);
+// SADECE "MS 0.5 Ust" (90 dakikada en az 1 gol) neredeyse her zaman tutuyor
+// (%95+) - gercek bahiste odemesi de yok denecek kadar dusuk (~1.02),
+// kupon sihirbazlarinda anlamli degil. NOT: "IY 0.5 Ust" (ilk yaride en az
+// 1 gol, ~%55-70) BUNUN GIBI DEGIL - projenin ana konusu, trivial degil,
+// disarida BIRAKILMADI (once yanlislikla ikisi de haric tutulmustu).
+const KUPON_HARIC_MARKET = new Set(['ms_over_05']);
 
 function tumMarketSecenekleri(m) {{
   return Object.keys(marketLabels).filter(mk => !KUPON_HARIC_MARKET.has(mk)).map(mk => {{
@@ -342,23 +344,33 @@ function tumMarketSecenekleri(m) {{
 }}
 
 function enGuvenliKuponUret() {{
-  // Kullanici talebi: sabit 5 bacak degil, kombine oran EN AZ 5.00 olana
-  // kadar en guvenli (en yuksek olasilikli) bacaklari sirayla ekle - kac
-  // bacak gerekirse.
+  // Kullanici talebi: "cok mac oluyor, KG Var/IY Gol Olur gibi seylerle
+  // sentezle, 4-5 maks 6 mac olsun". Ilk deneme (%55-85 bandinda banttaki
+  // EN YUKSEGI secmek) hep "MS 1.5 Ust" (~%85) secip 6 bacakta bile 5.00'a
+  // ulasamadi (sadece 2.72x) - cunku o kadar yuksek olasilikli secimler
+  // odds'a az katki yapiyor. Simdi bant DARALTILDI (%55-72, "1.5 Ust"un
+  // tipik %80+ araligini disliyor, KG Var/IY Gol Var'in tipik araligini
+  // ICERIYOR) VE banttaki EN DUSUK olasilik (= en cok odds katkisi, hala
+  // guvenli) seciliyor - boylece 4-6 bacakla 5.00'a ulasmak cok daha
+  // gerceklesir hale geliyor.
   const HEDEF_ORAN = 5.0;
-  const MAKS_BACAK = 30;  // guvenlik siniri - hicbir zaman bu kadar surmez ama garanti olsun
+  const MAKS_BACAK = 6;
+  const MIN_BACAK = 4;
+  const BAND_MIN = 0.55, BAND_MAX = 0.72;
   const adaylar = matches.map(m => {{
-    const secenekler = tumMarketSecenekleri(m).filter(s => s.eslesme === 'birebir');
+    const secenekler = tumMarketSecenekleri(m)
+      .filter(s => s.eslesme === 'birebir' && s.oran >= BAND_MIN && s.oran <= BAND_MAX);
     if (!secenekler.length) return null;
-    secenekler.sort((a, b) => b.oran - a.oran);
+    secenekler.sort((a, b) => a.oran - b.oran);  // banttaki en cok odds katkisi yapan (en dusuk)
     return {{...m, secim: secenekler[0]}};
   }}).filter(Boolean);
-  adaylar.sort((a, b) => b.secim.oran - a.secim.oran);
+  adaylar.sort((a, b) => a.secim.oran - b.secim.oran);
 
   const secilenler = [];
   let kombineOran = 1;
   for (const aday of adaylar) {{
-    if (kombineOran >= HEDEF_ORAN || secilenler.length >= MAKS_BACAK) break;
+    if (secilenler.length >= MAKS_BACAK) break;
+    if (kombineOran >= HEDEF_ORAN && secilenler.length >= MIN_BACAK) break;
     secilenler.push(aday);
     kombineOran *= (1 / aday.secim.oran);
   }}
@@ -429,7 +441,7 @@ function renderKupon(legs, baslik, renkSinif) {{
 }}
 
 document.getElementById('btnGuvenli').addEventListener('click', () => {{
-  renderKupon(enGuvenliKuponUret(), '🛡️ Günün En Güvenli Kuponu (kombine oran en az 5.00 olacak şekilde en güvenli seçimler)', 'birebir');
+  renderKupon(enGuvenliKuponUret(), '🛡️ Günün En Güvenli Kuponu (4-6 maç, kombine oran hedefi 5.00)', 'birebir');
 }});
 document.getElementById('btnYuksekOran').addEventListener('click', () => {{
   renderKupon(yuksekOranliKuponUret(), '🎯 Denenecek Yüksek Oranlı Kupon (orta olasılıklı, yüksek potansiyel 4 seçim)', 'toleransli');

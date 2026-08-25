@@ -355,53 +355,84 @@ function tumMarketSecenekleri(m) {{
   }}).filter(Boolean);
 }}
 
-function enGuvenliKuponUret() {{
-  // Kullanici talebi: "cok mac oluyor, KG Var/IY Gol Olur gibi seylerle
-  // sentezle, 4-5 maks 6 mac olsun". Ilk deneme (%55-85 bandinda banttaki
-  // EN YUKSEGI secmek) hep "MS 1.5 Ust" (~%85) secip 6 bacakta bile 5.00'a
-  // ulasamadi (sadece 2.72x) - cunku o kadar yuksek olasilikli secimler
-  // odds'a az katki yapiyor. Simdi bant DARALTILDI (%55-72, "1.5 Ust"un
-  // tipik %80+ araligini disliyor, KG Var/IY Gol Var'in tipik araligini
-  // ICERIYOR) VE banttaki EN DUSUK olasilik (= en cok odds katkisi, hala
-  // guvenli) seciliyor - boylece 4-6 bacakla 5.00'a ulasmak cok daha
-  // gerceklesir hale geliyor.
-  const HEDEF_ORAN = 5.0;
-  const MAKS_BACAK = 6;
-  const MIN_BACAK = 4;
-  const BAND_MIN = 0.55, BAND_MAX = 0.72;
-  const adaylar = matches.map(m => {{
-    const secenekler = tumMarketSecenekleri(m)
-      .filter(s => s.eslesme === 'birebir' && s.oran >= BAND_MIN && s.oran <= BAND_MAX);
-    if (!secenekler.length) return null;
-    secenekler.sort((a, b) => a.oran - b.oran);  // banttaki en cok odds katkisi yapan (en dusuk)
-    return {{...m, secim: secenekler[0]}};
-  }}).filter(Boolean);
-  adaylar.sort((a, b) => a.secim.oran - b.secim.oran);
+// Kullanici geri bildirimi (2026-08-25): "karma yap diyorum hepsi ms2.5
+// ust olmasin". Eskiden her mac icin TEK (bandaki en dusuk olasilikli)
+// secim aliniyor, sonra hepsi olasiliga gore siralaniyordu - bircok
+// farkli mactan ayni market tipi (ornegin "MS 2.5 Ust") tesadufen en
+// cok "banttaki en dusuk" cikinca kupon TAMAMEN o markete doluyordu.
+// Simdi: her mac icin banttaki TUM secenekler adaya alinir, secim
+// sirasinda AYNI MARKET TIPI en fazla MAKS_AYNI_MARKET kez kullanilabilir
+// - farkli market tipleri (KG Var, Ust, MS1/X/2 vb.) zorla karistirilir.
+function cesitliSec(m, bandMin, bandMax, hedefOran, minBacak, maksBacak, maksAyniMarket) {{
+  const tumAdaylar = [];
+  matches.forEach(m2 => {{
+    tumMarketSecenekleri(m2)
+      .filter(s => s.eslesme === 'birebir' && s.oran >= bandMin && s.oran <= bandMax)
+      .forEach(s => tumAdaylar.push({{...m2, secim: s}}));
+  }});
+  tumAdaylar.sort((a, b) => a.secim.oran - b.secim.oran);  // en cok odds katkisi once
 
   const secilenler = [];
+  const kullanilanMac = new Set();
+  const marketSayaci = {{}};
   let kombineOran = 1;
-  for (const aday of adaylar) {{
-    if (secilenler.length >= MAKS_BACAK) break;
-    if (kombineOran >= HEDEF_ORAN && secilenler.length >= MIN_BACAK) break;
+  for (const aday of tumAdaylar) {{
+    if (secilenler.length >= maksBacak) break;
+    if (kombineOran >= hedefOran && secilenler.length >= minBacak) break;
+    const macAnahtari = `${{aday.home}}|${{aday.away}}|${{aday.saat}}`;
+    if (kullanilanMac.has(macAnahtari)) continue;  // ayni mactan ikinci bacak yok
+    const mk = aday.secim.market;
+    if ((marketSayaci[mk] || 0) >= maksAyniMarket) continue;  // cesitlilik icin atla
     secilenler.push(aday);
+    kullanilanMac.add(macAnahtari);
+    marketSayaci[mk] = (marketSayaci[mk] || 0) + 1;
     kombineOran *= (1 / aday.secim.oran);
   }}
   return secilenler;
 }}
 
+// Kullanici talebi (2026-08-25): "bi kg bi 2.5ust bi ms bi de iy gol
+// mantiginda hazirla" - sabit 4 kategoriden birer bacak: KG Var, MS 2.5
+// Ust, Mac Sonucu (1/X/2 - hangisi en guclu favoriyse), IY Gol Var. Her
+// kategori icin TUM bugunku maclar arasindan (henuz kullanilmamis bir
+// mactan) en yuksek olasilikli secimi alir.
+const SABIT_KATEGORILER = [
+  {{ad: 'KG Var', marketler: ['ms_kg']}},
+  {{ad: 'MS 2.5 Üst', marketler: ['ms_over_25']}},
+  {{ad: 'Maç Sonucu', marketler: ['ms_1', 'ms_x', 'ms_2']}},
+  {{ad: 'İY Gol Var', marketler: ['iy_over_05']}},
+];
+
+function enGuvenliKuponUret() {{
+  const kullanilanMac = new Set();
+  const secilenler = [];
+  for (const kategori of SABIT_KATEGORILER) {{
+    let enIyi = null;
+    matches.forEach(m => {{
+      const macAnahtari = `${{m.home}}|${{m.away}}|${{m.saat}}`;
+      if (kullanilanMac.has(macAnahtari)) return;
+      kategori.marketler.forEach(mk => {{
+        const s = lookup(mk, m.favori);
+        if (s && s.eslesme === 'birebir' && s.ornek >= KUPON_MIN_ORNEK) {{
+          if (!enIyi || s.oran > enIyi.secim.oran) {{
+            enIyi = {{...m, secim: {{market: mk, ...s}}}};
+          }}
+        }}
+      }});
+    }});
+    if (enIyi) {{
+      secilenler.push(enIyi);
+      kullanilanMac.add(`${{enIyi.home}}|${{enIyi.away}}|${{enIyi.saat}}`);
+    }}
+  }}
+  return secilenler;
+}}
+
 function yuksekOranliKuponUret() {{
-  // Dar bant + az bacak (4) - genis bant/cok bacak (5) kombine olasiligi
-  // ~%0.5'e kadar dusurup 180x gibi gerceklikten kopuk oranlar veriyordu.
-  // Amac "yuksek ama hala akla yatkin denenecek" bir kupon.
-  const MIN_OLASILIK = 0.42, MAX_OLASILIK = 0.60;
-  const adaylar = matches.map(m => {{
-    const secenekler = tumMarketSecenekleri(m).filter(s => s.oran >= MIN_OLASILIK && s.oran <= MAX_OLASILIK);
-    if (!secenekler.length) return null;
-    secenekler.sort((a, b) => a.oran - b.oran);
-    return {{...m, secim: secenekler[0]}};
-  }}).filter(Boolean);
-  adaylar.sort((a, b) => a.secim.oran - b.secim.oran);
-  return adaylar.slice(0, 4);
+  // Dar bant + az bacak - genis bant/cok bacak kombine olasiligi asiri
+  // dusurup gerceklikten kopuk oranlar veriyordu. Amac "yuksek ama hala
+  // akla yatkin denenecek" bir kupon.
+  return cesitliSec(null, 0.42, 0.60, 999, 4, 4, 1);
 }}
 
 function renderKupon(legs, baslik, renkSinif) {{
@@ -453,7 +484,7 @@ function renderKupon(legs, baslik, renkSinif) {{
 }}
 
 document.getElementById('btnGuvenli').addEventListener('click', () => {{
-  renderKupon(enGuvenliKuponUret(), '🛡️ Günün En Güvenli Kuponu (4-6 maç, kombine oran hedefi 5.00)', 'birebir');
+  renderKupon(enGuvenliKuponUret(), '🛡️ Günün En Güvenli Kuponu (1 KG Var + 1 MS 2.5 Üst + 1 Maç Sonucu + 1 İY Gol Var)', 'birebir');
 }});
 document.getElementById('btnYuksekOran').addEventListener('click', () => {{
   renderKupon(yuksekOranliKuponUret(), '🎯 Denenecek Yüksek Oranlı Kupon (orta olasılıklı, yüksek potansiyel 4 seçim)', 'toleransli');

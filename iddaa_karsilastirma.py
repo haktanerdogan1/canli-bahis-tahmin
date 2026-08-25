@@ -13,6 +13,10 @@ ESLESME ETIKETI: bir macin favori gucu dustugu %5'lik dilimde secili market
 icin yeterli ornek varsa "birebir uyusma", yoksa komsu dilime (±0.05
 tolerans) bakilip bulunursa "toleranslı" yaziliyor, o da yoksa "veri yok".
 
+GECMIS ORNEK MACLAR (kullanici talebi 2026-08-25): bir maca tiklayinca
+AYNI dilime dusen gercek gecmis maclar (takim adi + IY/MS skoru) acilir -
+secili markete gore her ornegin tuttu/tutmadi durumu isaretlenir.
+
 NASIL CALISIR:
   1) Iddaa.com'un kendi canli API'sinden BUGUN oynanacak, henuz baslamamis
      maclarin 1X2 acilis oranlarini ceker (iddaa_odds_client.py ile AYNI
@@ -57,6 +61,12 @@ def fetch_market_bins():
     r = requests.get(f"{API_BASE}/api/archive-market-bins", timeout=20)
     r.raise_for_status()
     return r.json()
+
+
+def fetch_bin_examples():
+    r = requests.get(f"{API_BASE}/api/archive-bin-examples", params={"ornek": 8}, timeout=30)
+    r.raise_for_status()
+    return r.json().get("dilimler", {})
 
 
 def _pick_1x2(markets):
@@ -127,6 +137,15 @@ PAGE_TEMPLATE = """<!doctype html>
   .badge.birebir {{ background:#0a7d2c22; }}
   .badge.toleransli {{ background:#c98a0022; }}
   .not {{ color:#777; font-size:12px; margin-top:20px; }}
+  tr.tiklanabilir {{ cursor:pointer; }}
+  .modal-overlay {{ position:fixed; inset:0; background:#000a; display:flex; align-items:center; justify-content:center; z-index:10; }}
+  .modal {{ background:#181818; border:1px solid #333; border-radius:10px; padding:20px; width:min(720px, 92vw); max-height:80vh; overflow:auto; }}
+  .modal-header {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }}
+  .modal-header h2 {{ font-size:16px; margin:0; }}
+  .modal-close {{ background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; }}
+  .modal p.hint {{ color:#888; font-size:12px; margin-top:0; }}
+  .hit {{ color:#0a7d2c; font-weight:600; }}
+  .miss {{ color:#8a2020; }}
 </style></head>
 <body>
   <h1>Iddaa vs Arsiv Karsilastirma</h1>
@@ -145,12 +164,28 @@ PAGE_TEMPLATE = """<!doctype html>
   <p class="not">Favori gucu = 1X2 oranlari marjdan arindirilip (de-vig) favorinin gercek kazanma ihtimali.
   Arsiv oranlari 33.000+ (bazi marketlerde 100.000+) maclik gecmis arsivde AYNI favori gucune (%5'lik dilim)
   sahip maclarin gercek sonuc oranidir. "Birebir uyuşma" = o dilimde yeterli ornek var. "Toleranslı" = o dilim
-  zayifti, komsu (±0.05) dilime bakildi. Bu sayfa hicbir sinyale/bota baglanmiyor, sadece bilgi amaclidir.</p>
+  zayifti, komsu (±0.05) dilime bakildi. Bir satira tiklayinca ayni dilime dusen gercek gecmis maclari
+  gorebilirsin. Bu sayfa hicbir sinyale/bota baglanmiyor, sadece bilgi amaclidir.</p>
+
+  <div id="modalOverlay" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle"></h2>
+        <button class="modal-close" id="modalClose">×</button>
+      </div>
+      <p class="hint" id="modalHint"></p>
+      <table>
+        <thead><tr><th>Tarih</th><th>Mac</th><th>Lig</th><th>İY</th><th>MS</th><th>Secili markette</th></tr></thead>
+        <tbody id="modalBody"></tbody>
+      </table>
+    </div>
+  </div>
 
 <script>
 const marketLabels = {market_labels_json};
 const bins = {bins_json};
 const matches = {matches_json};
+const binExamples = {bin_examples_json};
 
 function binKeyFor(favori) {{
   let lo = Math.min(Math.floor(favori / 0.05) * 0.05, 0.95);
@@ -175,6 +210,66 @@ function lookup(market, favori) {{
   return null;
 }}
 
+function sonuc1x2(h, a) {{
+  if (h > a) return '1';
+  if (h === a) return '0';
+  return '2';
+}}
+
+function marketOutcomes(hs, aws, fhh, fha) {{
+  const out = {{
+    ms_kg: (hs > 0 && aws > 0) ? 1 : 0,
+    ms_over_05: (hs + aws) > 0.5 ? 1 : 0,
+    ms_over_15: (hs + aws) > 1.5 ? 1 : 0,
+    ms_over_25: (hs + aws) > 2.5 ? 1 : 0,
+    ms_over_35: (hs + aws) > 3.5 ? 1 : 0,
+    ms_over_45: (hs + aws) > 4.5 ? 1 : 0,
+  }};
+  if (fhh === null || fha === null || fhh === undefined || fha === undefined) return out;
+  const ikinciH = hs - fhh, ikinciA = aws - fha;
+  out.iy_kg = (fhh > 0 && fha > 0) ? 1 : 0;
+  out.iy2_kg = (ikinciH > 0 && ikinciA > 0) ? 1 : 0;
+  out.iy_ve_iy2_kg = (fhh > 0 && fha > 0 && ikinciH > 0 && ikinciA > 0) ? 1 : 0;
+  out.iy_over_05 = (fhh + fha) > 0.5 ? 1 : 0;
+  out.iy_over_15 = (fhh + fha) > 1.5 ? 1 : 0;
+  out.iy_over_25 = (fhh + fha) > 2.5 ? 1 : 0;
+  const combo = 'iyms_' + sonuc1x2(fhh, fha) + sonuc1x2(hs, aws);
+  Object.keys(marketLabels).forEach(k => {{
+    if (k.startsWith('iyms_')) out[k] = (k === combo) ? 1 : 0;
+  }});
+  return out;
+}}
+
+function openModal(dilim, macAdi) {{
+  const market = document.getElementById('market').value;
+  const ornekler = binExamples[dilim] || [];
+  document.getElementById('modalTitle').textContent = `${{macAdi}} — favori dilimi ${{dilim}}`;
+  document.getElementById('modalHint').textContent =
+    `Ayni dilime dusen ${{ornekler.length}} gercek gecmis mac, "${{marketLabels[market]}}" marketine gore:`;
+  document.getElementById('modalBody').innerHTML = ornekler.map(o => {{
+    const sonuc = marketOutcomes(o.ms_h, o.ms_a, o.iy_h, o.iy_a);
+    const tutti = sonuc[market];
+    let sonucTxt = '<span class="veriyok">bilinmiyor</span>';
+    if (tutti !== undefined) {{
+      sonucTxt = tutti ? '<span class="hit">✓ tuttu</span>' : '<span class="miss">✗ tutmadi</span>';
+    }}
+    const iyTxt = (o.iy_h === null || o.iy_h === undefined) ? '-' : `${{o.iy_h}}-${{o.iy_a}}`;
+    return `<tr>
+      <td>${{(o.tarih || '').slice(0, 10)}}</td>
+      <td>${{o.ev_sahibi}} - ${{o.deplasman}}</td>
+      <td>${{o.lig || '-'}}</td>
+      <td>${{iyTxt}}</td>
+      <td>${{o.ms_h}}-${{o.ms_a}}</td>
+      <td>${{sonucTxt}}</td>
+    </tr>`;
+  }}).join('') || '<tr><td colspan="6" class="veriyok">Bu dilim icin ornek yok.</td></tr>';
+  document.getElementById('modalOverlay').style.display = 'flex';
+}}
+
+function closeModal() {{
+  document.getElementById('modalOverlay').style.display = 'none';
+}}
+
 function render() {{
   const market = document.getElementById('market').value;
   const rows = matches.map(m => {{
@@ -187,7 +282,7 @@ function render() {{
     return ob - oa;
   }});
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = rows.map(r => {{
+  tbody.innerHTML = rows.map((r, i) => {{
     let oranTxt = '<span class="veriyok">veri yok</span>';
     let ornekTxt = '-';
     let eslesmeTxt = '<span class="veriyok">-</span>';
@@ -198,7 +293,8 @@ function render() {{
       const etiket = r.sonuc.eslesme === 'birebir' ? 'birebir uyuşma' : 'toleranslı';
       eslesmeTxt = `<span class="badge ${{cls}}">${{etiket}}</span>`;
     }}
-    return `<tr>
+    const tiklanabilir = r.sonuc ? 'tiklanabilir' : '';
+    return `<tr class="${{tiklanabilir}}" data-idx="${{i}}">
       <td>${{r.saat}}</td>
       <td>${{r.home}} - ${{r.away}}</td>
       <td>${{r.odd_1.toFixed(2)}} / ${{r.odd_x.toFixed(2)}} / ${{r.odd_2.toFixed(2)}}</td>
@@ -208,7 +304,17 @@ function render() {{
       <td>${{eslesmeTxt}}</td>
     </tr>`;
   }}).join('');
+
+  tbody.querySelectorAll('tr.tiklanabilir').forEach((tr, i) => {{
+    const r = rows[Number(tr.dataset.idx)];
+    tr.addEventListener('click', () => openModal(r.sonuc.dilim, `${{r.home}} - ${{r.away}}`));
+  }});
 }}
+
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modalOverlay').addEventListener('click', (e) => {{
+  if (e.target.id === 'modalOverlay') closeModal();
+}});
 
 const sel = document.getElementById('market');
 Object.entries(marketLabels).forEach(([key, label]) => {{
@@ -217,7 +323,7 @@ Object.entries(marketLabels).forEach(([key, label]) => {{
   sel.appendChild(opt);
 }});
 sel.value = 'iy_over_05';
-sel.addEventListener('change', render);
+sel.addEventListener('change', () => {{ closeModal(); render(); }});
 render();
 </script>
 </body></html>"""
@@ -232,6 +338,10 @@ def main():
     matches = fetch_today_matches()
     print(f"[iddaa_karsilastirma] {len(matches)} mac bulundu (bugun, henuz baslamamis).")
 
+    print("[iddaa_karsilastirma] Dilim basina gecmis ornek maclar cekiliyor...")
+    bin_examples = fetch_bin_examples()
+    print(f"[iddaa_karsilastirma] {sum(len(v) for v in bin_examples.values())} ornek mac yuklendi.")
+
     now = datetime.datetime.now(TR_TZ)
     html = PAGE_TEMPLATE.format(
         tarih=now.strftime("%d/%m/%Y"),
@@ -240,6 +350,7 @@ def main():
         market_labels_json=json.dumps(market_data.get("market_labels", {}), ensure_ascii=False),
         bins_json=json.dumps(market_data.get("bins", {}), ensure_ascii=False),
         matches_json=json.dumps(matches, ensure_ascii=False),
+        bin_examples_json=json.dumps(bin_examples, ensure_ascii=False),
     )
 
     fd, path = tempfile.mkstemp(suffix=".html", prefix="iddaa_karsilastirma_")

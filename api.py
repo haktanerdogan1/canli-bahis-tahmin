@@ -564,6 +564,50 @@ def archive_market_bins():
     return {"success": True, "market_labels": MARKET_LABELS, "bins": bins}
 
 
+@app.get("/api/archive-bin-examples")
+def archive_bin_examples(ornek: int = 8):
+    """Kullanici talebi (2026-08-25): yerel iddaa_karsilastirma.py aracinda
+    bir maca tiklayinca AYNI favori gucu dilimine (%5) dusen GERCEK gecmis
+    maclari (takim adi + ilk yari/mac sonu skoru) gosterebilsin. Market'e
+    OZEL degil - HAM skorlari doner, hangi marketi tuttugunu (KG var, Ust,
+    IY/MS kombinasyonu) client tarafinda JS hesaplar (odds_profile.py'deki
+    _market_outcomes ile ayni mantik) - boylece secili market degisince
+    ayni ornek listesi yeniden kullanilir, tekrar istek atilmaz.
+
+    Public (admin secret gerekmiyor) - sadece tarihsel mac skorlari/takim
+    adlari, /api/archive-market-bins ile ayni hassasiyet seviyesinde."""
+    ornek = max(1, min(ornek, 20))
+    import odds_profile
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT o.home_win_odds, o.draw_odds, o.away_win_odds,
+               m.home_team_id, m.away_team_id, m.league_name, m.kickoff_time,
+               m.home_score, m.away_score, m.first_half_home_score, m.first_half_away_score
+        FROM prematch_odds o JOIN matches m ON m.id = o.match_id
+        WHERE o.home_win_odds IS NOT NULL AND o.draw_odds IS NOT NULL
+          AND o.away_win_odds IS NOT NULL AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+        ORDER BY RANDOM()
+    ''')
+    dilimler = {}
+    for ev, bx, dep, home, away, lig, kickoff, hs, aws, fhh, fha in cur.fetchall():
+        p = odds_profile.devig_1x2(ev, bx, dep)
+        if not p:
+            continue
+        favori = max(p[0], p[2])
+        b = odds_profile._fine_bin(favori)
+        lst = dilimler.setdefault(b, [])
+        if len(lst) >= ornek:
+            continue
+        lst.append({
+            "ev_sahibi": home, "deplasman": away, "lig": lig, "tarih": kickoff,
+            "iy_h": fhh, "iy_a": fha, "ms_h": hs, "ms_a": aws,
+        })
+    conn.close()
+    return {"success": True, "dilimler": dilimler}
+
+
 @app.get("/api/admin/iddaa-odds-preview")
 def iddaa_odds_preview(request: Request, ornekler: int = 0):
     """Kullanici talebi (2026-08-24): 3 kaba bant yerine 33.525 maclik

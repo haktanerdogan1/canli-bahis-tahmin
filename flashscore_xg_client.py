@@ -1,10 +1,16 @@
 """Flashscore canli veri istemcisi - YEREL makinede (terminalde) calisir, Railway'de DEGIL.
 
-NOT (2026-08-24): bu script Railway'de 'flashscore-worker' adinda ayri bir
-serviste de calistirilmisti (Chromium sürekli kaynak tukenip cokuyordu,
-bkz. git log). Kullanici talebiyle Railway kotasi bosa gitmesin diye o
-servis 'sleep infinity' ile boşta tutuluyor - bu script SADECE yerel
-launchd (com.matchrix.flashscoreclient) uzerinden calisiyor.
+NOT (2026-08-24, 2026-08-26'da tekrar dogrulandi): bu script Railway'de
+'flashscore-worker' adinda ayri bir serviste de calistirilmisti (Chromium
+sürekli kaynak tukenip cokuyordu, bkz. git log). Kullanici talebiyle
+Railway kotasi bosa gitmesin diye o servis 'sleep infinity' ile boşta
+tutuluyor - bu script SADECE yerel launchd (com.matchrix.flashscoreclient)
+veya terminalde manuel calistirma uzerinden calisiyor. ONEMLI: Railway'in
+MCP 'update-service' + 'redeploy' kombinasyonu startCommand degisikligini
+guvenilir sekilde UYGULAMIYOR (redeploy eski cache'li deployment'i
+yeniden calistiriyor, config 'sleep infinity' desin bile) - bu servisi
+gercekten durdurmak icin repo'ya bir push ile YENI bir build tetiklemek
+gerekiyor, sadece redeploy yeterli degil.
 
 TARIHCE: Once sadece xG zenginlestirmesi icin yazildi (flashscore_xg_bot.py'yi
 Railway'in 'web' servisine 4. surec olarak eklemek denendi - Chromium

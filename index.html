@@ -2246,9 +2246,14 @@
         }
 
         // Init: once uyelik durumunu ogren, sonra veriyi cek
+        // NOT (2026-08-26 bugfix): burada ayrica bir de setInterval(fetchData,15000)
+        // vardi - fetchData() kendi icinde zaten cevap gelince refreshTimer ile
+        // kendini 15sn sonraya yeniden zamanliyor (bkz. fonksiyon sonu). Iki ayri
+        // zamanlayici oldugu icin /api/live-matches istekleri ust uste yigiliyor,
+        // o endpoint zaten yavas oldugundan (~9sn) tarayicida hic tamamlanmiyor ve
+        // "bugun" sayaci + mac listesi sonsuza kadar "Yukleniyor" da kaliyordu.
         updateNotifButton();
         checkAuth().then(fetchData);
-        setInterval(fetchData, 15000);
         startHeroMatrixRain();
     </script>
 </body>

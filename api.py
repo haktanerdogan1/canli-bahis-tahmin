@@ -1654,7 +1654,9 @@ def get_ozet_donem(donem: str = "tum"):
     detaylar/kalibrasyon admin paneline tasindi (bkz. /api/admin/panel/
     istatistikler); ana sitede artik SADECE bu sadelestirilmis donem ozeti
     gosteriliyor."""
-    if donem == "hafta":
+    if donem == "bugun":
+        where = "date(created_at, '+3 hours') = date('now', '+3 hours')"
+    elif donem == "hafta":
         # Bu haftanin Pazartesi'si (Turkiye saatiyle +3): 6 gun geri gidip
         # ileri dogru en yakin Pazartesi'ye (weekday 1) yuvarla.
         where = "date(created_at, '+3 hours') >= date('now', '+3 hours', '-6 days', 'weekday 1')"

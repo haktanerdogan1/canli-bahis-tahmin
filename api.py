@@ -5,6 +5,8 @@ import sqlite3
 import os
 import json
 import secrets
+import time
+from collections import defaultdict, deque
 from urllib.parse import urlencode
 
 import requests
@@ -1131,6 +1133,28 @@ class Credentials(BaseModel):
     password: str
 
 
+# Lansman oncesi (2026-08-28) eklendi: giris/kayit uclarinda hicbir deneme
+# siniri yoktu - sinirsiz sifre denemesi / sahte hesap acma riski. Basit,
+# bellek-ici kayan pencere: ayni IP+e-posta kombinasyonu 15 dakikada en fazla
+# 8 kez denenebilir. Surec yeniden baslarsa sifirlanir (kalici depolama
+# gerektirmeyecek kadar hafif bir koruma - amac botlari yavaslatmak).
+_RATE_LIMIT_WINDOW_SECONDS = 900
+_RATE_LIMIT_MAX_ATTEMPTS = 8
+_rate_limit_hits: dict[str, deque] = defaultdict(deque)
+
+
+def _rate_limited(request: Request, email: str) -> bool:
+    key = f"{request.client.host if request.client else '?'}:{auth.normalize_email(email)}"
+    now = time.time()
+    hits = _rate_limit_hits[key]
+    while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
+        hits.popleft()
+    if len(hits) >= _RATE_LIMIT_MAX_ATTEMPTS:
+        return True
+    hits.append(now)
+    return False
+
+
 def _set_session_cookie(response: Response, user_id: int, request: Request):
     token = auth.create_session_token(user_id)
     # https uzerinden servis ediliyorsa cookie'yi sadece guvenli baglantida gonder
@@ -1149,6 +1173,8 @@ def _set_session_cookie(response: Response, user_id: int, request: Request):
 
 @app.post("/api/register")
 def register(creds: Credentials, request: Request, response: Response):
+    if _rate_limited(request, creds.email):
+        return {"success": False, "error": "Çok fazla deneme yapıldı. Birkaç dakika sonra tekrar deneyin."}
     user_id, error = auth.create_user(creds.email, creds.password)
     if error:
         return {"success": False, "error": error}
@@ -1158,6 +1184,8 @@ def register(creds: Credentials, request: Request, response: Response):
 
 @app.post("/api/login")
 def login(creds: Credentials, request: Request, response: Response):
+    if _rate_limited(request, creds.email):
+        return {"success": False, "error": "Çok fazla deneme yapıldı. Birkaç dakika sonra tekrar deneyin."}
     user_id, error = auth.authenticate(creds.email, creds.password)
     if error:
         return {"success": False, "error": error}
@@ -1424,21 +1452,12 @@ def get_live_matches(request: Request):
     today_tr = conn.execute("SELECT date('now', '+3 hours')").fetchone()[0]
     conn.close()
 
-    # Urun plani: giris yapmamis ziyaretci bile "bugunun" ilk 3 acik tahminini
-    # tam icerikle gorur (bkz. Tahmin_Uygulamasi_Urun_ve_Lansman_Plani.pdf, "Temel
-    # kullanici yolculugu"). En erken yayinlanan 3 PENDING sinyal secilir.
-    # NOT: Pro/ucretsiz uye ayrimi henuz yok - odeme entegrasyonu (StoreKit) gelene
-    # kadar mevcut uyelik (is_member) "Pro" icin gecici vekil olarak kullaniliyor.
-    todays_pending = [e for e in results if e["outcome"] == "PENDING" and e["signal_date"] == today_tr]
-    todays_pending.sort(key=lambda e: e["created_at"] or "")
-    for e in todays_pending[:3]:
-        e["_free_today"] = True
-
+    # Kullanici talebi (2026-08-28, lansman oncesi): ucretsiz onizleme kaldirildi -
+    # uye olmayan HICBIR tahmini goremez, gunun ilk 3'u istisnasi da dahil.
     for chosen in results:
         chosen.pop("created_at", None)
-        is_free_today_pick = chosen.pop("_free_today", False)
 
-        if not is_member and not is_free_today_pick:
+        if not is_member:
             # UYE DEGILSE VE gunun ucretsiz 3'unden biri DEGILSE HICBIR SEY
             # gonderilmez - sadece tahmin degil, hangi macin takip edildigi de
             # (takim adi, skor, dakika, lig, logo, match_id). Kullanici talebi:
@@ -1964,75 +1983,6 @@ def get_monitor(request: Request):
         "maclar": maclar, "sinyaller": sinyaller, "botlar": botlar,
     }
 
-@app.get("/api/results")
-def get_results():
-    conn = connect()
-    cursor = conn.cursor()
-    # fix the error: use created_at instead of updated_at since it wasn't defined
-    cursor.execute('''
-        SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.minute,
-               p.market_name, p.probability, p.confidence_level, p.prediction_status, m.league_name, m.league_logo
-        FROM matches m
-        JOIN model_predictions p ON m.id = p.match_id
-        WHERE p.prediction_status IN ('WON', 'LOST')
-        ORDER BY m.league_name ASC, p.created_at DESC
-        LIMIT 50
-    ''')
-    rows = cursor.fetchall()
-    conn.close()
-
-    results = []
-    for r in rows:
-        results.append({
-            "home_team": r[0],
-            "away_team": r[1],
-            "home_score": r[2],
-            "away_score": r[3],
-            "minute": r[4],
-            "market": r[5],
-            "probability": round(r[6], 3),
-            "confidence": r[7],
-            "status": r[8],
-            "league_name": r[9] if r[9] else "Geçmiş Alarmlar",
-            "league_logo": r[10] if r[10] else ""
-        })
-
-    return {"success": True, "data": results}
-
-@app.get("/api/all-live")
-def get_all_live():
-    conn = connect()
-    cursor = conn.cursor()
-    # status in matches table indicates '1st half', '2nd half', 'Halftime' etc.
-    cursor.execute('''
-        SELECT id, home_team_id, away_team_id, home_score, away_score, minute, status, league_name, league_logo, home_team_logo, away_team_logo
-        FROM matches
-        WHERE status NOT IN ('Ended', 'FT', 'Canceled', 'FINISHED', 'ABANDONED')
-        ORDER BY league_name ASC, minute DESC
-    ''')
-    rows = cursor.fetchall()
-    conn.close()
-
-    results = []
-    for r in rows:
-        results.append({
-            "match_id": r[0],
-            "home_team": r[1],
-            "away_team": r[2],
-            "home_score": r[3],
-            "away_score": r[4],
-            "minute": r[5],
-            "status": r[6],
-            "league_name": r[7] if r[7] else "Diğer Ligler",
-            "league_logo": r[8] if r[8] else "",
-            "home_logo": r[9] if r[9] else f"https://ui-avatars.com/api/?name={r[1].replace(' ', '+')}&background=1f2937&color=00e5ff",
-            "away_logo": r[10] if r[10] else f"https://ui-avatars.com/api/?name={r[2].replace(' ', '+')}&background=1f2937&color=00e5ff",
-            "market": "Beklemede",
-            "probability": 0.0,
-            "confidence": "Analiz Ediliyor"
-        })
-
-    return {"success": True, "data": results}
 
 @app.get("/api/match/{match_id}")
 def get_match_detail(match_id: int, request: Request):

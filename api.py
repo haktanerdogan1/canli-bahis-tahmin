@@ -1853,6 +1853,12 @@ def get_ozet(request: Request):
     cur.execute("SELECT COUNT(*) FROM consensus_predictions WHERE decision='signal' AND outcome IS NULL")
     pending = cur.fetchone()[0]
 
+    # Anasayfadaki "+500 Veri Kaynagi" rozeti sabit yaziliydi (kullanici
+    # talebi, 2026-08-28: "gercek yap") - benzersiz lig/turnuva sayisi,
+    # verinin gercekte kac farkli kaynaktan geldiginin olculebilir bir vekili.
+    cur.execute("SELECT COUNT(DISTINCT league_name) FROM matches WHERE league_name IS NOT NULL AND league_name != ''")
+    lig_sayisi = cur.fetchone()[0]
+
     # Bugun (Turkiye saatiyle, UTC+3 - Turkiye yaz saati uygulamiyor) PAYLASILAN
     # (uretilme tarihine gore) tum sinyaller, sonuc durumuna gore kirilmis -
     # genel (tum-zamanlar) seridin hemen altinda ikinci, gune ozel bir serit
@@ -1878,6 +1884,7 @@ def get_ozet(request: Request):
         "isabet_orani": round(won / settled, 3) if settled else None,
         "bekleyen": pending,
         "gozlem_disi": void,
+        "lig_sayisi": lig_sayisi,
         "bugun_kazanan": bugun_kazanan,
         "bugun_kaybeden": bugun_kaybeden,
         # VOID (gozlem disi) artik kalici bir kategori degil - reconcile_void_signals()

@@ -1204,7 +1204,7 @@
                     hazır analizleri incelemek kalır.
                 </p>
                 <div style="position:relative; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-                    <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> +500 Veri Kaynağı</span>
+                    <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> <span id="heroLeagueCount">+500</span> Veri Kaynağı</span>
                     <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: <span id="heroMonthlyRate">—</span></span>
                 </div>
             </div>
@@ -2485,6 +2485,19 @@
                 if (!el) return;
                 el.innerText = (d.success && d.isabet_orani != null)
                     ? `%${Math.round(d.isabet_orani * 100)}` : '—';
+            } catch(e) {}
+        })();
+
+        // "+500 Veri Kaynagi" da sabit yaziliydi - gercek benzersiz lig sayisiyla
+        // dolduruluyor (kullanici talebi, 2026-08-28).
+        (async function loadHeroLeagueCount(){
+            try {
+                const res = await fetch('/api/ozet');
+                const d = await res.json();
+                const el = document.getElementById('heroLeagueCount');
+                if (el && d.success && d.lig_sayisi != null) {
+                    el.innerText = `+${d.lig_sayisi}`;
+                }
             } catch(e) {}
         })();
     </script>

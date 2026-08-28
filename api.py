@@ -1143,15 +1143,25 @@ _RATE_LIMIT_MAX_ATTEMPTS = 8
 _rate_limit_hits: dict[str, deque] = defaultdict(deque)
 
 
+def _client_ip(request: Request) -> str:
+    # Railway'in kendi ic proxy'si her istekte FARKLI bir dahili IP (100.64.x.x,
+    # CGNAT araligi) ile gorunuyor - request.client.host guvenilmez (2026-08-28'de
+    # canli test sirasinda ayni curl kaynagindan 3 istek 3 farkli IP verdi, rate
+    # limit hicbir zaman tetiklenmedi). Gercek istemci IP'si X-Forwarded-For'un
+    # ILK degeri (proxy zinciri: client -> Railway edge -> ... -> bu servis).
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
 def _rate_limited(request: Request, email: str) -> bool:
-    key = f"{request.client.host if request.client else '?'}:{auth.normalize_email(email)}"
+    key = f"{_client_ip(request)}:{auth.normalize_email(email)}"
     now = time.time()
     hits = _rate_limit_hits[key]
     while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
         hits.popleft()
-    blocked = len(hits) >= _RATE_LIMIT_MAX_ATTEMPTS
-    print(f"[ratelimit-debug] key={key!r} hits_before={len(hits)} blocked={blocked}", flush=True)
-    if blocked:
+    if len(hits) >= _RATE_LIMIT_MAX_ATTEMPTS:
         return True
     hits.append(now)
     return False

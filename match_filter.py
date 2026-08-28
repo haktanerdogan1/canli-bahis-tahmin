@@ -11,6 +11,14 @@ KNOWN_LEAGUE_NAMES = {
     "uefa champions league", "uefa europa league", "uefa conference league",
 }
 
+# Kullanici talebi (2026-08-28, acil): sike iddialari okunan ligler - takim
+# tanidik olsa bile (KNOWN_TEAMS/arsiv uzerinden gecebilirdi) bu liglerden
+# ARTIK HIC sinyal uretilmesin. is_known_match() en basta kontrol eder,
+# diger tum kademelerden ONCE reddeder.
+BLOCKED_LEAGUE_NAMES = {
+    "concacaf central american cup",
+}
+
 KNOWN_TEAMS = {
     # Süper Lig
     "galatasaray", "fenerbahçe", "fenerbahce", "beşiktaş", "besiktas", "trabzonspor",
@@ -94,6 +102,8 @@ def is_known_match(league_name, home_name, away_name):
       4. Takim Iddaa arsivinde var mi (veriye dayali, en genis kapsam)
     """
     ln = (league_name or "").strip().lower()
+    if ln in BLOCKED_LEAGUE_NAMES:
+        return False
     if ln in KNOWN_LEAGUE_NAMES:
         return True
     if "romania" in ln:

@@ -417,6 +417,20 @@ body::before{
     </div>
   </div>
   <div class="stat-row" id="statRowToday"></div>
+  <div id="kasaCard" style="display:none; margin:14px 20px; padding:14px 16px; border:1px solid var(--line); background:var(--surface);">
+    <div style="display:flex; align-items:center; gap:8px; font-family:'Space Grotesk'; font-weight:700; font-size:0.8rem; color:var(--ink); margin-bottom:8px; text-transform:uppercase; letter-spacing:1px;">
+      <i class="fa-solid fa-shield-halved" style="color:var(--accent);"></i> Kasanı Nasıl Yönetmelisin?
+    </div>
+    <div style="color:var(--ink-soft); font-size:0.76rem; line-height:1.6;">
+      Son 30 günde haftada ortalama <b style="color:var(--ink);" id="kasaHaftalik">-</b> sinyal paylaştık,
+      isabet oranımız <b style="color:var(--accent);" id="kasaIsabet">-</b>. Her sinyal kazanmaz, kayıp seriler normaldir.
+      Haftanı karlı kapatmanın yolu: <b style="color:var(--ink);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>,
+      kaybedince bahsi büyütme, göze alamayacağın parayla oynama.
+    </div>
+    <div style="color:var(--ink-faint); font-size:0.62rem; margin-top:8px;">
+      Genel kasa-yönetimi bilgilendirmesidir, kişisel finansal tavsiye değildir.
+    </div>
+  </div>
   <div class="section-title"><i class="fa-solid fa-satellite-dish"></i> BUGÜNKÜ SİNYALLER</div>
   <div id="listToday"></div>
 </div>
@@ -901,6 +915,19 @@ document.getElementById('bigStatGrid').innerHTML = '<div class="big-stat skeleto
 checkAuth();
 loadOzetStrip();
 loadSignals();
+
+// Kasa yonetimi karti - olculmus haftalik hacim + isabet oranina gore genel
+// bahis-disiplini bilgilendirmesi (kullanici talebi, 2026-08-28). Tek seferlik.
+(async function loadKasaOzet(){
+  try {
+    const res = await fetch('/api/kasa-ozet');
+    const d = await res.json();
+    if(!d.success || d.haftalik_ortalama_sinyal == null) return;
+    document.getElementById('kasaHaftalik').innerText = d.haftalik_ortalama_sinyal;
+    document.getElementById('kasaIsabet').innerText = `%${Math.round(d.isabet_orani * 100)}`;
+    document.getElementById('kasaCard').style.display = 'block';
+  } catch(e) {}
+})();
 let signalsTimer = setInterval(loadSignals, 12000);
 let ozetTimer = setInterval(loadOzetStrip, 30000);
 

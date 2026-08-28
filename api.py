@@ -1788,6 +1788,53 @@ def get_ozet_donem(request: Request, donem: str = "tum"):
     }
 
 
+@app.get("/api/kasa-ozet")
+def get_kasa_ozet(request: Request):
+    """Kasa yonetimi kartinin dayandigi olculmus istatistikler - herkese acik,
+    uyelik gerektirmez. Kullanici talebi (2026-08-28): 'insanlara haftasini
+    karli kapatmasi icin bir sistem' - ama CLAUDE.md'nin 'olcmeden iddia yok'
+    ilkesine uyarak SABIT sayi yazmak yerine son 30 gunun gercek verisinden
+    canli hesaplaniyor, zamanla otomatik guncel kalir."""
+    if _scrape_guarded(request, "kasa-ozet"):
+        return {"success": False, "error": "Çok fazla istek. Lütfen biraz yavaşlayın."}
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT outcome, date(created_at, '+3 hours') AS gun
+        FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST')
+          AND date(created_at, '+3 hours') >= date('now', '+3 hours', '-30 days')
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"success": True, "haftalik_ortalama_sinyal": None, "isabet_orani": None,
+                "veri_gun_sayisi": 0}
+
+    gunler = {r[1] for r in rows}
+    won = sum(1 for r in rows if r[0] == "WON")
+    lost = sum(1 for r in rows if r[0] == "LOST")
+    settled = won + lost
+    # Takvim gunu bazinda haftalik ortalama (sinyal olmayan gunler de payda'ya
+    # girer - boylece "haftada ortalama X" gercekten bir hafta boyunca
+    # beklenebilecek hacmi yansitir, sadece aktif gunlerin ortalamasi degil).
+    ilk_gun = min(gunler)
+    son_gun = max(gunler)
+    from datetime import datetime as _dt
+    takvim_gun = (_dt.strptime(son_gun, "%Y-%m-%d") - _dt.strptime(ilk_gun, "%Y-%m-%d")).days + 1
+    haftalik_ortalama = round(settled / takvim_gun * 7, 1) if takvim_gun else None
+
+    return {
+        "success": True,
+        "haftalik_ortalama_sinyal": haftalik_ortalama,
+        "isabet_orani": round(won / settled, 3) if settled else None,
+        "veri_gun_sayisi": takvim_gun,
+        "sonuclanan_30gun": settled,
+    }
+
+
 def _hesapla_metrics():
     """Bot bazli isabet orani + konsensus kalibrasyonu.
 

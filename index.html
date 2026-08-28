@@ -1178,6 +1178,23 @@
             <div class="ozet-strip" id="ozetStrip">
                 <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
             </div>
+
+            <div class="kasa-card" id="kasaCard" style="display:none; max-width:1000px; margin:1.25rem auto 0; padding:1.25rem 1.5rem; background:var(--bg-surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg);">
+                <div style="display:flex; align-items:center; gap:8px; font-family:'Outfit',sans-serif; font-weight:700; font-size:0.95rem; margin-bottom:0.6rem;">
+                    <i class="fa-solid fa-shield-halved" style="color:var(--accent-brand);"></i> Kasanı Nasıl Yönetmelisin?
+                </div>
+                <div style="color:var(--text-secondary); font-size:0.88rem; line-height:1.65;">
+                    Son 30 günde haftada ortalama <b id="kasaHaftalik" style="color:var(--text-primary);">-</b> sinyal paylaştık,
+                    isabet oranımız <b id="kasaIsabet" style="color:var(--accent-success);">-</b>.
+                    Ama bu, <u>her sinyalin kazanacağı</u> anlamına gelmez — kayıp seriler normaldir ve olacaktır.
+                    Haftanı karlı kapatmanın yolu tek bir büyük bahis değil, disiplinli kasa yönetimidir:
+                    <b style="color:var(--text-primary);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>,
+                    kayıp gelse bile bahis miktarını artırma (martingale yapma), ve asla kaybetmeyi göze alamayacağın parayla oynama.
+                </div>
+                <div style="color:var(--text-muted); font-size:0.74rem; margin-top:0.6rem;">
+                    Bu genel bir kasa-yönetimi bilgilendirmesidir, kişisel finansal tavsiye değildir. Geçmiş performans gelecekteki sonuçları garanti etmez.
+                </div>
+            </div>
         </div>
 
         <div id="matchListContainer">
@@ -2279,6 +2296,20 @@
         updateNotifButton();
         checkAuth().then(fetchData);
         startHeroMatrixRain();
+
+        // Kasa yonetimi karti - olculmus (sabit-yazilmamis) haftalik hacim +
+        // isabet oranina gore genel bahis-disiplini bilgilendirmesi (kullanici
+        // talebi, 2026-08-28). Tek seferlik yukleme yeterli, donem sekmesine bagli degil.
+        (async function loadKasaOzet(){
+            try {
+                const res = await fetch('/api/kasa-ozet');
+                const d = await res.json();
+                if (!d.success || d.haftalik_ortalama_sinyal == null) return;
+                document.getElementById('kasaHaftalik').innerText = d.haftalik_ortalama_sinyal;
+                document.getElementById('kasaIsabet').innerText = `%${Math.round(d.isabet_orani * 100)}`;
+                document.getElementById('kasaCard').style.display = 'block';
+            } catch(e) {}
+        })();
     </script>
 </body>
 </html>

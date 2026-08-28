@@ -296,6 +296,46 @@ def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200
     return {"success": True, "sinyaller": rows}
 
 
+@app.post("/api/admin/void-pending-signals")
+def admin_void_pending_signals(request: Request, league_name: str = "", match_ids: str = ""):
+    """Sonuclanmamis (outcome IS NULL) sinyalleri hard-delete eder - kullanici
+    talebi (2026-08-28, acil): supheli/sike iddiasi olan bir ligin sinyallerini
+    kaldirmak. CLAUDE.md kural 4 (outcome yazildiktan sonra ASLA silinmez)
+    BURADA IHLAL EDILMIYOR - bu fonksiyon kasitli olarak SADECE outcome IS NULL
+    (henuz sonuclanmamis) satirlara dokunur, WHERE kosulu bunu garantiliyor.
+    league_name: tam lig adiyla o ligin TUM bekleyen sinyallerini siler.
+    match_ids: virgulle ayrilmis match id listesiyle sadece o maclarin
+    bekleyen sinyallerini siler (ikisi birlikte de kullanilabilir, OR'lanir)."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    if not league_name and not match_ids:
+        return {"success": False, "error": "league_name veya match_ids gerekli."}
+
+    ids = [int(x) for x in match_ids.split(",") if x.strip().isdigit()]
+
+    conn = connect()
+    cur = conn.cursor()
+    clauses = []
+    params = []
+    if league_name:
+        clauses.append("match_id IN (SELECT id FROM matches WHERE league_name = ?)")
+        params.append(league_name)
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        clauses.append(f"match_id IN ({placeholders})")
+        params.extend(ids)
+    where_or = " OR ".join(clauses)
+    cur.execute(
+        f"DELETE FROM consensus_predictions WHERE outcome IS NULL AND ({where_or})",
+        params,
+    )
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"success": True, "silinen_sinyal_sayisi": deleted}
+
+
 @app.get("/api/admin/outbound-ip")
 def outbound_ip(request: Request):
     """GECICI TANI UCU: Railway'in bu servis icin kullandigi cikis IP'sini

@@ -66,6 +66,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Guvenlik basliklari (2026-08-28, lansman oncesi tarama sonrasi eklendi -
+# bkz. Mozilla HTTP Observatory: X-Frame-Options/CSP/X-Content-Type-Options
+# hicbiri yoktu). CSP'de 'unsafe-inline' bilerek var: sayfalar (index.html/
+# mobile_app.html/admin.html) yaygin sekilde inline <script>, inline <style>
+# ve onclick="..." kullaniyor - bunlari nonce/hash'e cevirmeden 'unsafe-inline'
+# kaldirilirsa TUM ON YUZ CALISMAZ HALE GELIR. img-src bilerek genis (https+data):
+# takim logolari/avatarlar cok sayida farkli CDN'den (flashscore, ui-avatars,
+# google) geliyor, sabit bir liste kirilgan olur.
+_SECURITY_HEADERS = {
+    "X-Frame-Options": "SAMEORIGIN",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
+        "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        "img-src 'self' https: data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'"
+    ),
+}
+
+
+@app.middleware("http")
+async def _add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in _SECURITY_HEADERS.items():
+        response.headers[k] = v
+    return response
+
 # "Devre yaziyor / eski veri gorunuyor" gibi sikayetlerin bir kismi tarayici/CDN'in bu
 # endpoint'leri (ve index.html'i) agresifce cache'lemesinden kaynaklaniyordu - biz Cache-Control
 # header'i hic set etmiyorduk, bu da bazi tarayicilarin/ara katmanlarin GET isteklerini

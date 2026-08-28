@@ -213,6 +213,7 @@
         }
 
         .hero-sub {
+            display: none;
             position: relative;
             color: var(--text-secondary);
             max-width: 600px;
@@ -223,7 +224,7 @@
 
         @media (min-width: 640px) {
             .hero-title { font-size: 2.5rem; }
-            .hero-sub { font-size: 1rem; }
+            .hero-sub { display: block; font-size: 1rem; }
         }
 
         /* --- League Grouping --- */
@@ -1213,7 +1214,7 @@
                 </div>
             </div>
 
-            <div id="todayCounter" style="text-align:center; color:var(--text-secondary); font-weight:600; margin-bottom:1rem;"></div>
+            <div id="todayCounter" style="text-align:center; color:var(--text-secondary); font-weight:600; font-size:0.85rem; margin-bottom:0.65rem;"></div>
 
             <!-- Tiklanabilir donem ozeti: Bu Hafta / Bu Ay / Tum Zamanlar -->
             <div class="period-toggle" id="periodToggle">
@@ -1226,23 +1227,20 @@
                 <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
             </div>
 
-            <div style="max-width:1000px; margin:1.25rem auto 0; padding:0 0.25rem; color:var(--text-muted); font-size:0.72rem; text-align:center;">
+            <div style="max-width:1000px; margin:0.6rem auto 0; padding:0 0.25rem; color:var(--text-muted); font-size:0.7rem; text-align:center;">
                 Matchrix bir bahis uygulaması değildir; bahis kabul etmez, bahis parası tutmaz, kazanç garantisi vermez.
             </div>
-            <div class="kasa-card" id="kasaCard" style="display:none; max-width:1000px; margin:0.5rem auto 2rem; padding:1.25rem 1.5rem; background:var(--bg-surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg);">
-                <div style="display:flex; align-items:center; gap:8px; font-family:'Outfit',sans-serif; font-weight:700; font-size:0.95rem; margin-bottom:0.6rem;">
+            <div class="kasa-card" id="kasaCard" style="display:none; max-width:1000px; margin:0.5rem auto 1.25rem; padding:1rem 1.25rem; background:var(--bg-surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg);">
+                <div style="display:flex; align-items:center; gap:8px; font-family:'Outfit',sans-serif; font-weight:700; font-size:0.9rem; margin-bottom:0.5rem;">
                     <i class="fa-solid fa-shield-halved" style="color:var(--accent-brand);"></i> Kasanı Nasıl Yönetmelisin?
                 </div>
-                <div style="color:var(--text-secondary); font-size:0.88rem; line-height:1.65;">
+                <div style="color:var(--text-secondary); font-size:0.88rem; line-height:1.6;">
                     Son 30 günde haftada ortalama <b id="kasaHaftalik" style="color:var(--text-primary);">-</b> sinyal paylaştık,
-                    isabet oranımız <b id="kasaIsabet" style="color:var(--accent-success);">-</b>.
-                    Ama bu, <u>her sinyalin kazanacağı</u> anlamına gelmez — kayıp seriler normaldir ve olacaktır.
-                    Haftanı karlı kapatmanın yolu tek bir büyük bahis değil, disiplinli kasa yönetimidir:
-                    <b style="color:var(--text-primary);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>,
-                    kayıp gelse bile bahis miktarını artırma (martingale yapma), ve asla kaybetmeyi göze alamayacağın parayla oynama.
+                    isabet oranımız <b id="kasaIsabet" style="color:var(--accent-success);">-</b>. Kayıp seriler normaldir:
+                    <b style="color:var(--text-primary);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>, martingale yapma.
                 </div>
-                <div style="color:var(--text-muted); font-size:0.74rem; margin-top:0.6rem;">
-                    Bu genel bir kasa-yönetimi bilgilendirmesidir, kişisel finansal tavsiye değildir. Geçmiş performans gelecekteki sonuçları garanti etmez.
+                <div style="color:var(--text-muted); font-size:0.72rem; margin-top:0.4rem;">
+                    Genel bilgilendirmedir, kişisel finansal tavsiye değildir.
                 </div>
             </div>
         </div>
@@ -1425,42 +1423,53 @@
         // SESSIZCE taban olarak kaydeder - siteye ilk giriste gecmis onlarca
         // kayit birden bildirim olarak patlamasin diye.
         async function checkForNewWins() {
+            // Sadece login/paywall sekmelerinde cagrilir: bu sekmelerde fetchData()
+            // zaten /api/live-matches cekmiyor, o yuzden burada kendi cekimini yapar.
+            // today/results sekmelerinde ayni veri fetchData() tarafindan zaten
+            // cekiliyor - orada processNewWins() dogrudan o sonucla cagrilir, ikinci
+            // bir /api/live-matches istegi (ve SQLite'ta ikiye katlanan sorgu yuku)
+            // onlenmis olur.
             if (!('Notification' in window)) return;
             try {
                 const res = await fetch('/api/live-matches');
                 const result = await res.json();
                 if (!result.success) return;
-                const isBaselineRun = !localStorage.getItem('jcode_notif_baseline_done');
-                let winsChanged = false;
-                let newChanged = false;
-                (result.data || []).forEach(m => {
-                    // Kilitli (uye olmayana bulaniklastirilmis) kayitlarda match_id/
-                    // takim adi sunucu tarafinda zaten null - bildirim uretmeye
-                    // calismak "null vs null" gibi bozuk metinler + tum kilitli
-                    // kayitlarin ayni anahtarda ("null:H1") cakismasina yol acardi.
-                    if (m.locked) return;
-                    const key = `${m.match_id}:${m.signal_period || 'H?'}`;
-
-                    if (!notifiedNewKeys.has(key)) {
-                        notifiedNewKeys.add(key);
-                        newChanged = true;
-                        if (!isBaselineRun && notificationsEnabled) {
-                            notifyNewSignal(m);
-                        }
-                    }
-
-                    if (m.outcome === 'WON' && !notifiedWinKeys.has(key)) {
-                        notifiedWinKeys.add(key);
-                        winsChanged = true;
-                        if (!isBaselineRun && notificationsEnabled) {
-                            notifyWin(m);
-                        }
-                    }
-                });
-                if (isBaselineRun) localStorage.setItem('jcode_notif_baseline_done', '1');
-                if (winsChanged) localStorage.setItem('jcode_notified_wins', JSON.stringify(Array.from(notifiedWinKeys)));
-                if (newChanged) localStorage.setItem('jcode_notified_new_signals', JSON.stringify(Array.from(notifiedNewKeys)));
+                processNewWins(result.data || []);
             } catch (e) { /* sessizce gec - bildirim ikincil bir ozellik */ }
+        }
+
+        function processNewWins(data) {
+            if (!('Notification' in window)) return;
+            const isBaselineRun = !localStorage.getItem('jcode_notif_baseline_done');
+            let winsChanged = false;
+            let newChanged = false;
+            (data || []).forEach(m => {
+                // Kilitli (uye olmayana bulaniklastirilmis) kayitlarda match_id/
+                // takim adi sunucu tarafinda zaten null - bildirim uretmeye
+                // calismak "null vs null" gibi bozuk metinler + tum kilitli
+                // kayitlarin ayni anahtarda ("null:H1") cakismasina yol acardi.
+                if (m.locked) return;
+                const key = `${m.match_id}:${m.signal_period || 'H?'}`;
+
+                if (!notifiedNewKeys.has(key)) {
+                    notifiedNewKeys.add(key);
+                    newChanged = true;
+                    if (!isBaselineRun && notificationsEnabled) {
+                        notifyNewSignal(m);
+                    }
+                }
+
+                if (m.outcome === 'WON' && !notifiedWinKeys.has(key)) {
+                    notifiedWinKeys.add(key);
+                    winsChanged = true;
+                    if (!isBaselineRun && notificationsEnabled) {
+                        notifyWin(m);
+                    }
+                }
+            });
+            if (isBaselineRun) localStorage.setItem('jcode_notif_baseline_done', '1');
+            if (winsChanged) localStorage.setItem('jcode_notified_wins', JSON.stringify(Array.from(notifiedWinKeys)));
+            if (newChanged) localStorage.setItem('jcode_notified_new_signals', JSON.stringify(Array.from(notifiedNewKeys)));
         }
 
         // --- Kimlik dogrulama durumu ---------------------------------------
@@ -1948,15 +1957,16 @@
             const requestTab = currentTab;
 
             if (requestTab === 'today') fetchDonemOzet();
-            checkForNewWins();
 
             if (requestTab === 'login') {
+                checkForNewWins();
                 renderLoginTab();
                 clearTimeout(refreshTimer);
                 return;
             }
 
             if (requestTab === 'paywall') {
+                checkForNewWins();
                 renderPaywallTab();
                 clearTimeout(refreshTimer);
                 return;
@@ -1971,6 +1981,7 @@
                 if (currentTab !== requestTab) return; // sekme degisti, bu cevap artik gecersiz
 
                 if(result.success) {
+                    processNewWins(result.data || []);
                     currentTodayTR = result.today_tr || currentTodayTR;
                     // API/DB tek gercek kaynaktir. Tarayici tarafinda PENDING
                     // kaydi biriktirmek, sonucu VOID/WON/LOST olan eski maclarin

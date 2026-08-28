@@ -1100,9 +1100,6 @@
         <button class="bnav-btn active" onclick="switchTab('today', this)">
             <i class="fa-solid fa-star"></i><span>Bugün</span>
         </button>
-        <button class="bnav-btn" onclick="switchTab('open', this)">
-            <i class="fa-solid fa-layer-group"></i><span>Açık Tahminler</span>
-        </button>
         <button class="bnav-btn" onclick="switchTab('results', this)">
             <i class="fa-solid fa-list-check"></i><span>Sonuçlar</span>
         </button>
@@ -1642,7 +1639,7 @@
             // bir ONCEKI sekmenin icerigi (ozellikle login formu gibi tamamen
             // farkli bir gorunum) yeni sekmenin verisi gelene kadar ekranda
             // kaliyor, "yanlis sekme icerigi gorunuyor" izlenimi veriyordu.
-            if (['today', 'open', 'results'].includes(tab)) {
+            if (['today', 'results'].includes(tab)) {
                 document.getElementById('matchListContainer').innerHTML =
                     `<div class="loader"><i class="fa-solid fa-circle-notch"></i><p>Veriler Yükleniyor...</p></div>`;
             }
@@ -1983,9 +1980,6 @@
                                 ? `Bugün ${dataToRender.length} açık tahmin var`
                                 : 'Bugün için henüz açık tahmin yok — ama geçmiş sonuçlarımıza göz at <i class="fa-solid fa-arrow-down" style="font-size:0.75em;"></i>';
                         }
-                    } else if (requestTab === 'open') {
-                        // Acik Tahminler: tarihe bakmaksizin TUM acik sinyaller.
-                        dataToRender = dataToRender.filter(m => m.outcome === "PENDING");
                     } else if (requestTab === 'results') {
                         // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
                         // kazanc/kayip sonucu gorunsun, 1-2 gun oncesi dahil edilmesin.

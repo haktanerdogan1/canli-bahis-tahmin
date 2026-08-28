@@ -1979,9 +1979,9 @@
                             m.outcome === "PENDING" && m.signal_date === currentTodayTR);
                         const counterEl = document.getElementById('todayCounter');
                         if (counterEl) {
-                            counterEl.innerText = dataToRender.length
+                            counterEl.innerHTML = dataToRender.length
                                 ? `Bugün ${dataToRender.length} açık tahmin var`
-                                : 'Bugün için henüz açık tahmin yok';
+                                : 'Bugün için henüz açık tahmin yok — ama geçmiş sonuçlarımıza göz at <i class="fa-solid fa-arrow-down" style="font-size:0.75em;"></i>';
                         }
                     } else if (requestTab === 'open') {
                         // Acik Tahminler: tarihe bakmaksizin TUM acik sinyaller.

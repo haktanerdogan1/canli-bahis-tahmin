@@ -297,15 +297,24 @@ def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200
 
 
 @app.post("/api/admin/void-pending-signals")
-def admin_void_pending_signals(request: Request, league_name: str = "", match_ids: str = ""):
-    """Sonuclanmamis (outcome IS NULL) sinyalleri hard-delete eder - kullanici
-    talebi (2026-08-28, acil): supheli/sike iddiasi olan bir ligin sinyallerini
-    kaldirmak. CLAUDE.md kural 4 (outcome yazildiktan sonra ASLA silinmez)
-    BURADA IHLAL EDILMIYOR - bu fonksiyon kasitli olarak SADECE outcome IS NULL
-    (henuz sonuclanmamis) satirlara dokunur, WHERE kosulu bunu garantiliyor.
-    league_name: tam lig adiyla o ligin TUM bekleyen sinyallerini siler.
-    match_ids: virgulle ayrilmis match id listesiyle sadece o maclarin
-    bekleyen sinyallerini siler (ikisi birlikte de kullanilabilir, OR'lanir)."""
+def admin_void_pending_signals(request: Request, league_name: str = "", match_ids: str = "",
+                                allow_settled_for_named_matches: bool = False):
+    """Sinyalleri hard-delete eder - kullanici talebi (2026-08-28, acil):
+    supheli/sike iddiasi olan bir maci/ligi kaldirmak.
+
+    CLAUDE.md kural 4 (outcome yazildiktan sonra ASLA silinmez) VARSAYILAN
+    OLARAK korunuyor - league_name ile TOPLU silme her zaman SADECE
+    outcome IS NULL satirlara dokunur (kotu sonuclari secip silme riskine
+    karsi kasitli engel).
+
+    ISTISNA: match_ids ile ACIKCA isimlendirilmis maclar icin, kullanici
+    allow_settled_for_named_matches=true gonderirse sonuclanmis satirlar da
+    silinebilir - bu, "sike iddiasi olan bir maca sinyal atadigimiz kaydin
+    KENDISI olmasin, sonuc ne olursa olsun" gibi ozel/gerekceli tek seferlik
+    durumlar icin (proje sahibinin acik talimatiyla, 2026-08-28). Toplu/lig
+    bazli silmede bu istisna GECERLI DEGIL - sadece tek tek isimlendirilmis
+    match_id'ler icin calisir, boylece kotu sonuclari sessizce temizleme
+    riski yapisal olarak sinirli kaliyor."""
     from fastapi.responses import JSONResponse
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
@@ -316,21 +325,27 @@ def admin_void_pending_signals(request: Request, league_name: str = "", match_id
 
     conn = connect()
     cur = conn.cursor()
-    clauses = []
-    params = []
+    deleted = 0
+
     if league_name:
-        clauses.append("match_id IN (SELECT id FROM matches WHERE league_name = ?)")
-        params.append(league_name)
+        cur.execute(
+            "DELETE FROM consensus_predictions WHERE outcome IS NULL "
+            "AND match_id IN (SELECT id FROM matches WHERE league_name = ?)",
+            [league_name],
+        )
+        deleted += cur.rowcount
+
     if ids:
         placeholders = ",".join("?" for _ in ids)
-        clauses.append(f"match_id IN ({placeholders})")
-        params.extend(ids)
-    where_or = " OR ".join(clauses)
-    cur.execute(
-        f"DELETE FROM consensus_predictions WHERE outcome IS NULL AND ({where_or})",
-        params,
-    )
-    deleted = cur.rowcount
+        if allow_settled_for_named_matches:
+            cur.execute(f"DELETE FROM consensus_predictions WHERE match_id IN ({placeholders})", ids)
+        else:
+            cur.execute(
+                f"DELETE FROM consensus_predictions WHERE outcome IS NULL AND match_id IN ({placeholders})",
+                ids,
+            )
+        deleted += cur.rowcount
+
     conn.commit()
     conn.close()
     return {"success": True, "silinen_sinyal_sayisi": deleted}

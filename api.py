@@ -119,6 +119,16 @@ def serve_index():
     from fastapi.responses import FileResponse
     return FileResponse(os.path.join(os.path.dirname(__file__), 'index.html'))
 
+@app.get("/robots.txt")
+def serve_robots_txt():
+    # Kullanici talebi (2026-08-28): baskalari bizden veri kazimasin. Bu sadece
+    # kurallara uyan botlari (Google vb.) durdurur - kararli bir kazici zaten
+    # robots.txt'yi yok sayar, asil koruma _scrape_guarded() rate limiti.
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        "User-agent: *\nDisallow: /api/\nDisallow: /admin\n"
+    )
+
 @app.get("/app")
 def serve_mobile_app():
     """Cyberpunk temali, ozgun tasarimli mobil arayuz - index.html'den TAMAMEN
@@ -1200,6 +1210,28 @@ def _rate_limited(request: Request, email: str) -> bool:
     return False
 
 
+# Toplu veri kazima (scraping) koruması (2026-08-28, kullanıcı talebi: "bizden
+# veri çekmelerini istemiyorum"). Normal kullanım (frontend her 15sn'de bir
+# fetchData cagiriyor, birden fazla sekme/uye ayni IP'yi paylasabilir) rahatca
+# sigar; toplu/otomatik cekim (saniyede onlarca istek) engellenir. Login rate
+# limitinden AYRI - burada e-posta yok, IP+endpoint bazli, pencere daha kisa.
+_SCRAPE_GUARD_WINDOW_SECONDS = 60
+_SCRAPE_GUARD_MAX_REQUESTS = 90
+_scrape_guard_hits: dict[str, deque] = defaultdict(deque)
+
+
+def _scrape_guarded(request: Request, bucket: str) -> bool:
+    key = f"{bucket}:{_client_ip(request)}"
+    now = time.time()
+    hits = _scrape_guard_hits[key]
+    while hits and now - hits[0] > _SCRAPE_GUARD_WINDOW_SECONDS:
+        hits.popleft()
+    if len(hits) >= _SCRAPE_GUARD_MAX_REQUESTS:
+        return True
+    hits.append(now)
+    return False
+
+
 def _set_session_cookie(response: Response, user_id: int, request: Request):
     token = auth.create_session_token(user_id)
     # https uzerinden servis ediliyorsa cookie'yi sadece guvenli baglantida gonder
@@ -1352,6 +1384,8 @@ def google_callback(request: Request, code: str = None, state: str = None, error
 
 @app.get("/api/live-matches")
 def get_live_matches(request: Request):
+    if _scrape_guarded(request, "live-matches"):
+        return {"success": False, "error": "Çok fazla istek. Lütfen biraz yavaşlayın."}
     is_member = current_user_id(request) is not None
     conn = connect()
     cursor = conn.cursor()
@@ -1643,7 +1677,7 @@ def get_daily_results(request: Request):
             "is_member": payload["is_member"]}
 
 @app.get("/api/ozet")
-def get_ozet():
+def get_ozet(request: Request):
     """Herkese acik sonuc ozeti - seffaflik kozu, UYELIK GEREKTIRMEZ.
 
     _hesapla_metrics()'teki 'ozet' bloguyla ayni hesap; farki uyelik/admin
@@ -1651,6 +1685,8 @@ def get_ozet():
     veriler burada YOK, onlar /api/admin/panel/istatistikler'de sadece
     yoneticiye ozel kalmaya devam ediyor.
     """
+    if _scrape_guarded(request, "ozet"):
+        return {"success": False, "error": "Çok fazla istek. Lütfen biraz yavaşlayın."}
     conn = connect()
     cur = conn.cursor()
 
@@ -1712,12 +1748,14 @@ def get_ozet():
 
 
 @app.get("/api/ozet-donem")
-def get_ozet_donem(donem: str = "tum"):
+def get_ozet_donem(request: Request, donem: str = "tum"):
     """Ana sayfadaki tiklanabilir Bu Hafta/Bu Ay/Tum Zamanlar ozeti - herkese
     acik, uyelik gerektirmez. Kullanici talebiyle (2026-08-21) bot bazli
     detaylar/kalibrasyon admin paneline tasindi (bkz. /api/admin/panel/
     istatistikler); ana sitede artik SADECE bu sadelestirilmis donem ozeti
     gosteriliyor."""
+    if _scrape_guarded(request, "ozet-donem"):
+        return {"success": False, "error": "Çok fazla istek. Lütfen biraz yavaşlayın."}
     if donem == "bugun":
         where = "date(created_at, '+3 hours') = date('now', '+3 hours')"
     elif donem == "hafta":
@@ -2031,6 +2069,8 @@ def get_monitor(request: Request):
 
 @app.get("/api/match/{match_id}")
 def get_match_detail(match_id: int, request: Request):
+    if _scrape_guarded(request, "match-detail"):
+        return {"success": False, "error": "Çok fazla istek. Lütfen biraz yavaşlayın."}
     # Detayli analiz (xG, momentum, form) uyelere ozel. Uye olmayana veri
     # hic uretilmez - on yuzde gizlemek yeterli degil.
     if current_user_id(request) is None:

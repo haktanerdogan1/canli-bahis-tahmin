@@ -206,6 +206,63 @@ def get_or_create_oauth_user(email: str) -> int:
     return user_id
 
 
+# --- Sifre sifirlama (2026-08-28) -------------------------------------------
+# Ayni HMAC-imzali-token deseni (session token ile ayni mantik), ama:
+#   - farkli bir sabit etiketle ("pwreset") baslar ki bir reset token'i
+#     kazayla/kotu niyetle session token yerine kullanilamasin
+#   - cok daha kisa omurlu (30 dk, oturumun 30 gunune karsi)
+RESET_TOKEN_TTL_SECONDS = 30 * 60
+
+
+def create_reset_token(user_id: int) -> str:
+    expires = int(time.time()) + RESET_TOKEN_TTL_SECONDS
+    payload = f"pwreset.{user_id}.{expires}"
+    sig = hmac.new(_get_secret_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def verify_reset_token(token: str):
+    """Gecerliyse user_id doner, degilse None."""
+    if not token:
+        return None
+    try:
+        tag, user_id_str, expires_str, sig = token.split(".", 3)
+        if tag != "pwreset":
+            return None
+        payload = f"{tag}.{user_id_str}.{expires_str}"
+        expected = hmac.new(_get_secret_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return None
+        if int(expires_str) < int(time.time()):
+            return None
+        return int(user_id_str)
+    except Exception:
+        return None
+
+
+def find_user_id_by_email(email: str):
+    email = normalize_email(email)
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def set_password(user_id: int, new_password: str):
+    """(True, None) veya (False, hata_mesaji) doner."""
+    if not new_password or len(new_password) < 6:
+        return False, "Şifre en az 6 karakter olmalı."
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                (hash_password(new_password), user_id))
+    conn.commit()
+    conn.close()
+    return True, None
+
+
 # --- "Aktif mi" takibi ------------------------------------------------------
 # Her istekte DB'ye yazmak (frontend /api/ozet, /api/live-matches gibi uclari
 # birkaç saniyede bir polluyor) gereksiz yazma yuku olusturur. Bunun yerine

@@ -1343,6 +1343,78 @@ def login(creds: Credentials, request: Request, response: Response):
     return {"success": True, "email": auth.normalize_email(creds.email)}
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+def _send_email(to_email: str, subject: str, html: str) -> bool:
+    """Resend uzerinden e-posta gonderir. Basarisizsa (API key eksik/hatali,
+    domain dogrulanmamis vb.) False doner ve loglar - cagiran taraf bunu
+    kullaniciya "sunucu hatasi" olarak degil, genel "bir sorun olustu" olarak
+    yansitmali (bkz. /api/forgot-password - e-posta var/yok bilgisini de sizdirmaz)."""
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        print("[email] RESEND_API_KEY tanimli degil, e-posta gonderilemedi.")
+        return False
+    from_addr = os.environ.get("RESEND_FROM_EMAIL", "Matchrix <onboarding@resend.dev>")
+    try:
+        r = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"from": from_addr, "to": [to_email], "subject": subject, "html": html},
+            timeout=15,
+        )
+        if r.status_code >= 300:
+            print(f"[email] Resend hatasi ({r.status_code}): {r.text[:300]}")
+            return False
+        return True
+    except Exception as e:
+        print(f"[email] Gonderim istisnasi: {e}")
+        return False
+
+
+@app.post("/api/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, request: Request):
+    if _rate_limited(request, payload.email):
+        return {"success": False, "error": "Çok fazla deneme yapıldı. Birkaç dakika sonra tekrar deneyin."}
+
+    # E-posta kayitli olsun ya da olmasin AYNI basarili mesaj donuyor - aksi
+    # halde disaridan "bu e-posta kayitli mi" sorgulanabilir (user enumeration).
+    user_id = auth.find_user_id_by_email(payload.email)
+    if user_id is not None:
+        token = auth.create_reset_token(user_id)
+        reset_link = f"{str(request.base_url).rstrip('/')}/?reset_token={token}"
+        _send_email(
+            auth.normalize_email(payload.email),
+            "Matchrix - Şifre Sıfırlama",
+            f"""
+            <div style="font-family:sans-serif; max-width:480px; margin:0 auto;">
+                <h2>Şifreni sıfırla</h2>
+                <p>Şifreni sıfırlamak için aşağıdaki bağlantıya tıkla. Bu bağlantı 30 dakika geçerlidir.</p>
+                <p><a href="{reset_link}" style="background:#00e5ff; color:#001014; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">Şifremi Sıfırla</a></p>
+                <p style="color:#888; font-size:13px;">Bu isteği sen yapmadıysan bu e-postayı yok sayabilirsin.</p>
+            </div>
+            """,
+        )
+    return {"success": True, "message": "Eğer bu e-posta kayıtlıysa, sıfırlama bağlantısı gönderildi."}
+
+
+@app.post("/api/reset-password")
+def reset_password(payload: ResetPasswordRequest):
+    user_id = auth.verify_reset_token(payload.token)
+    if user_id is None:
+        return {"success": False, "error": "Bağlantının süresi dolmuş veya geçersiz. Yeniden talep et."}
+    ok, error = auth.set_password(user_id, payload.new_password)
+    if not ok:
+        return {"success": False, "error": error}
+    return {"success": True}
+
+
 @app.post("/api/logout")
 def logout(response: Response):
     response.delete_cookie(SESSION_COOKIE, path="/")

@@ -1500,6 +1500,88 @@
             document.getElementById('authPassword').setAttribute(
                 'autocomplete', isReg ? 'new-password' : 'current-password');
             document.getElementById('authError').style.display = 'none';
+            const fpLink = document.getElementById('forgotPasswordLink');
+            if (fpLink) fpLink.style.display = isReg ? 'none' : 'block';
+        }
+
+        function showForgotPassword(ev) {
+            if (ev) ev.preventDefault();
+            document.getElementById('authForm').style.display = 'none';
+            document.getElementById('forgotForm').style.display = 'block';
+            document.querySelector('.auth-tabs').style.display = 'none';
+        }
+
+        function hideForgotPassword(ev) {
+            if (ev) ev.preventDefault();
+            document.getElementById('forgotForm').style.display = 'none';
+            document.getElementById('authForm').style.display = 'block';
+            document.querySelector('.auth-tabs').style.display = 'flex';
+        }
+
+        async function submitForgotPassword(ev) {
+            ev.preventDefault();
+            const btn = document.getElementById('forgotSubmit');
+            const email = document.getElementById('forgotEmail').value.trim();
+            btn.disabled = true;
+            const original = btn.innerText;
+            btn.innerText = 'Gönderiliyor...';
+            try {
+                const res = await fetch('/api/forgot-password', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email }),
+                });
+                const d = await res.json();
+                document.getElementById('forgotForm').innerHTML =
+                    `<p style="color:var(--text-primary); font-size:0.9rem; line-height:1.6;">` +
+                    (d.message || 'Eğer bu e-posta kayıtlıysa, sıfırlama bağlantısı gönderildi.') +
+                    ` E-postanı (spam klasörü dahil) kontrol et.</p>`;
+            } catch (e) {
+                btn.disabled = false;
+                btn.innerText = original;
+                showAuthError('Sunucuya bağlanılamadı.');
+            }
+        }
+
+        async function submitResetPassword(ev) {
+            ev.preventDefault();
+            const btn = document.getElementById('resetSubmit');
+            const newPassword = document.getElementById('resetNewPassword').value;
+            const params = new URLSearchParams(location.search);
+            const token = params.get('reset_token');
+            btn.disabled = true;
+            const original = btn.innerText;
+            btn.innerText = 'Güncelleniyor...';
+            try {
+                const res = await fetch('/api/reset-password', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, new_password: newPassword }),
+                });
+                const d = await res.json();
+                if (!d.success) {
+                    btn.disabled = false;
+                    btn.innerText = original;
+                    document.getElementById('resetForm').insertAdjacentHTML('afterbegin',
+                        `<div class="auth-error" style="display:block;">${d.error}</div>`);
+                    return;
+                }
+                history.replaceState(null, '', location.pathname);
+                document.getElementById('resetForm').innerHTML =
+                    `<p style="color:var(--text-primary); font-size:0.9rem;">Şifren güncellendi. Şimdi yeni şifrenle giriş yapabilirsin.</p>
+                     <button class="auth-submit" onclick="document.getElementById('resetForm').style.display='none'; document.getElementById('authForm').style.display='block'; document.querySelector('.auth-tabs').style.display='flex'; switchAuthMode('login');">Girişe Dön</button>`;
+            } catch (e) {
+                btn.disabled = false;
+                btn.innerText = original;
+                showAuthError('Sunucuya bağlanılamadı.');
+            }
+        }
+
+        function maybeShowResetPasswordForm() {
+            const params = new URLSearchParams(location.search);
+            if (!params.get('reset_token')) return;
+            document.getElementById('authForm').style.display = 'none';
+            document.getElementById('forgotForm').style.display = 'none';
+            document.querySelector('.auth-tabs').style.display = 'none';
+            document.getElementById('resetForm').style.display = 'block';
         }
 
         function showAuthError(msg) {
@@ -1742,11 +1824,40 @@
                                 <label for="authPassword">Şifre</label>
                                 <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" placeholder="En az 6 karakter">
                             </div>
+                            <div id="forgotPasswordLink" style="text-align:right; margin:-0.6rem 0 1rem; display:none;">
+                                <a href="#" onclick="showForgotPassword(event)" style="font-size:0.78rem; color:var(--text-secondary);">Şifremi unuttum</a>
+                            </div>
                             <button type="submit" class="auth-submit" id="authSubmit">Hesap Oluştur</button>
+                        </form>
+
+                        <form id="forgotForm" onsubmit="submitForgotPassword(event)" style="display:none;">
+                            <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:1rem;">
+                                E-posta adresini gir, şifreni sıfırlaman için bir bağlantı gönderelim.
+                            </p>
+                            <div class="auth-field">
+                                <label for="forgotEmail">E-posta</label>
+                                <input type="email" id="forgotEmail" required placeholder="ornek@mail.com">
+                            </div>
+                            <button type="submit" class="auth-submit" id="forgotSubmit">Sıfırlama Bağlantısı Gönder</button>
+                            <div style="text-align:center; margin-top:1rem;">
+                                <a href="#" onclick="hideForgotPassword(event)" style="font-size:0.82rem; color:var(--text-secondary);">Girişe geri dön</a>
+                            </div>
+                        </form>
+
+                        <form id="resetForm" onsubmit="submitResetPassword(event)" style="display:none;">
+                            <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:1rem;">
+                                Yeni şifreni belirle.
+                            </p>
+                            <div class="auth-field">
+                                <label for="resetNewPassword">Yeni Şifre</label>
+                                <input type="password" id="resetNewPassword" required minlength="6" placeholder="En az 6 karakter">
+                            </div>
+                            <button type="submit" class="auth-submit" id="resetSubmit">Şifreyi Güncelle</button>
                         </form>
                     </div>
                 </div>`;
             switchAuthMode(authMode);
+            maybeShowResetPasswordForm();
         }
 
         function togglePolicy(key) {
@@ -2292,6 +2403,13 @@
             history.replaceState(null, '', location.pathname);
             openAuth('login');
             setTimeout(() => showAuthError('Google ile giriş başarısız oldu, tekrar deneyin.'), 150);
+        }
+
+        // Sifre sifirlama linkinden gelindiyse (/?reset_token=...) Giris
+        // sekmesini ac - orada renderLoginTab() maybeShowResetPasswordForm()'u
+        // zaten cagirip yeni-sifre formunu gosterecek (bkz. renderLoginTab).
+        if (new URLSearchParams(location.search).get('reset_token')) {
+            openAuth('login');
         }
 
         // Hero banner arka plani: klasik "Matrix yagmuru" (akan 1/0). Sadece

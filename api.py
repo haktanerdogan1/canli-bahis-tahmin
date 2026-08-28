@@ -1149,7 +1149,9 @@ def _rate_limited(request: Request, email: str) -> bool:
     hits = _rate_limit_hits[key]
     while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
         hits.popleft()
-    if len(hits) >= _RATE_LIMIT_MAX_ATTEMPTS:
+    blocked = len(hits) >= _RATE_LIMIT_MAX_ATTEMPTS
+    print(f"[ratelimit-debug] key={key!r} hits_before={len(hits)} blocked={blocked}", flush=True)
+    if blocked:
         return True
     hits.append(now)
     return False

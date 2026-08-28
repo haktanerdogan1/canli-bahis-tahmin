@@ -1567,17 +1567,10 @@
                             </div>
                         </div>
 
-                        <div class="settings-group">
-                            <div class="settings-group-title">Abonelik</div>
-                            <button class="settings-row" onclick="showPaywall()">
-                                <i class="fa-solid fa-crown" style="color:var(--accent-brand);"></i>
-                                <span class="settings-row-text">
-                                    ${isPro ? 'Pro Üyelik' : "Pro'ya Geç"}
-                                    <small>${isPro ? 'Haftalık 129,99 TL · otomatik yenilenir' : 'Tüm açık tahminlere sınırsız erişim'}</small>
-                                </span>
-                                <i class="fa-solid fa-chevron-right settings-chevron"></i>
-                            </button>
-                        </div>
+                        <!-- Abonelik/Pro'ya Geç bolumu gecici olarak kaldirildi (kullanici
+                             talebi, 2026-08-28): ilk 2 ay tum uyeler ucretsiz, fiyat
+                             gostermek kafa karistirir. Lansmanin ucretsiz donemi bitince
+                             yukaridaki settings-group bloğu geri eklenmeli. -->
 
                         <div class="settings-group">
                             <div class="settings-group-title">Bildirimler</div>

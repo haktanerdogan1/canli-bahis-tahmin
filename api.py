@@ -4,8 +4,10 @@ from pydantic import BaseModel
 import sqlite3
 import os
 import json
+import re
 import secrets
 import time
+import unicodedata
 from collections import defaultdict, deque
 from urllib.parse import urlencode
 
@@ -1014,6 +1016,30 @@ def _fs_close_stale(cursor, active_ids, prefix="fs"):
     ''', [like_pattern] + params)
 
 
+_TEAM_SUFFIX_WORDS = re.compile(
+    r'\b(fc|cf|sc|ac|cd|afc|sk|fk|club|sporting club|sports club)\b'
+)
+
+
+def _normalize_team_name(name):
+    """Kaynaklar (fs_/ss_/7m_) ayni takimi farkli yaziyor - "Leganes B" vs
+    "Leganés B", "Mohammedan" vs "Mohammedan Sporting Club" gibi. Bu farklar
+    ayni gercek macin `matches` tablosunda IKI AYRI satir olarak kaydedilmesine
+    yol aciyordu (2026-08-28'de kullanici tarafindan fark edildi - izleme
+    panelinde ayni skorlu iki "farkli" mac gorunuyordu). Aksan/case/yaygin
+    kulup eki farklarini eleyip karsilastirilabilir bir anahtar uretir -
+    canli/tam eslesme icin kullanilir, bulanik/kismi eslesme YAPILMAZ (yanlis
+    pozitif riski - iki farkli gercek mac yanlislikla birlestirilmesin diye)."""
+    if not name:
+        return ""
+    s = unicodedata.normalize('NFKD', name)
+    s = ''.join(c for c in s if not unicodedata.combining(c))
+    s = s.lower()
+    s = _TEAM_SUFFIX_WORDS.sub(' ', s)
+    s = re.sub(r'[^a-z0-9]+', ' ', s).strip()
+    return s
+
+
 @app.post("/api/admin/live-sync")
 def live_sync(request: Request, payload: dict):
     """Herhangi bir YEREL canli veri istemcisinden (flashscore_xg_client.py,
@@ -1090,6 +1116,15 @@ def live_sync(request: Request, payload: dict):
     if active_ids:
         cur.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
         existing_ids = set(r[0] for r in cur.fetchall())
+    # Capraz-kaynak duplikasyon onleme (2026-08-28, kullanici tarafindan
+    # farkedildi - izleme panelinde ayni mac "Leganes B-CD Guadalajara" ve
+    # "Leganés B-Guadalajara" gibi IKI satir olarak gorunuyordu). Zaten canli
+    # olan tum maclarin normalize edilmis isim ciftini topla - bir kaynak
+    # AYNI maci farkli yaziliskla ilk kez bildirdiginde yeni satir ACILMASIN.
+    cur.execute("SELECT home_team_id, away_team_id FROM matches WHERE status IN ('LIVE','HT')")
+    live_norm_pairs = {
+        (_normalize_team_name(h), _normalize_team_name(a)) for h, a in cur.fetchall()
+    }
     conn.commit()
     conn.close()
 
@@ -1097,8 +1132,15 @@ def live_sync(request: Request, payload: dict):
     # baglantisini acabilir.
     to_write = []
     for m in prepared:
-        if m["event_id"] not in existing_ids and not is_known_match(m["league"], m["home"], m["away"]):
+        is_new = m["event_id"] not in existing_ids
+        if is_new and not is_known_match(m["league"], m["home"], m["away"]):
             continue
+        if is_new:
+            norm_pair = (_normalize_team_name(m["home"]), _normalize_team_name(m["away"]))
+            if norm_pair in live_norm_pairs:
+                # Baska bir kaynaktan zaten canli takip edilen ayni mac -
+                # ikinci bir satir acmadan atla (bkz. _normalize_team_name).
+                continue
         to_write.append(m)
 
     # ASAMA 3: TEK KISA transaction'da hepsini yaz.

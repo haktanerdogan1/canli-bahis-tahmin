@@ -1111,6 +1111,49 @@
         </button>
     </nav>
 
+    <!-- Yasal uyari modali (kullanici talebi, 2026-08-28): siteye ilk girişte
+         ekranı kaplayan, kapatilana kadar arkayi engelleyen, "bu bir bahis
+         uygulamasi degildir" mesaji. localStorage ile bir kez onaylaninca
+         bir daha gosterilmez (cookie-consent benzeri kalıcılık). -->
+    <div class="modal-overlay" id="legalGateModal" style="z-index:200;">
+        <div class="modal-content" style="max-width:480px; padding:2rem; text-align:center;">
+            <div style="width:56px; height:56px; margin:0 auto 1.25rem; border-radius:50%; background:rgba(0,229,255,0.1); border:1px solid rgba(0,229,255,0.3); display:flex; align-items:center; justify-content:center;">
+                <i class="fa-solid fa-scale-balanced" style="font-size:1.4rem; color:var(--accent-brand);"></i>
+            </div>
+            <h2 style="font-family:'Outfit',sans-serif; font-size:1.2rem; font-weight:700; margin-bottom:0.9rem;">
+                Önemli Bilgilendirme
+            </h2>
+            <p style="color:var(--text-secondary); font-size:0.9rem; line-height:1.7; text-align:left; margin-bottom:1rem;">
+                <b style="color:var(--text-primary);">Matchrix bir bahis uygulaması değildir.</b>
+                Bahis kabul etmez, kullanıcı adına bahis işlemi gerçekleştirmez, bahis parası veya
+                kullanıcı fonu tutmaz, ödeme aracılığı yapmaz ve kazanç garantisi vermez.
+            </p>
+            <p style="color:var(--text-secondary); font-size:0.9rem; line-height:1.7; text-align:left; margin-bottom:1.5rem;">
+                Burada sunulan içerikler, canlı maç verilerinin istatistiksel analizinden üretilen
+                <b style="color:var(--text-primary);">bilgilendirme ve analiz amaçlı</b> sinyallerdir.
+                Herhangi bir bahis kararı tamamen kullanıcının kendi sorumluluğundadır; yasal bahis
+                işlemleri yalnızca lisanslı kuruluşlar üzerinden yapılabilir. 18 yaşından küçükler
+                için uygun değildir.
+            </p>
+            <button onclick="closeLegalGateModal()" style="width:100%; background:var(--accent-brand); color:#001014; border:none; padding:13px; border-radius:var(--radius-md); font-family:'Outfit',sans-serif; font-weight:700; font-size:0.95rem; cursor:pointer;">
+                Anladım, Devam Et
+            </button>
+        </div>
+    </div>
+    <script>
+        (function(){
+            try {
+                if (!localStorage.getItem('legalGateAcknowledged_v1')) {
+                    document.getElementById('legalGateModal').classList.add('active');
+                }
+            } catch(e) {}
+        })();
+        function closeLegalGateModal(){
+            document.getElementById('legalGateModal').classList.remove('active');
+            try { localStorage.setItem('legalGateAcknowledged_v1', '1'); } catch(e) {}
+        }
+    </script>
+
     <!-- Hosgeldin banneri (kullanici talebi, 2026-08-28 lansman oncesi) -
          localStorage ile kalici kapatilabilir, marka+kullanici-dostu mesaj. -->
     <div id="welcomeBanner" style="display:none; max-width:1000px; margin:0 auto 1.5rem; padding:0 1.5rem;">

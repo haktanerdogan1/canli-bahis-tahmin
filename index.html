@@ -1205,7 +1205,7 @@
                 </p>
                 <div style="position:relative; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
                     <span style="background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> +500 Veri Kaynağı</span>
-                    <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: %74</span>
+                    <span style="background: rgba(0,229,255,0.1); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: <span id="heroMonthlyRate">—</span></span>
                 </div>
             </div>
 
@@ -2471,6 +2471,20 @@
                 document.getElementById('kasaHaftalik').innerText = d.haftalik_ortalama_sinyal;
                 document.getElementById('kasaIsabet').innerText = `%${Math.round(d.isabet_orani * 100)}`;
                 document.getElementById('kasaCard').style.display = 'block';
+            } catch(e) {}
+        })();
+
+        // Hero banner'daki "Aylik Basari Orani" sabit/eski (%74) yaziliydi,
+        // asagidaki Bu Ay sekmesiyle tutarsizdi (kullanici talebi, 2026-08-28) -
+        // ayni gercek veriyi (/api/ozet-donem?donem=ay) kullanarak dolduruluyor.
+        (async function loadHeroMonthlyRate(){
+            try {
+                const res = await fetch('/api/ozet-donem?donem=ay');
+                const d = await res.json();
+                const el = document.getElementById('heroMonthlyRate');
+                if (!el) return;
+                el.innerText = (d.success && d.isabet_orani != null)
+                    ? `%${Math.round(d.isabet_orani * 100)}` : '—';
             } catch(e) {}
         })();
     </script>

@@ -421,17 +421,20 @@ body::before{
     Matchrix bir bahis uygulaması değildir; bahis kabul etmez, bahis parası tutmaz, kazanç garantisi vermez.
   </div>
   <div id="kasaCard" style="display:none; margin:8px 20px 14px; padding:14px 16px; border:1px solid var(--line); background:var(--surface);">
-    <div style="display:flex; align-items:center; gap:8px; font-family:'Space Grotesk'; font-weight:700; font-size:0.8rem; color:var(--ink); margin-bottom:8px; text-transform:uppercase; letter-spacing:1px;">
-      <i class="fa-solid fa-shield-halved" style="color:var(--accent);"></i> Kasanı Nasıl Yönetmelisin?
+    <div id="kasaCardHeader" onclick="toggleKasaCard()" style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-family:'Space Grotesk'; font-weight:700; font-size:0.8rem; color:var(--ink); text-transform:uppercase; letter-spacing:1px; cursor:pointer;">
+      <span><i class="fa-solid fa-shield-halved" style="color:var(--accent);"></i> Kasanı Nasıl Yönetmelisin?</span>
+      <i class="fa-solid fa-chevron-down" id="kasaCardChevron" style="color:var(--ink-faint); transition:transform 0.2s;"></i>
     </div>
-    <div style="color:var(--ink-soft); font-size:0.76rem; line-height:1.6;">
-      Son 30 günde haftada ortalama <b style="color:var(--ink);" id="kasaHaftalik">-</b> sinyal paylaştık,
-      isabet oranımız <b style="color:var(--accent);" id="kasaIsabet">-</b>. Her sinyal kazanmaz, kayıp seriler normaldir.
-      Haftanı karlı kapatmanın yolu: <b style="color:var(--ink);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>,
-      kaybedince bahsi büyütme, göze alamayacağın parayla oynama.
-    </div>
-    <div style="color:var(--ink-faint); font-size:0.62rem; margin-top:8px;">
-      Genel kasa-yönetimi bilgilendirmesidir, kişisel finansal tavsiye değildir.
+    <div id="kasaCardBody" style="display:none; margin-top:8px;">
+      <div style="color:var(--ink-soft); font-size:0.76rem; line-height:1.6;">
+        Son 30 günde haftada ortalama <b style="color:var(--ink);" id="kasaHaftalik">-</b> sinyal paylaştık,
+        isabet oranımız <b style="color:var(--accent);" id="kasaIsabet">-</b>. Her sinyal kazanmaz, kayıp seriler normaldir.
+        Haftanı karlı kapatmanın yolu: <b style="color:var(--ink);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>,
+        kaybedince bahsi büyütme, göze alamayacağın parayla oynama.
+      </div>
+      <div style="color:var(--ink-faint); font-size:0.62rem; margin-top:8px;">
+        Genel kasa-yönetimi bilgilendirmesidir, kişisel finansal tavsiye değildir.
+      </div>
     </div>
   </div>
   <div class="section-title"><i class="fa-solid fa-satellite-dish"></i> BUGÜNKÜ SİNYALLER</div>
@@ -959,6 +962,15 @@ document.getElementById('bigStatGrid').innerHTML = '<div class="big-stat skeleto
 checkAuth();
 loadOzetStrip();
 loadSignals();
+
+// Kart varsayilan KAPALI gelsin, okumak isteyen acsin (kullanici talebi, 2026-08-28).
+function toggleKasaCard() {
+  const body = document.getElementById('kasaCardBody');
+  const chevron = document.getElementById('kasaCardChevron');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+}
 
 // Kasa yonetimi karti - olculmus haftalik hacim + isabet oranina gore genel
 // bahis-disiplini bilgilendirmesi (kullanici talebi, 2026-08-28). Tek seferlik.

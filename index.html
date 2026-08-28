@@ -1231,16 +1231,19 @@
                 Matchrix bir bahis uygulaması değildir; bahis kabul etmez, bahis parası tutmaz, kazanç garantisi vermez.
             </div>
             <div class="kasa-card" id="kasaCard" style="display:none; max-width:1000px; margin:0.5rem auto 1.25rem; padding:1rem 1.25rem; background:var(--bg-surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg);">
-                <div style="display:flex; align-items:center; gap:8px; font-family:'Outfit',sans-serif; font-weight:700; font-size:0.9rem; margin-bottom:0.5rem;">
-                    <i class="fa-solid fa-shield-halved" style="color:var(--accent-brand);"></i> Kasanı Nasıl Yönetmelisin?
+                <div id="kasaCardHeader" onclick="toggleKasaCard()" style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-family:'Outfit',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer;">
+                    <span><i class="fa-solid fa-shield-halved" style="color:var(--accent-brand);"></i> Kasanı Nasıl Yönetmelisin?</span>
+                    <i class="fa-solid fa-chevron-down" id="kasaCardChevron" style="color:var(--text-muted); transition:transform 0.2s;"></i>
                 </div>
-                <div style="color:var(--text-secondary); font-size:0.88rem; line-height:1.6;">
-                    Son 30 günde haftada ortalama <b id="kasaHaftalik" style="color:var(--text-primary);">-</b> sinyal paylaştık,
-                    isabet oranımız <b id="kasaIsabet" style="color:var(--accent-success);">-</b>. Kayıp seriler normaldir:
-                    <b style="color:var(--text-primary);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>, martingale yapma.
-                </div>
-                <div style="color:var(--text-muted); font-size:0.72rem; margin-top:0.4rem;">
-                    Genel bilgilendirmedir, kişisel finansal tavsiye değildir.
+                <div id="kasaCardBody" style="display:none; margin-top:0.6rem;">
+                    <div style="color:var(--text-secondary); font-size:0.88rem; line-height:1.6;">
+                        Son 30 günde haftada ortalama <b id="kasaHaftalik" style="color:var(--text-primary);">-</b> sinyal paylaştık,
+                        isabet oranımız <b id="kasaIsabet" style="color:var(--accent-success);">-</b>. Kayıp seriler normaldir:
+                        <b style="color:var(--text-primary);">tek sinyale kasanın %2-3'ünden fazlasını ayırma</b>, martingale yapma.
+                    </div>
+                    <div style="color:var(--text-muted); font-size:0.72rem; margin-top:0.4rem;">
+                        Genel bilgilendirmedir, kişisel finansal tavsiye değildir.
+                    </div>
                 </div>
             </div>
         </div>
@@ -2471,6 +2474,16 @@
         updateNotifButton();
         checkAuth().then(fetchData);
         startHeroMatrixRain();
+
+        // Kart varsayilan KAPALI gelsin, okumak isteyen acsin (kullanici
+        // talebi, 2026-08-28) - mobilde dikey yer kaplamasin diye.
+        function toggleKasaCard() {
+            const body = document.getElementById('kasaCardBody');
+            const chevron = document.getElementById('kasaCardChevron');
+            const isOpen = body.style.display !== 'none';
+            body.style.display = isOpen ? 'none' : 'block';
+            chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
 
         // Kasa yonetimi karti - olculmus (sabit-yazilmamis) haftalik hacim +
         // isabet oranina gore genel bahis-disiplini bilgilendirmesi (kullanici

@@ -40,6 +40,24 @@ def _ensure_prediction_schema():
         except Exception as e:
             print(f"Sema kontrolu atlandi ({ad}): {e}")
 
+    # Performans indeksleri (2026-08-28): /api/live-matches 9-19sn suruyordu -
+    # bot_predictions/live_snapshots hic indekslenmemisti, sorgudaki iki
+    # korelasyonlu alt-sorgu (ilk yari bitis skoru + lead_bot) her satir icin
+    # tam tablo taramasi yapiyordu. CREATE INDEX IF NOT EXISTS idempotent,
+    # veriye/davranisa dokunmaz - sadece SQLite'in ayni sorguyu indeks
+    # uzerinden bulmasini saglar.
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_live_snapshots_match_minute ON live_snapshots(match_id, minute)")
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_bot_predictions_match_snapshot_decision ON bot_predictions(match_id, snapshot_id, decision, probability)")
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_created ON consensus_predictions(created_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_match ON consensus_predictions(match_id, snapshot_id)")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Performans indeksleri atlandi: {e}")
+
 SESSION_COOKIE = "jcode_session"
 
 

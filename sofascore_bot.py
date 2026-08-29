@@ -87,18 +87,25 @@ def _stage_text(status, time_obj):
     if sdescl in ("halftime", "half time"):
         return "Half Time"
     if stype == "inprogress" and sdescl in ("1st half", "2nd half"):
-        minute = _compute_minute(time_obj)
+        lo, hi = (1, 45) if sdescl == "1st half" else (46, 90)
+        minute = _compute_minute(time_obj, lo, hi)
         if minute is not None:
             return str(minute)
     return sdesc or stype
 
 
-def _compute_minute(time_obj):
+def _compute_minute(time_obj, lo, hi):
     """SofaScore dakikayi dogrudan vermiyor - 'bu yarinin basladigi zaman'
     (currentPeriodStartTimestamp) + 'bu yari basladiginda kac dakikaydi'
     (initial, saniye) uzerinden hesaplanir. Flashscore'un aksine (dogrudan
     dakika verir) burasi bir TAHMIN - ama Flashscore ile ayni hassasiyet
-    seviyesinde (topluluk kaynakli, dogrulanmis formul)."""
+    seviyesinde (topluluk kaynakli, dogrulanmis formul).
+
+    sevenm_bot._minute_from_difftime ile AYNI lo/hi kirpma mantigi (kullanici
+    raporu 2026-08-29: durmus/gecikmis maclarda currentPeriodStartTimestamp
+    bayatlarken elapsed sinirsizca buyuyup 149' gibi imkansiz dakikalar
+    uretiyordu - o maclar hala SofaScore'un canli listesinde goründugu icin
+    last_seen_at hep taze kaliyor, stale-kapama da hic tetiklenmiyordu)."""
     try:
         start = time_obj.get("currentPeriodStartTimestamp")
         if not start:
@@ -107,7 +114,7 @@ def _compute_minute(time_obj):
         elapsed = _time.time() - start
         if elapsed < 0:
             return None
-        return int(initial // 60 + elapsed // 60)
+        return max(lo, min(hi, int(initial // 60 + elapsed // 60)))
     except Exception:
         return None
 

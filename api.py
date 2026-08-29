@@ -403,28 +403,6 @@ def _x_poster_ensure_schema():
     conn.close()
 
 
-@app.get("/api/admin/debug/stuck-live")
-def _debug_stuck_live(request: Request):
-    """GECICI tani endpoint'i (2026-08-29) - 149dk gibi imkansiz dakikada
-    LIVE/HT takili kalmis maclarin source_match_id onekini (7m_/fs_/ss_/ts_)
-    gormek icin. Sorgu bitince kaldirilacak."""
-    from fastapi.responses import JSONResponse
-    if not _check_admin(request):
-        return JSONResponse({"error": "yetkisiz"}, status_code=403)
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT source_match_id, home_team_id, away_team_id, minute, status,
-               last_seen_at, last_progress_at
-        FROM matches WHERE status IN ('LIVE','HT')
-        ORDER BY minute DESC LIMIT 20
-    """)
-    rows = [{"source_match_id": r[0], "home": r[1], "away": r[2], "minute": r[3],
-              "status": r[4], "last_seen_at": r[5], "last_progress_at": r[6]} for r in cur.fetchall()]
-    conn.close()
-    return {"rows": rows}
-
-
 @app.get("/api/admin/x-poster/next-pending")
 def x_poster_next_pending(request: Request):
     """Henuz hic anons edilmemis (x_posted_signals'ta satiri olmayan) en eski

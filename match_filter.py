@@ -39,7 +39,26 @@ BLOCKED_LEAGUE_NAMES = {
     "northern premier league",
     "south australia state league 1",
     "south australia state league",
+    # 2026-08-29: ayni ligin FARKLI kaynaklarda FARKLI isimlerle gectigi
+    # gorulunce (GoalGPT uygulamasi "Australia National Premier Leagues
+    # Capital Football 1" olarak gosteriyordu - bizim "npl act" tam
+    # eslesmesi bunu YAKALAMIYORDU) fark edilen ek varyasyonlar:
+    "australia national premier leagues capital football 1",
+    "australia brisbane capital league 1",
+    "australia capital territory u23 league",
 }
+
+# Tek tek isim ekleyip yetismek surdurulemez (ayni lig onlarca farkli
+# yaziliskla gelebiliyor) - bu alt-dizeler gecen HERHANGI bir lig adi da
+# bloke edilir. Hepsi Avustralya'nin bolgesel/yari-amator yapilarina ozgu,
+# yanlis-pozitif riski dusuk (buyuk/tanidik bir ligin adinda bu ifadeler
+# gecmez).
+BLOCKED_LEAGUE_SUBSTRINGS = (
+    "capital football",
+    "national premier leagues",
+    "npl ",
+    "state league",
+)
 
 KNOWN_TEAMS = {
     # Süper Lig
@@ -125,6 +144,8 @@ def is_known_match(league_name, home_name, away_name):
     """
     ln = (league_name or "").strip().lower()
     if ln in BLOCKED_LEAGUE_NAMES:
+        return False
+    if any(sub in ln for sub in BLOCKED_LEAGUE_SUBSTRINGS):
         return False
     if ln in KNOWN_LEAGUE_NAMES:
         return True

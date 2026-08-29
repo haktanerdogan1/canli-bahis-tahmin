@@ -18,6 +18,7 @@ KNOWN_LEAGUE_NAMES = {
 BLOCKED_LEAGUE_NAMES = {
     "concacaf central american cup",
     "npl victoria",
+    "npl act",
 }
 
 KNOWN_TEAMS = {

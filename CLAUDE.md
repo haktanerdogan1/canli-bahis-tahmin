@@ -38,7 +38,39 @@ kalibrasyonu bu verinin bütünlüğüne dayanıyor.
 
 Test amacıyla `/tmp`'ye proje kopyası bırakılmaz. İş bitince kopya silinir.
 
-## 6. Bilinen açık konular
+## 6. Canlı veri kaynakları — hangisi nerede çalışıyor
+
+Railway'deki `web` servisi `supervisor.py` ile şu süreçleri yönetir (Railway
+kapanmadıkça, kullanıcının bilgisayarından BAĞIMSIZ çalışırlar):
+- `api` (uvicorn), `thesports_bot` (yetkisiz hatası veriyor ama **kullanılmıyor**,
+  önemsiz), `orchestrator` (18 bot konsensus), `sevenm_client` (7msport.com —
+  Playwright gerekmiyor, hafif, 2026-08-24'te "PC kapansa da çalışsın" diye
+  buraya taşındı), `iddaa_odds_client`.
+
+`flashscore_xg_client.py` ve `sofascore_client.py` ise Chromium/Playwright
+gerektirdiği için Railway'de ÇALIŞTIRILAMIYOR (bellek limiti — bkz.
+`flashscore_xg_client.py` docstring'i, Chromium container'ı 1GB limitine
+dayamıştı). Bu ikisi **SADECE kullanıcının kendi bilgisayarında**, launchd
+ile çalışır:
+- `~/Library/LaunchAgents/com.matchrix.flashscoreclient.plist`
+- `~/Library/LaunchAgents/com.matchrix.sofascoreclient.plist`
+- (ayrıca `com.matchrix.sevenmclient.plist` de var ama gereksiz — sevenm zaten
+  Railway'de `supervisor.py` üzerinden çalışıyor, local kopyası kullanılmıyor)
+
+**2026-08-28: iMac artık yok**, kullanıcı bu ikisini (flashscore + sofascore)
+şu an bu bilgisayardan (MacBook Air) çalıştırıyor. Bilgisayar kapanırsa/uyursa
+bu iki kaynak durur — kontrol/başlatma:
+```
+launchctl list | grep matchrix
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.matchrix.flashscoreclient.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.matchrix.sofascoreclient.plist
+tail -f /tmp/flashscore_client.log /tmp/sofascore_client.log
+```
+`RunAtLoad`+`KeepAlive` true olduğu için bilgisayar yeniden başlayınca zaten
+otomatik açılırlar — sadece ilk kurulumda/manuel durdurulduysa elle
+bootstrap etmek gerekir.
+
+## 7. Bilinen açık konular
 
 - `bot_red_card` ve `bot_attack_volume`: baktıkları veri alanı canlı
   API'den hiç dolmadığı için pratikte hiç çalışmıyor.
@@ -48,3 +80,11 @@ Test amacıyla `/tmp`'ye proje kopyası bırakılmaz. İş bitince kopya silinir
   Railway loglarında `"YENI ISTATISTIK ANAHTARI"` satırları, API'nin
   aslında hangi alanları doldurduğunu gösterir — yukarıdaki botları
   düzeltmenin yolu oradan geçiyor.
+- **K3 League (Güney Kore, izleniyor, 2026-08-29):** NPL/Capital Football
+  gibi bilerek bloke EDİLMEDİ — hiçbir şike iddiası/kötü ölçüm yok, sadece
+  yapısal olarak ayni risk kategorisinde (yarı-profesyonel, alt kademe).
+  Kullanıcı kararı: kanıt gelmeden bloke etme, birkaç hafta gerçek
+  performansını izle. İlk sinyal 2026-08-29'da (Dangjin Citizen-Chuncheon,
+  o an PENDING) - örneklem büyüyünce `bot-sinyalleri`de "k3 league" filtrele,
+  isabet oranı taban oranların (kural 3) belirgin altındaysa bloke listesine
+  ekle (bkz. `match_filter.py` BLOCKED_LEAGUE_NAMES, NPL Victoria orneği).

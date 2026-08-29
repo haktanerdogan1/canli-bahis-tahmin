@@ -32,6 +32,13 @@ BLOCKED_LEAGUE_NAMES = {
     "npl tasmania",
     "npl northern territory",
     "npl nt",
+    # Ayni tema: baska ulkelerin alt-bolgesel/yari-amator yapilar (2026-08-29,
+    # olcum: English Northern Premier League 0/3, South Australia State
+    # League 1 1/3 - kucuk ornekle ama NPL ile ayni yapisal risk kategorisi).
+    "english northern premier league",
+    "northern premier league",
+    "south australia state league 1",
+    "south australia state league",
 }
 
 KNOWN_TEAMS = {

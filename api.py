@@ -508,6 +508,124 @@ def x_poster_mark_resulted(request: Request, id: int, tweet_id: str):
     return {"success": True}
 
 
+# Telegram poster: x-poster ile AYNI mantik (once acik sinyal duyurulur, sonuc
+# gelince o mesaja YANIT (reply) olarak ikinci mesaj atilir) ama TAMAMEN AYRI
+# bir tabloda takip edilir (telegram_posted_signals) - x_posted_signals'i
+# paylasirsak Telegram'a atilan bir sinyal X icin de "atildi" sanilirdi,
+# iki kanal birbirinden bagimsiz olmali (kullanici talebi, 2026-08-29).
+def _telegram_poster_ensure_schema():
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_posted_signals (
+            prediction_id INTEGER PRIMARY KEY,
+            announce_message_id TEXT,
+            announced_at TIMESTAMP,
+            result_message_id TEXT,
+            resulted_at TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+@app.get("/api/admin/telegram-poster/next-pending")
+def telegram_poster_next_pending(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _telegram_poster_ensure_schema()
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.id, m.home_team_id, m.away_team_id, p.market, p.weighted_probability, m.league_name
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        WHERE p.decision = 'signal' AND p.outcome IS NULL
+          AND p.id NOT IN (SELECT prediction_id FROM telegram_posted_signals)
+        ORDER BY p.id ASC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return {"success": True, "found": False}
+    return {
+        "success": True, "found": True,
+        "id": row[0], "home": row[1], "away": row[2],
+        "market": row[3], "probability": round(row[4], 3) if row[4] is not None else None,
+        "league": row[5],
+    }
+
+
+@app.post("/api/admin/telegram-poster/mark-announced")
+def telegram_poster_mark_announced(request: Request, id: int, message_id: str):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _telegram_poster_ensure_schema()
+    conn = connect()
+    conn.execute(
+        "INSERT OR IGNORE INTO telegram_posted_signals (prediction_id, announce_message_id, announced_at) "
+        "VALUES (?, ?, CURRENT_TIMESTAMP)",
+        (id, message_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.get("/api/admin/telegram-poster/next-settled")
+def telegram_poster_next_settled(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _telegram_poster_ensure_schema()
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.id, m.home_team_id, m.away_team_id, p.market, p.weighted_probability,
+               m.league_name, p.outcome, t.announce_message_id
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        JOIN telegram_posted_signals t ON t.prediction_id = p.id
+        WHERE p.outcome IN ('WON','LOST')
+          AND t.announce_message_id IS NOT NULL
+          AND t.result_message_id IS NULL
+        ORDER BY p.id ASC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return {"success": True, "found": False}
+    return {
+        "success": True, "found": True,
+        "id": row[0], "home": row[1], "away": row[2],
+        "market": row[3], "probability": round(row[4], 3) if row[4] is not None else None,
+        "league": row[5], "outcome": row[6], "announce_message_id": row[7],
+    }
+
+
+@app.post("/api/admin/telegram-poster/mark-resulted")
+def telegram_poster_mark_resulted(request: Request, id: int, message_id: str):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _telegram_poster_ensure_schema()
+    conn = connect()
+    conn.execute(
+        "UPDATE telegram_posted_signals SET result_message_id = ?, resulted_at = CURRENT_TIMESTAMP "
+        "WHERE prediction_id = ?",
+        (message_id, id),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
 @app.get("/api/admin/outbound-ip")
 def outbound_ip(request: Request):
     """GECICI TANI UCU: Railway'in bu servis icin kullandigi cikis IP'sini

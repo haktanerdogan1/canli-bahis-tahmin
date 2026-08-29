@@ -78,6 +78,12 @@ SERVICES = {
     "x_poster": {
         "cmd": [PYTHON, "-u", "x_poster.py"],
     },
+    # telegram_poster: x_poster ile ayni akis (acik sinyal -> sonuc yaniti)
+    # ama Telegram Bot API ucretsiz oldugu icin tamamen otomatik calisir,
+    # X'teki 402 Payment Required engeli yok (kullanici talebi, 2026-08-29).
+    "telegram_poster": {
+        "cmd": [PYTHON, "-u", "telegram_poster.py"],
+    },
     # flashscore_xg_bot: GECICI OLARAK DEVRE DISI (bkz. git log). Ilk canli
     # denemede Chromium container'da tekrar tekrar "Page/Target crashed" verdi
     # ve servisin toplam bellek kullanimi 1GB limitine dayandi (0.999GB olculdu) -

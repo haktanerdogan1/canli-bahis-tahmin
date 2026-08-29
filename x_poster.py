@@ -1,10 +1,18 @@
-"""Kazanan sinyalleri otomatik olarak X'e (Twitter) paylasan istemci.
+"""Sinyalleri iki asamada otomatik X'e (Twitter) paylasan istemci.
 
 Railway'de supervisor.py uzerinden calisir (Playwright/Chromium GEREKTIRMEZ,
 sadece `requests` - sevenm_client.py/iddaa_odds_client.py ile ayni hafif
-desen). /api/admin/x-poster/next-win'den paylasilmamis en eski WON sinyalini
-cekip X API v2'ye (POST /2/tweets) OAuth 1.0a imzasiyla gonderir, basarili
-olursa /api/admin/x-poster/mark-posted ile isaretler.
+desen). Kullanici talebi (2026-08-29): once sinyal acildiginda bir "canli
+sinyal" tweeti atilir, sinyal sonuclandiginda (WON/LOST) o tweeti ALINTILAYAN
+ikinci bir sonuc tweeti atilir.
+
+Akis (her dongude iki ayri kontrol):
+  1) /api/admin/x-poster/next-pending -> henuz anons edilmemis en eski ACIK
+     sinyal varsa "canli sinyal" tweeti atilir, tweet id'si mark-announced
+     ile kaydedilir.
+  2) /api/admin/x-poster/next-settled -> anonsu atilmis ama sonucu henuz
+     paylasilmamis, ARTIK sonuclanmis bir sinyal varsa, orijinal tweeti
+     alintilayan bir SONUC tweeti atilir, mark-resulted ile kaydedilir.
 
 OAuth 1.0a imzalama stdlib ile elle yapiliyor (hmac/hashlib/base64/urllib) -
 `requests_oauthlib` gibi ekstra bir bagimlilik eklemeye gerek yok.
@@ -25,7 +33,7 @@ import urllib.parse
 import requests
 
 DEFAULT_API_BASE = "https://web-production-f1dba.up.railway.app"
-CYCLE_PAUSE_SECONDS = 180
+CYCLE_PAUSE_SECONDS = 120
 X_TWEET_URL = "https://api.x.com/2/tweets"
 
 
@@ -54,36 +62,47 @@ def _oauth1_header(method, url, consumer_key, consumer_secret, token, token_secr
     return header
 
 
-def _format_tweet(sinyal):
-    home = sinyal["home"]
-    away = sinyal["away"]
-    market = sinyal["market"]
+_ANNOUNCE_TAGS = "#canlibahis #iddaatahminleri #bankokupon #futbol #GününKuponu"
+_RESULT_TAGS = "#canlibahis #iddaatahminleri #bankokupon"
+
+
+def _format_announce(sinyal):
     prob = sinyal.get("probability")
     guven = f"%{round(prob * 100)}" if prob is not None else "-"
     return (
-        f"✅ TUTTU! 🎯\n\n"
-        f"🏟️ {home} - {away}\n"
-        f"🎯 Tahmin: {market} | AI Güven: {guven}\n\n"
-        f"⚡ Sitede açık olan diğer tüm canlı tahminlere ücretsiz ulaş:\n"
-        f"👉 matchrixapp.com\n\n"
-        f"#bankokupon #GününKuponu #canlibahis #iddaatahminleri"
+        f"🔴 CANLI SİNYAL 🎯\n\n"
+        f"🏟️ {sinyal['home']} - {sinyal['away']}\n"
+        f"🎯 Tahmin: {sinyal['market']} | AI Güven: {guven}\n\n"
+        f"⚡ matchrixapp.com\n\n"
+        f"{_ANNOUNCE_TAGS}"
     )
 
 
-def _post_tweet(text, consumer_key, consumer_secret, token, token_secret):
+def _format_result(sinyal):
+    if sinyal["outcome"] == "WON":
+        body = "✅ TUTTU! 🎯\n\nBotlarımız yine haklı çıktı 🔥\n👉 matchrixapp.com"
+    else:
+        body = "❌ Bu sefer olmadı.\n\nKayıp seriler normaldir, disiplinli kasa yönetimiyle devam 💪\n👉 matchrixapp.com"
+    return f"{body}\n\n{_RESULT_TAGS}"
+
+
+def _post_tweet(text, consumer_key, consumer_secret, token, token_secret, quote_tweet_id=None):
     header = _oauth1_header("POST", X_TWEET_URL, consumer_key, consumer_secret, token, token_secret)
+    body = {"text": text}
+    if quote_tweet_id:
+        body["quote_tweet_id"] = quote_tweet_id
     r = requests.post(
         X_TWEET_URL,
         headers={"Authorization": header, "Content-Type": "application/json"},
-        json={"text": text}, timeout=20,
+        json=body, timeout=20,
     )
     r.raise_for_status()
-    return r.json()
+    return r.json()["data"]["id"]
 
 
-def run_cycle(api_base, admin_secret, consumer_key, consumer_secret, token, token_secret):
+def _handle_pending(api_base, admin_secret, keys):
     r = requests.get(
-        f"{api_base}/api/admin/x-poster/next-win",
+        f"{api_base}/api/admin/x-poster/next-pending",
         headers={"x-admin-secret": admin_secret}, timeout=15,
     )
     r.raise_for_status()
@@ -91,16 +110,51 @@ def run_cycle(api_base, admin_secret, consumer_key, consumer_secret, token, toke
     if not data.get("found"):
         return False
 
-    text = _format_tweet(data)
-    _post_tweet(text, consumer_key, consumer_secret, token, token_secret)
-    print(f"✅ Paylaşıldı: {data['home']} - {data['away']} ({data['market']})", flush=True)
+    tweet_id = _post_tweet(_format_announce(data), *keys)
+    print(f"📢 Anons edildi: {data['home']} - {data['away']} (tweet {tweet_id})", flush=True)
 
     requests.post(
-        f"{api_base}/api/admin/x-poster/mark-posted",
+        f"{api_base}/api/admin/x-poster/mark-announced",
         headers={"x-admin-secret": admin_secret},
-        params={"id": data["id"]}, timeout=15,
+        params={"id": data["id"], "tweet_id": tweet_id}, timeout=15,
     ).raise_for_status()
     return True
+
+
+def _handle_settled(api_base, admin_secret, keys):
+    r = requests.get(
+        f"{api_base}/api/admin/x-poster/next-settled",
+        headers={"x-admin-secret": admin_secret}, timeout=15,
+    )
+    r.raise_for_status()
+    data = r.json()
+    if not data.get("found"):
+        return False
+
+    tweet_id = _post_tweet(
+        _format_result(data), *keys, quote_tweet_id=data["announce_tweet_id"]
+    )
+    print(f"🏁 Sonuç paylaşıldı: {data['home']} - {data['away']} ({data['outcome']}, tweet {tweet_id})", flush=True)
+
+    requests.post(
+        f"{api_base}/api/admin/x-poster/mark-resulted",
+        headers={"x-admin-secret": admin_secret},
+        params={"id": data["id"], "tweet_id": tweet_id}, timeout=15,
+    ).raise_for_status()
+    return True
+
+
+def run_cycle(api_base, admin_secret, keys):
+    did_something = False
+    try:
+        did_something |= _handle_pending(api_base, admin_secret, keys)
+    except Exception as e:
+        print(f"⚠️  Anons döngüsü hatası: {e}", flush=True)
+    try:
+        did_something |= _handle_settled(api_base, admin_secret, keys)
+    except Exception as e:
+        print(f"⚠️  Sonuç döngüsü hatası: {e}", flush=True)
+    return did_something
 
 
 def main():
@@ -120,16 +174,17 @@ def main():
         print(f"HATA: eksik ortam değişkeni: {', '.join(missing)}", flush=True)
         sys.exit(1)
 
+    keys = (consumer_key, consumer_secret, token, token_secret)
     print(f"🚀 X paylaşım botu başlatılıyor -> {api_base}", flush=True)
     while True:
         try:
-            posted = run_cycle(api_base, admin_secret, consumer_key, consumer_secret, token, token_secret)
+            did_something = run_cycle(api_base, admin_secret, keys)
         except Exception as e:
             print(f"⚠️  Döngü hatası: {e}", flush=True)
-            posted = False
-        # Bir sinyal paylasildiysa hemen ardindan bekleyen baska biri olup
-        # olmadigina hizli bakiyoruz (kisa bekleme); yoksa normal aralik.
-        time.sleep(5 if posted else CYCLE_PAUSE_SECONDS)
+            did_something = False
+        # Bir seyler paylasildiysa hemen ardindan baska bekleyen var mi diye
+        # hizli bakiyoruz; yoksa normal aralik kadar bekliyoruz.
+        time.sleep(5 if did_something else CYCLE_PAUSE_SECONDS)
 
 
 if __name__ == "__main__":

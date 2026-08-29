@@ -17,8 +17,21 @@ KNOWN_LEAGUE_NAMES = {
 # diger tum kademelerden ONCE reddeder.
 BLOCKED_LEAGUE_NAMES = {
     "concacaf central american cup",
+    # Avustralya NPL (National Premier Leagues) - eyalet bazli amator/yari-
+    # amator yapi, denetimi zayif (bkz. NPL Victoria sike iddiasi, 2026-08-29,
+    # 0/5 isabet). Ayni sisteme ait TUM eyaletler tek seferde bloke edildi -
+    # tek tek sikayet gelmesini beklemeye gerek yok, kullanici talebi.
     "npl victoria",
     "npl act",
+    "npl nsw",
+    "npl new south wales",
+    "npl queensland",
+    "npl south australia",
+    "npl western australia",
+    "npl wa",
+    "npl tasmania",
+    "npl northern territory",
+    "npl nt",
 }
 
 KNOWN_TEAMS = {

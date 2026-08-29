@@ -58,6 +58,25 @@ BLOCKED_LEAGUE_SUBSTRINGS = (
     "national premier leagues",
     "npl ",
     "state league",
+    # 2026-08-29: kadin futbolu tamamen bloke edildi (kullanici talebi).
+    # Sebep: takim eslestirmemiz (prematch.resolve_team) SADECE isme bakiyor,
+    # lig/cinsiyet baglamini hic bilmiyor - "Real Sociedad" (kadin, Liga F)
+    # gibi bir isim, buyuk ihtimalle arsivimizdeki ayni isimli ERKEK takimin
+    # profiliyle eslesiyor (arsiv agirlikli olarak erkek futbolu). Bu, kadin
+    # maclarina YANLIS istatistiksel baglamla sinyal uretildigi anlamina
+    # gelir - duzgun (cinsiyete duyarli) bir arsiv/taban oran sistemi
+    # kurulana kadar toptan disarida tutuluyor.
+    "women",
+    "female",
+    "femenino",
+    "femminile",
+    "feminine",
+    "frauen",
+    "liga f ",
+    "nwsl",
+    "wsl",
+    "w-league",
+    "dames",
 )
 
 KNOWN_TEAMS = {

@@ -377,6 +377,75 @@ def admin_void_pending_signals(request: Request, league_name: str = "", match_id
     return {"success": True, "silinen_sinyal_sayisi": deleted}
 
 
+# --- X (Twitter) otomatik paylasim ------------------------------------------
+# x_poster.py (Railway'de supervisor.py uzerinden calisir, Playwright
+# GEREKTIRMEZ) bu iki ucu kullanarak kazanan sinyalleri sirayla X'e paylasir.
+# x_posted_signals tablosu "hangi sinyal zaten paylasildi" takibini tutar -
+# ayni sinyalin iki kere paylasilmasini (restart/redeploy sonrasi dahil)
+# onler. NOT: consensus_predictions'a hic dokunulmuyor (sadece okunuyor),
+# CLAUDE.md kural 4 ile cakisma yok.
+def _x_poster_ensure_schema():
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS x_posted_signals (
+            prediction_id INTEGER PRIMARY KEY,
+            posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+@app.get("/api/admin/x-poster/next-win")
+def x_poster_next_win(request: Request):
+    """Henuz X'te paylasilmamis en eski WON sinyalini doner (yoksa found:false).
+    x_poster.py'nin dongude cektigi tek uc - takim adlari/market/olasilik
+    tweet metnini olusturmaya yeter."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _x_poster_ensure_schema()
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.id, m.home_team_id, m.away_team_id, p.market, p.weighted_probability, m.league_name
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        WHERE p.outcome = 'WON'
+          AND p.id NOT IN (SELECT prediction_id FROM x_posted_signals)
+        ORDER BY p.id ASC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return {"success": True, "found": False}
+    return {
+        "success": True, "found": True,
+        "id": row[0], "home": row[1], "away": row[2],
+        "market": row[3], "probability": round(row[4], 3) if row[4] is not None else None,
+        "league": row[5],
+    }
+
+
+@app.post("/api/admin/x-poster/mark-posted")
+def x_poster_mark_posted(request: Request, id: int):
+    """x_poster.py X'e basariyla paylastiktan SONRA cagirir - boylece bir
+    paylasim hatasinda (X API dusukken vb.) sinyal 'paylasildi' sayilip
+    atlanmaz, bir sonraki dongude tekrar denenir."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _x_poster_ensure_schema()
+    conn = connect()
+    conn.execute("INSERT OR IGNORE INTO x_posted_signals (prediction_id) VALUES (?)", (id,))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
 @app.get("/api/admin/outbound-ip")
 def outbound_ip(request: Request):
     """GECICI TANI UCU: Railway'in bu servis icin kullandigi cikis IP'sini

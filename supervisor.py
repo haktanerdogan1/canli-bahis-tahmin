@@ -70,6 +70,14 @@ SERVICES = {
     "iddaa_odds_client": {
         "cmd": [PYTHON, "-u", "iddaa_odds_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
     },
+    # x_poster: kazanan sinyalleri otomatik X'e (Twitter) paylasir (kullanici
+    # talebi, 2026-08-29). sevenm_client gibi Playwright GEREKTIRMEZ. X API
+    # anahtarlari (X_CONSUMER_KEY/SECRET, X_ACCESS_TOKEN/SECRET) tanimli
+    # degilse x_poster.py kendisi hatayla cikar - o durumda supervisor'in
+    # backoff'u devreye girer, sistemin geri kalanini etkilemez.
+    "x_poster": {
+        "cmd": [PYTHON, "-u", "x_poster.py"],
+    },
     # flashscore_xg_bot: GECICI OLARAK DEVRE DISI (bkz. git log). Ilk canli
     # denemede Chromium container'da tekrar tekrar "Page/Target crashed" verdi
     # ve servisin toplam bellek kullanimi 1GB limitine dayandi (0.999GB olculdu) -

@@ -17,6 +17,7 @@ KNOWN_LEAGUE_NAMES = {
 # diger tum kademelerden ONCE reddeder.
 BLOCKED_LEAGUE_NAMES = {
     "concacaf central american cup",
+    "npl victoria",
 }
 
 KNOWN_TEAMS = {

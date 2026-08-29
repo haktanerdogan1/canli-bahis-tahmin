@@ -1918,6 +1918,22 @@ def get_ozet(request: Request):
         GROUP BY outcome
     """)
     bugun = {(k if k is not None else "PENDING"): v for k, v in cur.fetchall()}
+
+    # Guncel kazanma serisi (2026-08-29, kullanici talebi): en son sonuclanan
+    # sinyalden geriye dogru, ilk LOST'a kadar art arda kac WON var. PENDING
+    # sinyaller diziden tamamen haric (ne seriyi bozar ne uzatir) - sadece
+    # sonuclanmis (WON/LOST) sinyaller sirayla taranir.
+    cur.execute("""
+        SELECT outcome FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST')
+        ORDER BY created_at DESC LIMIT 50
+    """)
+    guncel_seri = 0
+    for (o,) in cur.fetchall():
+        if o == 'WON':
+            guncel_seri += 1
+        else:
+            break
     conn.close()
 
     bugun_kazanan = bugun.get("WON", 0)
@@ -1930,6 +1946,7 @@ def get_ozet(request: Request):
         "kazanan": won,
         "kaybeden": lost,
         "isabet_orani": round(won / settled, 3) if settled else None,
+        "guncel_seri": guncel_seri,
         "bekleyen": pending,
         "gozlem_disi": void,
         "lig_sayisi": lig_sayisi,

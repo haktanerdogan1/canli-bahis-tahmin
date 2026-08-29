@@ -1239,6 +1239,12 @@
                 <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
             </div>
 
+            <div id="streakBadgeWrap" style="text-align:center; margin:0 auto 0.75rem;">
+                <span id="streakBadge" style="display:none; align-items:center; gap:6px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:20px; padding:5px 12px; font-size:0.76rem; font-weight:600; color:var(--accent-success);">
+                    <i class="fa-solid fa-bolt"></i> <span id="streakBadgeText"></span>
+                </span>
+            </div>
+
             <div class="kasa-card" id="kasaCard" style="display:none; max-width:1000px; margin:0.5rem auto 1.25rem; padding:1rem 1.25rem; background:var(--bg-surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg);">
                 <div id="kasaCardHeader" onclick="toggleKasaCard()" style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-family:'Outfit',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer;">
                     <span><i class="fa-solid fa-shield-halved" style="color:var(--accent-brand);"></i> Kasanı Nasıl Yönetmelisin?</span>
@@ -2534,6 +2540,17 @@
                 const el = document.getElementById('heroLeagueCount');
                 if (el && d.success && d.lig_sayisi != null) {
                     el.innerText = `+${d.lig_sayisi}`;
+                }
+                // Guncel kazanma serisi rozeti (kullanici talebi, 2026-08-29) -
+                // sadece en az 2 macliksa gosterilir, 1'de anlamli bir "seri"
+                // hissi vermiyor.
+                if (d.success && d.guncel_seri >= 2) {
+                    const badge = document.getElementById('streakBadge');
+                    const text = document.getElementById('streakBadgeText');
+                    if (badge && text) {
+                        text.innerText = `${d.guncel_seri} maçlık kazanma serisi`;
+                        badge.style.display = 'inline-flex';
+                    }
                 }
             } catch(e) {}
         })();

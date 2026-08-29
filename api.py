@@ -55,6 +55,12 @@ def _ensure_prediction_schema():
         cur.execute("CREATE INDEX IF NOT EXISTS ix_bot_predictions_match_snapshot_decision ON bot_predictions(match_id, snapshot_id, decision, probability)")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_created ON consensus_predictions(created_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_match ON consensus_predictions(match_id, snapshot_id)")
+        # 2026-08-29: live_sync()'teki capraz-kaynak duplikasyon kontrolu
+        # (bkz. _normalize_team_name) "matches WHERE status IN ('LIVE','HT')"
+        # sorguyor - indekssiz olunca matches tablosunun (148k+ satir) TAMAMINI
+        # her live-sync cagrisinda (15-20sn'de bir) taramaya basladi, genel
+        # yavaslamaya (tekrar) yol acti. Ayni idempotent CREATE INDEX deseni.
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_matches_status ON matches(status)")
         conn.commit()
         conn.close()
     except Exception as e:

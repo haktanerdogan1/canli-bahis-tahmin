@@ -191,8 +191,16 @@ def run_orchestrator():
                 if minute == 0 and (home_score > 0 or away_score > 0):
                     continue
 
-                # Sinyal kuralı: İlk yarı 35'e kadar (35-45 arası riskli), maç sonu 80'e kadar (80-90 arası riskli) sinyal ara
-                if (35 < minute < 46) or (minute >= 80):
+                # Sinyal kuralı: İlk yarı SADECE 25. dakikaya kadar, maç sonu 80'e
+                # kadar (80-90 arası riskli) sinyal ara.
+                # Kullanıcı talebi (2026-08-30): 26-45. dk arası İlk Yarı gol
+                # bildirimi ARTIK YOK. Ölçüm (son 2 gün, İY sinyalleri):
+                #   0-15. dk  -> 23G/9K  (%72)
+                #   16-25. dk -> 16G/12K (%57)
+                #   26-35. dk ->  9G/16K (%36)   <- sistemli kayıp
+                # İlk yarı bitmeye yakın "bir gol daha" kovalamak coin-flip'in
+                # altında. (36-45 zaten bloktaydı; alt sınır 35 -> 25'e çekildi.)
+                if (25 < minute < 46) or (minute >= 80):
                     continue
                     
                 # Eğer maç cooldown içerisindeyse atla
@@ -283,7 +291,17 @@ def run_orchestrator():
                     #   - skor 1-1 (2-0/0-2 degil: tek tarafli maclar kapaniyor), VE
                     #   - dakika <= 20 (3. gol icin hala yeterli sure var).
                     # 21+ dakika veya 1-1 disi bir 2 gollu skorda sinyali hic acma.
-                    if is_first_half_market and total_goals_initial == 2:
+                    # İlk yarıda zaten 2+ gol varken üste oynamak:
+                    #  - total == 2 ("İY 2.5 Üst"): SADECE 1-1 VE dakika ≤ 20 (açık,
+                    #    dengeli, erken maç); 2-0/0-2 veya dk > 20 ise sinyal yok.
+                    #  - total >= 3 ("İY 3.5 / 4.5 Üst"): HER ZAMAN blok. İlk yarıda
+                    #    3 gol varken 4./5. golü kovalamanın istatistiksel temeli yok
+                    #    (kullanıcı talebi 2026-08-30; gözlenen kötü örnekler:
+                    #    30 Ağu Dep. A Coruña–Valencia dk30 "İY 3.5 Üst",
+                    #    26 Ağu Frydlant–Brno dk35 "İY 4.5 Üst").
+                    if is_first_half_market and total_goals_initial >= 2:
+                        if total_goals_initial >= 3:
+                            continue
                         if not (home_score == 1 and away_score == 1 and minute <= 20):
                             continue
 

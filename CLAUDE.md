@@ -29,11 +29,21 @@ katmıyor demektir — rastgele tahminden daha iyi değildir.
 
 ### 3b. Market bazlı sinyal kısıtları (ölçümle eklenir)
 
+- **İlk Yarı gol sinyalleri SADECE dakika ≤ 25'te açılır** (kullanıcı talebi,
+  2026-08-30). Ölçüm (son 2 gün, İY sinyalleri, dakika bandına göre):
+  0-15. dk %72 (23G/9K) · 16-25. dk %57 (16G/12K) · **26-35. dk %36 (9G/16K)**.
+  İlk yarı bitmeye yakın "bir gol daha" kovalamak sistemli kaybettiriyor.
+  `orchestrator.py`: `if (25 < minute < 46) ...: continue` (36-45 zaten
+  bloktaydı, alt sınır 35 → 25'e çekildi). Maç sonu sinyalleri etkilenmez.
 - **"İlk Yarı 2.5 Üst"** (ilk yarıda zaten 2 gol varken 3. golü beklemek):
   ölçülen isabet %44 (8G/10K) — coin-flip'in ve diğer İY marketlerinin
   altında. `orchestrator.py`: bu market SADECE skor **1-1 VE dakika ≤ 20**
   iken açılır; 2-0/0-2 veya dk > 20 ise sinyal hiç üretilmez (kullanıcı
   talebi + gözlem, 2026-08-30). Gri bölge (dk 21-24) bloke tarafında.
+- **"İlk Yarı 3.5 Üst" ve üstü** (ilk yarıda 3+ gol varken 4./5. golü beklemek):
+  `total_goals_initial >= 3` iken İY sinyali **her zaman** bloke (kullanıcı
+  talebi 2026-08-30). İstatistiksel temeli yok; kod bunu üretebiliyordu çünkü
+  market adı `f"İlk Yarı {total_goals_initial + 0.5} Üst"` ve üst sınır yoktu.
 
 ## 4. `outcome` sütunu değiştirilemez
 

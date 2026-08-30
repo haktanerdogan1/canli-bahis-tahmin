@@ -79,6 +79,32 @@ BLOCKED_LEAGUE_SUBSTRINGS = (
     "dames",
 )
 
+# Kullanici talebi (2026-08-30): bu maclarda sike riski okundu - Alianza FC -
+# Atletico Balboa, Junior - Santa Fe, Vasco - Cruzeiro. Bu takimlarin
+# maclarindan ARTIK HIC sinyal uretilmesin; takim KNOWN_TEAMS'te veya
+# Iddaa arsivinde olsa bile. is_known_match() lig bloklarindan hemen sonra,
+# tanidik-takim kademelerinden ONCE reddeder (BLOCKED_LEAGUE_* ile ayni mantik).
+#
+# Ayirt edici adlar alt-dize olarak; kisa/genel adlar ("junior", "santa fe",
+# "vasco") alakasiz takimlari yanlislikla bloke etmemek icin TAM eslesme olarak.
+BLOCKED_TEAM_SUBSTRINGS = (
+    "alianza fc",
+    "atletico balboa",
+    "atlético balboa",
+    "atletico junior",
+    "atlético junior",
+    "junior barranquilla",
+    "junior fc",
+    "independiente santa fe",
+    "vasco da gama",
+    "cruzeiro",
+)
+BLOCKED_TEAM_EXACT = {
+    "junior",
+    "santa fe",
+    "vasco",
+}
+
 KNOWN_TEAMS = {
     # Süper Lig
     "galatasaray", "fenerbahçe", "fenerbahce", "beşiktaş", "besiktas", "trabzonspor",
@@ -123,7 +149,8 @@ KNOWN_TEAMS = {
     "inter miami", "la galaxy", "lafc",
     # Brezilya
     "flamengo", "palmeiras", "sao paulo", "corinthians", "santos", "gremio",
-    "internacional", "fluminense", "botafogo", "vasco da gama", "cruzeiro",
+    "internacional", "fluminense", "botafogo",
+    # "vasco da gama", "cruzeiro" -> BLOCKED_TEAM_* (sike riski, 2026-08-30)
     # Arjantin
     "boca juniors", "river plate", "racing club", "independiente",
     # Avustralya (NT - Darwin Premier Ligi)
@@ -166,13 +193,20 @@ def is_known_match(league_name, home_name, away_name):
         return False
     if any(sub in ln for sub in BLOCKED_LEAGUE_SUBSTRINGS):
         return False
+
+    hn = (home_name or "").strip().lower()
+    an = (away_name or "").strip().lower()
+    # Bloke takimlar: lig ne olursa olsun, tanidik-takim kademelerinden ONCE reddet.
+    if hn in BLOCKED_TEAM_EXACT or an in BLOCKED_TEAM_EXACT:
+        return False
+    if any(s in hn or s in an for s in BLOCKED_TEAM_SUBSTRINGS):
+        return False
+
     if ln in KNOWN_LEAGUE_NAMES:
         return True
     if "romania" in ln:
         return True
 
-    hn = (home_name or "").strip().lower()
-    an = (away_name or "").strip().lower()
     if any(kw in hn or kw in an for kw in KNOWN_TEAMS):
         return True
 

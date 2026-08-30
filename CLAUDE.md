@@ -27,6 +27,14 @@ Az örnekle ("3 sinyalin 2'si tuttu") performans iddiası yapılmaz.
 Bir bot bu taban oranların altında isabet gösteriyorsa, o bot değer
 katmıyor demektir — rastgele tahminden daha iyi değildir.
 
+### 3b. Market bazlı sinyal kısıtları (ölçümle eklenir)
+
+- **"İlk Yarı 2.5 Üst"** (ilk yarıda zaten 2 gol varken 3. golü beklemek):
+  ölçülen isabet %44 (8G/10K) — coin-flip'in ve diğer İY marketlerinin
+  altında. `orchestrator.py`: bu market SADECE skor **1-1 VE dakika ≤ 20**
+  iken açılır; 2-0/0-2 veya dk > 20 ise sinyal hiç üretilmez (kullanıcı
+  talebi + gözlem, 2026-08-30). Gri bölge (dk 21-24) bloke tarafında.
+
 ## 4. `outcome` sütunu değiştirilemez
 
 `consensus_predictions.outcome` bir kez yazıldıktan sonra **ASLA**
@@ -80,6 +88,13 @@ bootstrap etmek gerekir.
   Railway loglarında `"YENI ISTATISTIK ANAHTARI"` satırları, API'nin
   aslında hangi alanları doldurduğunu gösterir — yukarıdaki botları
   düzeltmenin yolu oradan geçiyor.
+- **Bloke takımlar (2026-08-30, şike riski, kullanıcı talebi):** Alianza FC,
+  Atlético Balboa, Junior (Barranquilla), (Independiente) Santa Fe, Vasco da
+  Gama, Cruzeiro — `match_filter.py` `BLOCKED_TEAM_SUBSTRINGS` /
+  `BLOCKED_TEAM_EXACT`. `is_known_match()` bunları lig bloklarından hemen
+  sonra, KNOWN_TEAMS/arşiv kademelerinden ÖNCE reddeder. Vasco + Cruzeiro
+  KNOWN_TEAMS'ten de çıkarıldı.
+
 - **K3 League (Güney Kore, izleniyor, 2026-08-29):** NPL/Capital Football
   gibi bilerek bloke EDİLMEDİ — hiçbir şike iddiası/kötü ölçüm yok, sadece
   yapısal olarak ayni risk kategorisinde (yarı-profesyonel, alt kademe).

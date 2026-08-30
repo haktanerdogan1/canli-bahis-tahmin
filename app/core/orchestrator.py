@@ -276,6 +276,17 @@ def run_orchestrator():
                         else f"Maç Sonu {total_goals_initial + 0.5} Üst"
                     )
 
+                    # Kullanici talebi (2026-08-30): "İlk Yarı 2.5 Üst" (ilk yarida
+                    # zaten 2 gol varken 3. golu beklemek) genel olarak kaybediyor
+                    # (olculen: 8G/10K, %44 - coin-flip ve diger IY marketlerinin
+                    # altinda). Bu marketi SADECE acik/dengeli ve erken mac icin birak:
+                    #   - skor 1-1 (2-0/0-2 degil: tek tarafli maclar kapaniyor), VE
+                    #   - dakika <= 20 (3. gol icin hala yeterli sure var).
+                    # 21+ dakika veya 1-1 disi bir 2 gollu skorda sinyali hic acma.
+                    if is_first_half_market and total_goals_initial == 2:
+                        if not (home_score == 1 and away_score == 1 and minute <= 20):
+                            continue
+
                     # DB'ye kaydet
                     cursor.execute('''
                         INSERT INTO consensus_predictions 

@@ -8,8 +8,10 @@ _fs_close_stale prefix parametresi).
 
 NEDEN COK SEYREK CALISIYOR (Flashscore'un 15sn'sine karsi 300sn varsayilan):
 SofaScore bu tur otomatik istemcileri IP bazli hizla engelliyor (gozlemlenen:
-~10-15 istek / birkac dakika icinde 403). Engellenirse COOLDOWN_ON_BLOCK_SECONDS
-kadar bekleyip warmup'i tekrar dener - surekli hata basıp CPU/log kirletmez.
+~10-15 istek / birkac dakika icinde 403). Engellenirse KADEMELI backoff'a girer
+(900sn -> 1800 -> 3600 ... -> 4sa, 6 ardisik engelde 6sa devre kesici) ve
+warmup'i tekrar dener - surekli hata basıp CPU/log/IP kirletmez. Ilk basarili
+dongude backoff sayaci sifirlanir. Ayrintili gerekce main()'deki sabitlerde.
 
 ILK SURUMDEKI HATA (2026-08-24, duzeltildi): bu istemci flashscore_xg_client.py'nin
 BATCH_SIZE disiplinini (bir turda SADECE birkac macin istatistigini cekmek)
@@ -38,9 +40,22 @@ from sofascore_bot import get_live_summary, scrape_stats, WARMUP_URL
 
 DEFAULT_API_BASE = "https://web-production-f1dba.up.railway.app"
 CYCLE_PAUSE_SECONDS = 300
-COOLDOWN_ON_BLOCK_SECONDS = 900
 BATCH_SIZE = 5
 BETWEEN_REQUEST_DELAY = (1.5, 4.0)  # (min, max) saniye - istekler arasi rastgele bekleme
+
+# Kademeli backoff + devre kesici (2026-08-31). ESKI DAVRANIS: her engelde sabit
+# 900sn bekle, tekrar dene - engelliyken de her 900sn'de bir vurdugu icin IP
+# surekli sicak kaliyordu (gozlem: /tmp/sofascore_client.log'da 150+ ardisik
+# "engellemis gorunuyor"). YENI: ardisik her engelde bekleme KATLANIR; cok uzun
+# surerse uzun bir "devre kesici" molasina girilir ki IP - ve kullanicinin kendi
+# baglantisi (ban tum IP'yi vuruyor, memory) - dogal olarak iyilessin. Ilk
+# basarili dongude sayac sifirlanir.
+BLOCK_BACKOFF_BASE_SECONDS = 900       # 1. engel 900, 2. 1800, 3. 3600, 4. 7200 ...
+BLOCK_BACKOFF_MAX_SECONDS = 4 * 3600   # tek bir backoff beklemesinin tavani
+CIRCUIT_BREAK_AFTER_BLOCKS = 6         # bu kadar ardisik engelden sonra
+CIRCUIT_BREAK_SECONDS = 6 * 3600       # tam mola (IP sogusun)
+SILENT_BLOCK_MIN_ELAPSED = 20          # 0 canli mac + >=Xsn surdu = sessiz engel
+                                      # (normalde bos liste ~1sn'de doner)
 
 _last_scraped_at = {}
 
@@ -122,7 +137,8 @@ def main():
         sys.exit(1)
 
     print(f"🚀 SofaScore canli veri istemcisi baslatiliyor -> {args.api_base} "
-          f"({CYCLE_PAUSE_SECONDS}sn'de bir, engellenirse {COOLDOWN_ON_BLOCK_SECONDS}sn bekler)", flush=True)
+          f"({CYCLE_PAUSE_SECONDS}sn'de bir; engelde kademeli backoff "
+          f"{BLOCK_BACKOFF_BASE_SECONDS}sn -> {CIRCUIT_BREAK_SECONDS // 3600}sa devre kesici)", flush=True)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
@@ -133,24 +149,51 @@ def main():
         except Exception as e:
             print(f"⚠️  Ilk yukleme basarisiz: {e}", flush=True)
 
+        consecutive_blocks = 0
         while True:
             start = time.time()
             pause = CYCLE_PAUSE_SECONDS
+            blok = False
             try:
                 canli, islenen, basarili = run_cycle(args.api_base, secret, page)
             except Exception as e:
                 msg = str(e)
                 canli, islenen, basarili = 0, 0, 0
-                if "http_403" in msg or "Forbidden" in msg:
-                    print(f"⚠️  SofaScore engellemis gorunuyor, {COOLDOWN_ON_BLOCK_SECONDS}sn bekleniyor.", flush=True)
-                    pause = COOLDOWN_ON_BLOCK_SECONDS
-                    try:
-                        page.goto(WARMUP_URL, timeout=30000)
-                    except Exception:
-                        pass
+                if "http_403" in msg or "http_429" in msg or "Forbidden" in msg:
+                    blok = True
                 else:
                     print(f"⚠️  Dongu hatasi: {e}", flush=True)
             elapsed = time.time() - start
+
+            # Sessiz engel: canli mac listesi BOS dondu ama fetch uzun surdu.
+            # Normalde bos liste ~1sn'de doner; 20sn+ = istek takiliyor / kisitlaniyor
+            # (page.evaluate'in 30sn timeout'una dayaniyor). Bunu da engel say.
+            if not blok and canli == 0 and elapsed >= SILENT_BLOCK_MIN_ELAPSED:
+                blok = True
+
+            if blok:
+                consecutive_blocks += 1
+                if consecutive_blocks >= CIRCUIT_BREAK_AFTER_BLOCKS:
+                    pause = CIRCUIT_BREAK_SECONDS
+                    print(f"⛔ SofaScore {consecutive_blocks} kez ust uste engelledi - "
+                          f"devre kesici: {pause / 3600:.0f} saat tam mola.", flush=True)
+                else:
+                    pause = min(
+                        BLOCK_BACKOFF_BASE_SECONDS * (2 ** (consecutive_blocks - 1)),
+                        BLOCK_BACKOFF_MAX_SECONDS,
+                    )
+                    print(f"⚠️  SofaScore engellemis gorunuyor (ardisik {consecutive_blocks}), "
+                          f"{pause:.0f}sn bekleniyor.", flush=True)
+                try:
+                    page.goto(WARMUP_URL, timeout=30000)
+                except Exception:
+                    pass
+            else:
+                if consecutive_blocks:
+                    print(f"✅ SofaScore tekrar cevap veriyor (onceki ardisik engel: "
+                          f"{consecutive_blocks}) - backoff sayaci sifirlandi.", flush=True)
+                consecutive_blocks = 0
+
             # Robotik/tam-saniyeli araliklardan kacinmak icin +-%15 jitter
             # (surekli TAM ayni araliklarla istek atmak da tespit isareti olabilir).
             pause_j = pause * random.uniform(0.85, 1.15)

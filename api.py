@@ -299,7 +299,8 @@ def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200
     cur.execute(f"""
         SELECT b.bot_name, b.decision, b.probability, b.confidence, b.reasons_json,
                m.home_team_id, m.away_team_id, m.league_name,
-               c.market, c.signal_minute, c.outcome, c.weighted_probability, c.created_at
+               c.market, c.signal_minute, c.outcome, c.weighted_probability, c.created_at,
+               b.match_id
         FROM bot_predictions b
         JOIN consensus_predictions c ON c.match_id=b.match_id AND c.snapshot_id=b.snapshot_id
         JOIN matches m ON m.id = b.match_id
@@ -309,14 +310,14 @@ def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200
     """, params)
     rows = []
     for (bot_name, decision, prob, conf, reasons_json, home, away, league,
-         market, sig_min, outcome, w_prob, created_at) in cur.fetchall():
+         market, sig_min, outcome, w_prob, created_at, match_id) in cur.fetchall():
         rows.append({
             "bot": bot_name, "olasilik": prob, "guven": conf,
             "gerekce": json.loads(reasons_json) if reasons_json else [],
             "ev_sahibi": home, "deplasman": away, "lig": league,
             "market": market, "sinyal_dakikasi": sig_min,
             "konsensus_olasilik": w_prob, "sonuc": outcome or "PENDING",
-            "tarih": created_at,
+            "tarih": created_at, "mac_id": match_id,
         })
     conn.close()
     return {"success": True, "sinyaller": rows}

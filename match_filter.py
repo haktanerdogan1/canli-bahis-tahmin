@@ -87,6 +87,9 @@ BLOCKED_LEAGUE_SUBSTRINGS = (
 #
 # Ayirt edici adlar alt-dize olarak; kisa/genel adlar ("junior", "santa fe",
 # "vasco") alakasiz takimlari yanlislikla bloke etmemek icin TAM eslesme olarak.
+# Kullanici talebi (2026-09-01): yeni sike iddiasi dalgasi - 7 mac, kazananlar
+# dahil. Bu takimlarin maclarindan da HIC sinyal uretilmesin. Ayirt edici adlar
+# alt-dize; "remo" gibi kisa adlar TAM eslesme.
 BLOCKED_TEAM_SUBSTRINGS = (
     "alianza fc",
     "atletico balboa",
@@ -98,11 +101,22 @@ BLOCKED_TEAM_SUBSTRINGS = (
     "independiente santa fe",
     "vasco da gama",
     "cruzeiro",
+    # 2026-09-01 sike dalgasi (bilinen 2 mac; kalan 5 mac icin takim adlari
+    # eklenecek):
+    "estudiantes l.p",
+    "estudiantes lp",
+    "estudiantes de la plata",
+    "estudiantes la plata",
+    "newell",          # tek "Newell's Old Boys" var, guvenli
+    "newell's old boys",
+    "coritiba",
+    "clube do remo",
 )
 BLOCKED_TEAM_EXACT = {
     "junior",
     "santa fe",
     "vasco",
+    "remo",             # Clube do Remo - "remo" alt-dizesi baska adlara denk gelebilir
 }
 
 KNOWN_TEAMS = {

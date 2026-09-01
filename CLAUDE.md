@@ -98,12 +98,17 @@ bootstrap etmek gerekir.
   Railway loglarında `"YENI ISTATISTIK ANAHTARI"` satırları, API'nin
   aslında hangi alanları doldurduğunu gösterir — yukarıdaki botları
   düzeltmenin yolu oradan geçiyor.
-- **Bloke takımlar (2026-08-30, şike riski, kullanıcı talebi):** Alianza FC,
-  Atlético Balboa, Junior (Barranquilla), (Independiente) Santa Fe, Vasco da
-  Gama, Cruzeiro — `match_filter.py` `BLOCKED_TEAM_SUBSTRINGS` /
-  `BLOCKED_TEAM_EXACT`. `is_known_match()` bunları lig bloklarından hemen
-  sonra, KNOWN_TEAMS/arşiv kademelerinden ÖNCE reddeder. Vasco + Cruzeiro
-  KNOWN_TEAMS'ten de çıkarıldı.
+- **Bloke takımlar (şike riski, kullanıcı talebi):** `match_filter.py`
+  `BLOCKED_TEAM_SUBSTRINGS` / `BLOCKED_TEAM_EXACT`. `is_known_match()` bunları
+  lig bloklarından hemen sonra, KNOWN_TEAMS/arşiv kademelerinden ÖNCE reddeder.
+  - 2026-08-30: Alianza FC, Atlético Balboa, Junior (Barranquilla),
+    (Independiente) Santa Fe, Vasco da Gama, Cruzeiro (Vasco + Cruzeiro
+    KNOWN_TEAMS'ten de çıkarıldı).
+  - 2026-09-01: yeni şike dalgası, 7 maç (kazananlar dahil). Bilinen 2 maç:
+    Estudiantes L.P.–Newell's Old Boys, Remo–Coritiba. Bu 4 takım eklendi;
+    o 2 maçın sinyalleri `void-pending-signals` ile siliniyor (settled
+    olanlar için `match_ids` + `allow_settled_for_named_matches=true`). Kalan
+    5 maçın takım adları netleşince eklenecek.
 
 - **K3 League (Güney Kore, izleniyor, 2026-08-29):** NPL/Capital Football
   gibi bilerek bloke EDİLMEDİ — hiçbir şike iddiası/kötü ölçüm yok, sadece

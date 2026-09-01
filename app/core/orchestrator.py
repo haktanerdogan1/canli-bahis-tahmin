@@ -50,6 +50,29 @@ def _saatlik_kota_doldu_mu(cursor):
     return cursor.fetchone()[0] >= SAATLIK_SINYAL_KOTASI
 
 
+_yayin_son_log = 0
+
+
+def _yayin_durduruldu_mu():
+    """SIGNAL_PAUSE_UNTIL (ISO 8601, or. '2026-09-01T12:30:00+03:00')
+    tanimliysa ve o ana kadar HENUZ gelinmediyse yeni sinyal URETIMI durur.
+    Canli veri akisi ve settlement (acik sinyallerin sonuclanmasi)
+    ETKILENMEZ. Zaman gecince kendiliginden devam eder - ayri bir 'devam et'
+    islemi gerekmez. Bozuk/eksik deger -> yayin acik (guvenli taraf).
+    Kullanici talebi 2026-09-01."""
+    ts = (os.environ.get("SIGNAL_PAUSE_UNTIL") or "").strip()
+    if not ts:
+        return False
+    try:
+        import datetime
+        hedef = datetime.datetime.fromisoformat(ts)
+        simdi = (datetime.datetime.now(hedef.tzinfo) if hedef.tzinfo
+                 else datetime.datetime.now())
+        return simdi < hedef
+    except Exception:
+        return False
+
+
 AYNI_ANDA_ACIK_KAPASITE = 10
 
 
@@ -166,7 +189,19 @@ def run_orchestrator():
             # 1. Sadece 'LIVE' statüsündeki maçları çek
             cursor.execute("SELECT id, source_match_id, home_team_id, away_team_id, minute, status, home_score, away_score, aggregate_score FROM matches WHERE status='LIVE'")
             live_matches = cursor.fetchall()
-            
+
+            # Yayin gecici duraklatildiysa (SIGNAL_PAUSE_UNTIL) yeni sinyal
+            # uretme - ama asagidaki settlement guvenlik aglari YINE calissin
+            # (acik sinyaller sonuclanmaya devam etsin).
+            if _yayin_durduruldu_mu():
+                global _yayin_son_log
+                if time.time() - _yayin_son_log > 300:
+                    _yayin_son_log = time.time()
+                    print(f"⏸️  Sinyal yayini duraklatildi (SIGNAL_PAUSE_UNTIL="
+                          f"{os.environ.get('SIGNAL_PAUSE_UNTIL')}). Veri akisi + "
+                          f"settlement devam ediyor.", flush=True)
+                live_matches = []
+
             current_time = time.time()
             
             for match in live_matches:

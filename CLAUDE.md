@@ -75,14 +75,27 @@ ile çalışır:
 - (ayrıca `com.matchrix.sevenmclient.plist` de var ama gereksiz — sevenm zaten
   Railway'de `supervisor.py` üzerinden çalışıyor, local kopyası kullanılmıyor)
 
-**2026-08-28: iMac artık yok**, kullanıcı bu ikisini (flashscore + sofascore)
-şu an bu bilgisayardan (MacBook Air) çalıştırıyor. Bilgisayar kapanırsa/uyursa
-bu iki kaynak durur — kontrol/başlatma:
+**2026-09-03 düzeltme: "iMac artık yok" notu YANLIŞTI** — iMac geri geldi/hâlâ
+var. Kullanıcının HEM MacBook Air HEM iMac'i var, flashscore/sofascore hangi
+makinede çalışacağı **her gün değişebilir** (o gün hangisi kullanılıyorsa -
+eşi de MacBook Air'i kullanabiliyor). Bu ikisi AYNI ANDA iki makineden
+ÇALIŞTIRILMAMALI (aynı `fs_`/`ss_` source prefix'iyle çift veri girer,
+`match_id` çakışması/karışıklık riski). Her Claude Code oturumu SADECE
+üzerinde çalıştığı makineye erişir - bir oturum diğer makineye "izin
+verilse" bile geçemez, o makinede AYRI bir Claude Code oturumu açılması
+gerekir (kendi launchd/dosya erişimiyle).
+
+Kontrol/başlatma (üzerinde bulunulan makinede):
 ```
 launchctl list | grep matchrix
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.matchrix.flashscoreclient.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.matchrix.sofascoreclient.plist
 tail -f /tmp/flashscore_client.log /tmp/sofascore_client.log
+```
+Durdurma (diğer makineye geçerken, çift veri girmesin diye):
+```
+launchctl bootout gui/$(id -u)/com.matchrix.flashscoreclient
+launchctl bootout gui/$(id -u)/com.matchrix.sofascoreclient
 ```
 `RunAtLoad`+`KeepAlive` true olduğu için bilgisayar yeniden başlayınca zaten
 otomatik açılırlar — sadece ilk kurulumda/manuel durdurulduysa elle

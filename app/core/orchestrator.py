@@ -108,6 +108,71 @@ def _kapasite_kontrolu(cursor, yeni_olasilik):
     return False
 
 
+_LEAGUE_HIT_RATE_CACHE = {}
+_LEAGUE_CACHE_AT = 0
+LEAGUE_CACHE_TTL_SECONDS = 600
+
+
+def _league_hit_rate(cursor, league_name):
+    """Bu ligin GECMISTE sonuclanmis sinyallerinin isabet oranini doner
+    (n, hit_rate). 10dk'da bir yenilenen basit bir cache - her sinyalde
+    tum ligleri yeniden hesaplamamak icin."""
+    global _LEAGUE_HIT_RATE_CACHE, _LEAGUE_CACHE_AT
+    now = time.time()
+    if now - _LEAGUE_CACHE_AT > LEAGUE_CACHE_TTL_SECONDS:
+        cursor.execute('''
+            SELECT m.league_name,
+                   SUM(CASE WHEN p.outcome='WON' THEN 1 ELSE 0 END),
+                   COUNT(*)
+            FROM consensus_predictions p JOIN matches m ON m.id = p.match_id
+            WHERE p.decision='signal' AND p.outcome IN ('WON','LOST')
+            GROUP BY m.league_name
+        ''')
+        _LEAGUE_HIT_RATE_CACHE = {
+            (row[0] or ""): (row[1] / row[2], row[2]) for row in cursor.fetchall() if row[2] > 0
+        }
+        _LEAGUE_CACHE_AT = now
+    return _LEAGUE_HIT_RATE_CACHE.get(league_name or "", (None, 0))
+
+
+def _critic_review(cursor, league_name, consensus_result, total_goals_initial,
+                    minute, snap_5, snap_10, snap_15):
+    """"Kirmizi Takim" - kullanici tasarimi (2026-09-03): sinyal acilmadan
+    ONCE "bu neden yanlis olabilir" diye sorgulayan, deterministik/kural
+    bazli bir kontrol (LLM cagrisi YOK - canli dongude her sinyalde harici
+    bir API'ye gitmek gecikme+maliyet getirir, bu projenin tum diger 18
+    botu da istatistiksel/kural bazli calisiyor, ayni desen).
+
+    Uretilen bayraklarin gercekten anlamli olup olmadigi (flagli sinyaller
+    flagsiz olanlardan daha mi kotu tutuyor) Evaluator tarafindan GERIYE
+    DONUK olculur (bkz. api.py:/api/admin/panel/critic) - bu fonksiyon
+    sadece bayraklari kaydeder, kendisi bir karar/blok mekanizmasi DEGIL."""
+    flags = []
+
+    pos = consensus_result.positive_bot_count or 0
+    neg = consensus_result.negative_bot_count or 0
+    if pos - neg <= 2:
+        flags.append(f"zayif_konsensus(+{pos}/-{neg})")
+
+    insuf = consensus_result.insufficient_data_count or 0
+    if insuf >= 5:
+        flags.append(f"cok_bot_veri_yetersiz({insuf})")
+
+    if snap_5 is None or snap_10 is None:
+        flags.append("erken_dakika_az_gecmis")
+
+    hit_rate, n = _league_hit_rate(cursor, league_name)
+    if n < 20:
+        flags.append(f"lig_az_ornek(n={n})")
+    elif hit_rate is not None and hit_rate < 0.55:
+        flags.append(f"lig_zayif_gecmis(%{round(hit_rate*100)},n={n})")
+
+    if total_goals_initial >= 1 and minute <= 15:
+        flags.append("erken_gol_sonrasi_ikinci_gol_beklentisi")
+
+    return flags
+
+
 def _ensure_schema():
     """Sema garantisi tek yerden (settlement.ensure_schema) yonetilir."""
     settlement.ensure_schema()
@@ -187,7 +252,7 @@ def run_orchestrator():
             cursor = conn.cursor()
             
             # 1. Sadece 'LIVE' statüsündeki maçları çek
-            cursor.execute("SELECT id, source_match_id, home_team_id, away_team_id, minute, status, home_score, away_score, aggregate_score FROM matches WHERE status='LIVE'")
+            cursor.execute("SELECT id, source_match_id, home_team_id, away_team_id, minute, status, home_score, away_score, aggregate_score, league_name FROM matches WHERE status='LIVE'")
             live_matches = cursor.fetchall()
 
             # Yayin gecici duraklatildiysa (SIGNAL_PAUSE_UNTIL) yeni sinyal
@@ -374,6 +439,20 @@ def run_orchestrator():
                         signal_market,
                         total_goals_initial
                     ))
+                    prediction_id = cursor.lastrowid
+
+                    # "Kirmizi Takim" (Critic) - bkz. _critic_review docstring.
+                    try:
+                        flags = _critic_review(
+                            cursor, match["league_name"], consensus_result,
+                            total_goals_initial, minute, snap_5, snap_10, snap_15,
+                        )
+                        cursor.execute('''
+                            INSERT INTO signal_critiques (prediction_id, flags_json, risk_score)
+                            VALUES (?, ?, ?)
+                        ''', (prediction_id, json.dumps(flags, ensure_ascii=False), len(flags)))
+                    except Exception as e:
+                        print(f"⚠️  Critic degerlendirmesi basarisiz: {e}")
 
                     # HER BOTUN KARARINI AYRI AYRI KAYDET.
                     # Bu tablo onceden hic doldurulmuyordu (0 kayit), bu yuzden hangi botun

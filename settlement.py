@@ -60,6 +60,34 @@ def ensure_schema():
             cur.execute(ddl)
         except sqlite3.OperationalError:
             pass  # sutun zaten var
+    # 2026-09-03: "ogrenen ajan takimi" tasarimi (kullanici) - Critic +
+    # Evaluator rolleri icin iki yeni tablo. orchestrator.py sinyal
+    # uretirken signal_critiques'e yazar; api.py'deki admin endpoint'leri
+    # bunlari okuyup lessons_learned'i (istatistiksel olarak anlamli
+    # bulgular, n yeterince buyuyunce) gunceller.
+    for ddl in (
+        """CREATE TABLE IF NOT EXISTS signal_critiques (
+            prediction_id INTEGER PRIMARY KEY,
+            flags_json TEXT,
+            risk_score INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS lessons_learned (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT,
+            subject TEXT,
+            text TEXT,
+            sample_size INTEGER,
+            hit_rate REAL,
+            base_hit_rate REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(category, subject)
+        )""",
+    ):
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 

@@ -132,6 +132,7 @@
         <button class="tab-btn active" data-tab="uyeler" onclick="switchTab('uyeler')">Üyeler</button>
         <button class="tab-btn" data-tab="botlar" onclick="switchTab('botlar')">Bot Sinyalleri</button>
         <button class="tab-btn" data-tab="istatistik" onclick="switchTab('istatistik')">İstatistikler</button>
+        <button class="tab-btn" data-tab="ogrenen" onclick="switchTab('ogrenen')">Öğrenen Ekip</button>
     </div>
 
     <div class="panel-section active" id="sec-uyeler">
@@ -191,6 +192,46 @@
         <h3 style="font-size:0.95rem; margin:0.5rem 0;">Piyasa Karşılaştırması</h3>
         <div class="table-wrap" id="piyasaWrap"><div class="loading">Yükleniyor...</div></div>
     </div>
+
+    <div class="panel-section" id="sec-ogrenen">
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Critic (Kırmızı Takım) — Açık Sinyallerin Bayrakları</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Maç</th><th>Market</th><th>Olasılık</th><th>Risk Skoru</th><th>Bayraklar</th></tr></thead>
+                <tbody id="criticBody"><tr><td colspan="5" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Evaluator — Bayraklı vs Bayraksız (Geçmiş)</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;" id="evaluatorWrap"><div class="loading">Yükleniyor...</div></div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Bayrak Türü Bazında İsabet</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Bayrak</th><th>İsabet</th><th>n</th></tr></thead>
+                <tbody id="bayrakBody"><tr><td colspan="3" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Dersler (Kalıcı Hafıza)</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Konu</th><th>Ders</th><th>n</th><th>İsabet</th><th>Tarih</th></tr></thead>
+                <tbody id="derslerBody"><tr><td colspan="5" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Değer Analizi (Value Finder) — Açık Sinyaller</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Maç</th><th>Market</th><th>Model</th><th>Kapanış Oranı</th><th>Piyasa</th><th>Edge</th><th>Kelly</th><th>Durum</th></tr></thead>
+                <tbody id="degerBody"><tr><td colspan="8" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">CLV — Açılış vs Kapanış Oran Hareketi</h3>
+        <div class="table-wrap" id="clvWrap"><div class="loading">Yükleniyor...</div></div>
+    </div>
 </div>
 
 <script>
@@ -236,6 +277,94 @@ function switchTab(tab) {
     if (tab === 'istatistik' && !istatistikYuklendi) {
         istatistikYuklendi = true;
         loadIstatistikler();
+    }
+    if (tab === 'ogrenen' && !ogrenenYuklendi) {
+        ogrenenYuklendi = true;
+        loadOgrenenEkip();
+    }
+}
+
+let ogrenenYuklendi = false;
+
+async function loadOgrenenEkip() {
+    // Critic + Evaluator
+    const c = await api('/api/admin/panel/critic');
+    if (c.success) {
+        const cb = document.getElementById('criticBody');
+        if (!c.acik_sinyaller.length) {
+            cb.innerHTML = '<tr><td colspan="5" class="empty">Açık sinyal yok.</td></tr>';
+        } else {
+            cb.innerHTML = c.acik_sinyaller.map(s => `
+                <tr>
+                    <td>${s.mac}</td><td>${s.market || '—'}</td><td>${fmtPct(s.olasilik)}</td>
+                    <td>${s.risk_skoru}</td>
+                    <td class="reasons">${(s.bayraklar || []).join(' · ') || '—'}</td>
+                </tr>
+            `).join('');
+        }
+
+        const ev = c.gecmis_degerlendirme.genel;
+        const evWrap = document.getElementById('evaluatorWrap');
+        if (!ev) {
+            evWrap.innerHTML = '<div class="empty">Henüz sonuçlanmış+eleştirilmiş sinyal yok.</div>';
+        } else {
+            evWrap.innerHTML = `
+                <div style="padding:0.9rem;">
+                    <p style="margin:0 0 0.4rem;">Genel isabet: <b>${fmtPct(ev.genel_isabet)}</b> (${ev.toplam_sinyal} sinyal)</p>
+                    <p style="margin:0 0 0.4rem;">Bayraklı sinyaller: <b>${fmtPct(ev.bayrakli.isabet)}</b> (n=${ev.bayrakli.n || 0})</p>
+                    <p style="margin:0;">Bayraksız sinyaller: <b>${fmtPct(ev.bayraksiz.isabet)}</b> (n=${ev.bayraksiz.n || 0})</p>
+                </div>`;
+        }
+
+        const bb = document.getElementById('bayrakBody');
+        const bayraklar = Object.entries(c.gecmis_degerlendirme.bayrak_bazinda || {});
+        bb.innerHTML = bayraklar.length
+            ? bayraklar.map(([k, v]) => `<tr><td>${k}</td><td>${fmtPct(v.isabet)}</td><td>${v.n}</td></tr>`).join('')
+            : '<tr><td colspan="3" class="empty">Henüz yeterli veri yok (n≥5 gerekiyor).</td></tr>';
+    }
+
+    // Dersler
+    const d = await api('/api/admin/panel/dersler');
+    if (d.success) {
+        const db = document.getElementById('derslerBody');
+        db.innerHTML = d.dersler.length
+            ? d.dersler.map(x => `<tr><td>${x.konu}</td><td>${x.metin}</td><td>${x.n}</td><td>${fmtPct(x.isabet)}</td><td>${x.tarih}</td></tr>`).join('')
+            : '<tr><td colspan="5" class="empty">Henüz istatistiksel olarak anlamlı bir ders çıkmadı.</td></tr>';
+    }
+
+    // Deger Analizi
+    const v = await api('/api/admin/panel/deger-analizi');
+    if (v.success) {
+        const vb = document.getElementById('degerBody');
+        vb.innerHTML = v.sinyaller.length
+            ? v.sinyaller.map(s => `
+                <tr>
+                    <td>${s.mac}</td><td>${s.market || '—'}</td>
+                    <td>${fmtPct(s.model_olasilik)}</td><td>${s.kapanis_oran ?? '—'}</td>
+                    <td>${fmtPct(s.piyasa_olasilik)}</td>
+                    <td>${s.edge !== undefined ? (s.edge > 0 ? '+' : '') + Math.round(s.edge * 100) + 'p' : '—'}</td>
+                    <td>${s.kelly_fraksiyon !== undefined ? fmtPct(s.kelly_fraksiyon) : '—'}</td>
+                    <td>${s.durum}</td>
+                </tr>
+            `).join('')
+            : '<tr><td colspan="8" class="empty">Açık sinyal yok.</td></tr>';
+    }
+
+    // CLV
+    const clv = await api('/api/admin/panel/clv');
+    if (clv.success) {
+        const rows = Object.entries(clv.clv).map(([k, x]) => `
+            <tr>
+                <td>${k}</td><td>${x.eslesen_mac_sayisi}</td>
+                <td>${x.ortalama_acilis_oran ?? '—'}</td><td>${x.ortalama_kapanis_oran ?? '—'}</td>
+                <td>${x.ortalama_hareket ?? '—'}</td>
+            </tr>
+        `).join('');
+        document.getElementById('clvWrap').innerHTML = `
+            <table>
+                <thead><tr><th>Market</th><th>Eşleşen Maç</th><th>Ort. Açılış</th><th>Ort. Kapanış</th><th>Hareket</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
     }
 }
 

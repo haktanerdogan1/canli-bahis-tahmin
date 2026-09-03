@@ -2598,6 +2598,196 @@ def admin_panel_clv(request: Request):
     return {"success": True, "clv": out}
 
 
+def _evaluator_recompute_lessons(cur):
+    """"Evaluator" (kullanici tasarimi, 2026-09-03) - Critic'in bayrakladigi
+    sinyaller GERCEKTEN daha mi kotu tutuyor, yoksa bayraklar anlamsiz mi?
+    Sonuclanmis (WON/LOST) + kritik edilmis sinyalleri tarar, hem GENEL
+    (bayrakli vs bayraksiz) hem de HER BIR bayrak turu icin ayri isabet
+    orani hesaplar. n>=20 VE genel sistem ortalamasindan (kural: CLAUDE.md
+    "olcmeden iddia yok") belirgin (>=8 puan) dusukse lessons_learned'e
+    yazar/gunceller - azsa hicbir sey yazilmaz (erken iddia yok)."""
+    cur.execute('''
+        SELECT p.outcome, c.flags_json
+        FROM consensus_predictions p
+        JOIN signal_critiques c ON c.prediction_id = p.id
+        WHERE p.outcome IN ('WON','LOST')
+    ''')
+    rows = cur.fetchall()
+    if not rows:
+        return {"genel": None, "bayrak_bazinda": {}}
+
+    toplam = len(rows)
+    toplam_won = sum(1 for o, _ in rows if o == "WON")
+    genel_oran = toplam_won / toplam
+
+    bayrakli = [(o, f) for o, f in rows if json.loads(f or "[]")]
+    bayraksiz = [(o, f) for o, f in rows if not json.loads(f or "[]")]
+
+    def _oran(seq):
+        n = len(seq)
+        if n == 0:
+            return None, 0
+        return sum(1 for o, _ in seq if o == "WON") / n, n
+
+    genel_sonuc = {
+        "toplam_sinyal": toplam, "genel_isabet": round(genel_oran, 3),
+        "bayrakli": dict(zip(("isabet", "n"), _oran(bayrakli))),
+        "bayraksiz": dict(zip(("isabet", "n"), _oran(bayraksiz))),
+    }
+
+    # Bayrak turu bazinda (flags_json icindeki her string bir "tur" - parantez
+    # icindeki degisken kismi (sayilar) atilir ki "lig_az_ornek(n=5)" ile
+    # "lig_az_ornek(n=40)" ayni kategori sayilsin).
+    from collections import defaultdict
+    per_flag = defaultdict(list)
+    for o, f in rows:
+        for flag in json.loads(f or "[]"):
+            kategori = flag.split("(")[0]
+            per_flag[kategori].append(o)
+
+    bayrak_bazinda = {}
+    for kategori, outcomes in per_flag.items():
+        n = len(outcomes)
+        if n < 5:
+            continue
+        oran = sum(1 for o in outcomes if o == "WON") / n
+        bayrak_bazinda[kategori] = {"isabet": round(oran, 3), "n": n}
+        if n >= 20 and oran < genel_oran - 0.08:
+            metin = (f"'{kategori}' bayrakli sinyaller {n} orneklemde %{round(oran*100,1)} "
+                     f"tutuyor - genel ortalama (%{round(genel_oran*100,1)}) altinda, "
+                     f"Critic'in bu uyarisi anlamli gorunuyor.")
+            cur.execute('''
+                INSERT INTO lessons_learned (category, subject, text, sample_size, hit_rate, base_hit_rate)
+                VALUES ('critic_flag', ?, ?, ?, ?, ?)
+                ON CONFLICT(category, subject) DO UPDATE SET
+                    text=excluded.text, sample_size=excluded.sample_size,
+                    hit_rate=excluded.hit_rate, base_hit_rate=excluded.base_hit_rate,
+                    created_at=CURRENT_TIMESTAMP
+            ''', (kategori, metin, n, oran, genel_oran))
+
+    return {"genel": genel_sonuc, "bayrak_bazinda": bayrak_bazinda}
+
+
+@app.get("/api/admin/panel/critic")
+def admin_panel_critic(request: Request):
+    """Critic (Kirmizi Takim) raporu: (1) su an ACIK sinyallerin bayraklari,
+    (2) Evaluator'un geriye donuk olctugu - bayraklarin gercekten ise yarayip
+    yaramadigi. n yeterince buyuyunce anlamli bulgular lessons_learned'e
+    otomatik yazilir (bkz. _evaluator_recompute_lessons)."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT p.id, m.home_team_id, m.away_team_id, p.market, p.weighted_probability,
+               c.flags_json, c.risk_score
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        LEFT JOIN signal_critiques c ON c.prediction_id = p.id
+        WHERE p.decision='signal' AND p.outcome IS NULL
+        ORDER BY p.id DESC
+    ''')
+    acik = [{
+        "id": r[0], "mac": f"{r[1]} - {r[2]}", "market": r[3],
+        "olasilik": round(r[4], 3) if r[4] is not None else None,
+        "bayraklar": json.loads(r[5]) if r[5] else [], "risk_skoru": r[6] or 0,
+    } for r in cur.fetchall()]
+
+    degerlendirme = _evaluator_recompute_lessons(cur)
+    conn.commit()
+    conn.close()
+    return {"success": True, "acik_sinyaller": acik, "gecmis_degerlendirme": degerlendirme}
+
+
+@app.get("/api/admin/panel/dersler")
+def admin_panel_dersler(request: Request):
+    """lessons_learned tablosunu okur - Evaluator'un birikmis 'ogrendikleri'."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT category, subject, text, sample_size, hit_rate, base_hit_rate, created_at
+        FROM lessons_learned ORDER BY created_at DESC
+    ''')
+    dersler = [{
+        "kategori": r[0], "konu": r[1], "metin": r[2], "n": r[3],
+        "isabet": round(r[4], 3) if r[4] is not None else None,
+        "genel_isabet": round(r[5], 3) if r[5] is not None else None,
+        "tarih": r[6],
+    } for r in cur.fetchall()]
+    conn.close()
+    return {"success": True, "dersler": dersler}
+
+
+_FH_LINES_OK = {0.5, 1.5}
+_MS_LINES_OK = {1.5, 2.5}
+
+
+@app.get("/api/admin/panel/deger-analizi")
+def admin_panel_deger_analizi(request: Request):
+    """"Deger/Bahis Analisti" (Value Finder, kullanici tasarimi 2026-09-03):
+    su an ACIK sinyaller icin, mac basladiginda dondurulmus KAPANIS oranini
+    (bkz. _iddaa_transfer_odds, Faz 1) modelin olasiligiyla karsilastirir,
+    edge (deger) varsa Kelly fraksiyonu onerir.
+
+    ONEMLI KISIT: iddaa_odds_client sadece belirli cizgileri cekiyor (IY
+    0.5/1.5, MS 1.5/2.5 - bkz. FH_PREFERRED_LINES/FT_PREFERRED_LINES).
+    Sinyalin market cizgisi bunlarla eslesmiyorsa (ornegin "Ilk Yari 2.5
+    Ust") KARSILASTIRMA YAPILMAZ - farkli cizgilerin olasiligini
+    karsilastirmak gecersiz olur, uydurmak yerine 'eslesme_yok' donuyoruz."""
+    from fastapi.responses import JSONResponse
+    import re
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT p.id, m.home_team_id, m.away_team_id, p.market, p.weighted_probability, p.match_id
+        FROM consensus_predictions p JOIN matches m ON m.id = p.match_id
+        WHERE p.decision='signal' AND p.outcome IS NULL
+    ''')
+    signals = cur.fetchall()
+    out = []
+    for pred_id, home, away, market, prob, match_id in signals:
+        m = re.search(r'(\d+\.?\d*)\s*Üst', market or "")
+        if not m or prob is None:
+            out.append({"id": pred_id, "mac": f"{home} - {away}", "market": market, "durum": "eslesme_yok"})
+            continue
+        line = float(m.group(1))
+        if market.startswith("İlk Yarı"):
+            close_market, ok_lines = "fh_over_closing", _FH_LINES_OK
+        else:
+            close_market, ok_lines = "ms_over_closing", _MS_LINES_OK
+        if line not in ok_lines:
+            out.append({"id": pred_id, "mac": f"{home} - {away}", "market": market, "durum": "eslesme_yok",
+                        "not": f"cizgi {line} arsivlenen cizgilerle ({sorted(ok_lines)}) eslesmiyor"})
+            continue
+        cur.execute(
+            "SELECT odds FROM live_odds WHERE match_id=? AND market=? AND selection='over' "
+            "ORDER BY id DESC LIMIT 1", (match_id, close_market),
+        )
+        row = cur.fetchone()
+        if not row or not row[0]:
+            out.append({"id": pred_id, "mac": f"{home} - {away}", "market": market, "durum": "oran_yok"})
+            continue
+        kapanis_oran = row[0]
+        piyasa_olasilik = 1.0 / kapanis_oran
+        edge = prob - piyasa_olasilik
+        b = kapanis_oran - 1.0
+        kelly = ((b * prob) - (1 - prob)) / b if b > 0 else 0.0
+        out.append({
+            "id": pred_id, "mac": f"{home} - {away}", "market": market, "durum": "hesaplandi",
+            "model_olasilik": round(prob, 3), "kapanis_oran": kapanis_oran,
+            "piyasa_olasilik": round(piyasa_olasilik, 3), "edge": round(edge, 3),
+            "kelly_fraksiyon": round(max(0.0, kelly), 3),
+        })
+    conn.close()
+    return {"success": True, "sinyaller": out}
+
+
 @app.get("/api/monitor")
 def get_monitor(request: Request):
     """Canli sistem durumu - izleme paneli icin.

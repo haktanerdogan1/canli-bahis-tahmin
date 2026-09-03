@@ -297,7 +297,25 @@ def run_orchestrator():
                 
                 # Konsensüs
                 consensus_result = consensus_engine.evaluate(predictions)
-                
+
+                # Sinyalin uretildigi dakika ve hedeflenen market SABIT olarak hesaplanip
+                # kaydedilir. Boylece maç ilerledikce (ör. 2. yariya gecince) bu sinyal
+                # SONRADAN yanlislikla "Mac Sonu" marketine donusmez; hep uretildigi
+                # andaki (ilk yari / mac sonu) haliyle kalir.
+                total_goals_initial = (match["home_score"] or 0) + (match["away_score"] or 0)
+                is_first_half_market = minute <= 45
+
+                # OLCULDU (2026-08-14, son 90 gun, n=120): ilk yaride ZATEN en az 1 gol
+                # varken "bir gol daha" sinyali (Ilk Yari 1.5 Ust ve uzeri) modelin iddia
+                # ettigi ~%71 yerine sadece %55.8 tutuyor - ustelik olasilik dilimleri
+                # MONOTONIK bile degil (0.65-0.70 araligi %49, 0.70-0.75 araligi %64.4,
+                # 0.75-0.80 araligi %38.5), yani esigi yukseltmek de guvenilir bir duzeltme
+                # degil. Henuz gol yokken ayni market ("Ilk Yari 0.5 Ust") %70.3 ile iyi
+                # kalibre, o yuzden SADECE o durumda sinyal uretmeye devam ediyoruz;
+                # guvenilir yeniden olcum birikene kadar "1+ gol var" senaryosu duraklatildi.
+                if is_first_half_market and total_goals_initial >= 1 and consensus_result.decision == "signal":
+                    continue
+
                 if consensus_result.decision == "signal" and _saatlik_kota_doldu_mu(cursor):
                     # Son 60dk'da SAATLIK_SINYAL_KOTASI kadar sinyal uretilmis -
                     # kalite ne olursa olsun bu saat icin yeni sinyal acilmiyor.
@@ -309,11 +327,6 @@ def run_orchestrator():
                     continue
 
                 if consensus_result.decision == "signal":
-                    # Sinyalin uretildigi dakika ve hedeflenen market SABIT olarak hesaplanip kaydedilir.
-                    # Boylece maç ilerledikce (ör. 2. yariya gecince) bu sinyal SONRADAN yanlislikla
-                    # "Mac Sonu" marketine donusmez; hep uretildigi andaki (ilk yari / mac sonu) haliyle kalir.
-                    total_goals_initial = (match["home_score"] or 0) + (match["away_score"] or 0)
-                    is_first_half_market = minute <= 45
                     signal_market = (
                         f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market
                         else f"Maç Sonu {total_goals_initial + 0.5} Üst"

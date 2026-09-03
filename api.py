@@ -791,13 +791,28 @@ def _iddaa_ensure_schema():
             last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             fh_home_score INTEGER, fh_away_score INTEGER,
             ft_home_score INTEGER, ft_away_score INTEGER,
-            result_captured_at TIMESTAMP
+            result_captured_at TIMESTAMP,
+            opening_odd_1 REAL, opening_odd_x REAL, opening_odd_2 REAL,
+            opening_fh_over_line REAL, opening_fh_over_odd REAL, opening_fh_under_odd REAL,
+            opening_ms_over_line REAL, opening_ms_over_odd REAL, opening_ms_under_odd REAL
         )""",
         """CREATE TABLE IF NOT EXISTS live_odds (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             match_id INTEGER, market TEXT, selection TEXT, odds REAL,
             captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
+        # Migrasyon: tablo zaten VARSA yukaridaki CREATE hicbir sey yapmaz -
+        # opening_* kolonlari ADD COLUMN ile eklenmeli (2026-09-03, CLV takibi
+        # icin - bkz. iddaa_odds_sync ve _iddaa_transfer_odds).
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_odd_1 REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_odd_x REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_odd_2 REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_fh_over_line REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_fh_over_odd REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_fh_under_odd REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_ms_over_line REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_ms_over_odd REAL",
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_ms_under_odd REAL",
     ):
         try:
             conn.execute(stmt)
@@ -809,29 +824,57 @@ def _iddaa_ensure_schema():
 
 def _iddaa_transfer_odds(cur, match_db_id, home_raw, away_raw):
     """Mac ilk kez CANLIYA gectiginde (live_sync'teki is_new dalindan
-    cagrilir) Iddaa arsivindeki (henuz baslamamisken cekilmis) en yakin
-    esan takim adiyla eslesen kaydi arar, bulursa TEK SEFERLIK live_odds'a
-    yazar - bu deger BIR DAHA GUNCELLENMEZ (acilis orani donduruldu, maç
-    ilerledikce degisen canli oran DEGIL - eski tasarimin "her mac zamanla
-    dengeli gorunuyor" sorunu buydu, bkz. orchestrator.py'deki eski NOT).
+    cagrilir) Iddaa arsivindeki en yakin esan takim adiyla eslesen kaydi
+    arar, bulursa TEK SEFERLIK live_odds'a yazar - bir daha guncellenmez.
+
+    DUZELTME (2026-09-03, CLV takibi icin - kullanici talebi "Deger/Bahis
+    Analisti" ve "Evaluator" rolleri): eski yorum "acilis orani donduruldu"
+    diyordu ama bu YANLISTI - arsiv satiri her 5dk'da bir GUNCELLENIYOR
+    (iddaa_odds_sync), o yuzden mac canliya gectiginde okunan deger aslinda
+    KAPANIS (kickoff'a en yakin) orani. Simdi ikisi de ayri ayri live_odds'a
+    yaziliyor:
+      - market='1x2' (mevcut, DEGISTIRILMEDI - odds_profile.py bunu okuyor)
+        + market='1x2_opening' (yeni, gercek acilis)
+      - market='fh_over_closing'/'fh_under_closing' + '..._opening' (yeni -
+        eskiden IY/MS Alt-Ust hic live_odds'a aktarilmiyordu, halbuki asil
+        sinyallerimiz bu marketler uzerine)
+      - market='ms_over_closing'/'ms_under_closing' + '..._opening'
     Eslesme bulunamazsa sessizce gecilir (bu mac icin bot_odds_profile
     insufficient_data doner)."""
     from flashscore_xg_bot import _normalize as _tnorm, MIN_MATCH_SCORE
     import difflib
     h_norm, a_norm = _tnorm(home_raw), _tnorm(away_raw)
-    cur.execute("SELECT home_norm, away_norm, odd_1, odd_x, odd_2 FROM iddaa_odds_archive")
+    cur.execute("""
+        SELECT home_norm, away_norm,
+               odd_1, odd_x, odd_2, fh_over_odd, fh_under_odd, ms_over_odd, ms_under_odd,
+               opening_odd_1, opening_odd_x, opening_odd_2,
+               opening_fh_over_odd, opening_fh_under_odd, opening_ms_over_odd, opening_ms_under_odd
+        FROM iddaa_odds_archive
+    """)
     best, best_score = None, 0.0
-    for hn, an, o1, ox, o2 in cur.fetchall():
+    for row in cur.fetchall():
+        hn, an = row[0], row[1]
         score = (difflib.SequenceMatcher(None, h_norm, hn or "").ratio()
                  + difflib.SequenceMatcher(None, a_norm, an or "").ratio()) / 2
         if score > best_score:
-            best_score, best = score, (o1, ox, o2)
+            best_score, best = score, row[2:]
     if not best or best_score < MIN_MATCH_SCORE:
         return
-    o1, ox, o2 = best
+    (o1, ox, o2, fh_over_c, fh_under_c, ms_over_c, ms_under_c,
+     open_o1, open_ox, open_o2, fh_over_o, fh_under_o, ms_over_o, ms_under_o) = best
+    rows = [(match_db_id, "1x2", "1", o1), (match_db_id, "1x2", "x", ox), (match_db_id, "1x2", "2", o2)]
+    for market, sel, val in [
+        ("1x2_opening", "1", open_o1), ("1x2_opening", "x", open_ox), ("1x2_opening", "2", open_o2),
+        ("fh_over_closing", "over", fh_over_c), ("fh_under_closing", "under", fh_under_c),
+        ("ms_over_closing", "over", ms_over_c), ("ms_under_closing", "under", ms_under_c),
+        ("fh_over_opening", "over", fh_over_o), ("fh_under_opening", "under", fh_under_o),
+        ("ms_over_opening", "over", ms_over_o), ("ms_under_opening", "under", ms_under_o),
+    ]:
+        if val is not None:
+            rows.append((match_db_id, market, sel, val))
     cur.executemany(
         "INSERT INTO live_odds (match_id, market, selection, odds) VALUES (?,?,?,?)",
-        [(match_db_id, "1x2", "1", o1), (match_db_id, "1x2", "x", ox), (match_db_id, "1x2", "2", o2)],
+        rows,
     )
 
 
@@ -1091,21 +1134,29 @@ def iddaa_odds_sync(request: Request, payload: dict):
         odd_1, odd_x, odd_2 = e.get("odd_1"), e.get("odd_x"), e.get("odd_2")
         if not eid or not home or not away:
             continue
+        fh_line, fh_over, fh_under = e.get("fh_over_line"), e.get("fh_over_odd"), e.get("fh_under_odd")
+        ms_line, ms_over, ms_under = e.get("ms_over_line"), e.get("ms_over_odd"), e.get("ms_under_odd")
         cur.execute('''
             INSERT INTO iddaa_odds_archive
                 (iddaa_event_id, home_raw, away_raw, home_norm, away_norm, league,
                  odd_1, odd_x, odd_2, fh_over_line, fh_over_odd, fh_under_odd,
-                 ms_over_line, ms_over_odd, ms_under_odd, first_seen_at, last_seen_at)
-            VALUES (?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                 ms_over_line, ms_over_odd, ms_under_odd, first_seen_at, last_seen_at,
+                 opening_odd_1, opening_odd_x, opening_odd_2,
+                 opening_fh_over_line, opening_fh_over_odd, opening_fh_under_odd,
+                 opening_ms_over_line, opening_ms_over_odd, opening_ms_under_odd)
+            VALUES (?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    ?,?,?, ?,?,?, ?,?,?)
             ON CONFLICT(iddaa_event_id) DO UPDATE SET
                 odd_1=excluded.odd_1, odd_x=excluded.odd_x, odd_2=excluded.odd_2,
                 fh_over_line=excluded.fh_over_line, fh_over_odd=excluded.fh_over_odd, fh_under_odd=excluded.fh_under_odd,
                 ms_over_line=excluded.ms_over_line, ms_over_odd=excluded.ms_over_odd, ms_under_odd=excluded.ms_under_odd,
                 last_seen_at=CURRENT_TIMESTAMP
+                -- opening_* KASITLI OLARAK burada YOK - sadece ilk INSERT'te
+                -- yazilir, bir daha guncellenmez (CLV = opening vs closing
+                -- karsilastirmasi icin gercek acilis orani lazim, 2026-09-03).
         ''', (eid, home, away, _tnorm(home), _tnorm(away), e.get("league") or "",
-              odd_1, odd_x, odd_2,
-              e.get("fh_over_line"), e.get("fh_over_odd"), e.get("fh_under_odd"),
-              e.get("ms_over_line"), e.get("ms_over_odd"), e.get("ms_under_odd")))
+              odd_1, odd_x, odd_2, fh_line, fh_over, fh_under, ms_line, ms_over, ms_under,
+              odd_1, odd_x, odd_2, fh_line, fh_over, fh_under, ms_line, ms_over, ms_under))
         yazilan += 1
 
     guncellenen = 0
@@ -2493,6 +2544,58 @@ def admin_panel_istatistikler(request: Request):
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     return _hesapla_metrics()
+
+
+@app.get("/api/admin/panel/clv")
+def admin_panel_clv(request: Request):
+    """CLV (closing line value) raporu - acilis vs kapanis orani (2026-09-03,
+    kullanici tasarimi: "Deger/Bahis Analisti" + "Evaluator" rolleri icin
+    veri temeli). Bir sinyalin gercekten "deger" tasiyip tasimadigi, kar/
+    zarardan cok - kapanis oranina gore ne kadar erken/iyi yakalandigiyla
+    olculur (kisa vadeli kar/zarar sansa cok bagli, CLV degil).
+
+    Su an SADECE ham acilis/kapanis oran hareketini raporluyor (market
+    bazinda kac mac icin veri var, ortalama oran degisimi) - sinyalin
+    kendi market/line'iyla birebir eslestirip "bu sinyal CLV'yi yendi mi"
+    hesabi bir sonraki faz (Value Finder)."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    conn = connect()
+    cur = conn.cursor()
+    out = {}
+    for market_pair, label in [
+        (("1x2_opening", "1x2"), "1x2"),
+        (("fh_over_opening", "fh_over_closing"), "ilk_yari_ust"),
+        (("fh_under_opening", "fh_under_closing"), "ilk_yari_alt"),
+        (("ms_over_opening", "ms_over_closing"), "mac_sonu_ust"),
+        (("ms_under_opening", "ms_under_closing"), "mac_sonu_alt"),
+    ]:
+        open_mkt, close_mkt = market_pair
+        cur.execute("""
+            SELECT o.match_id, o.selection, o.odds, c.odds
+            FROM live_odds o
+            JOIN live_odds c ON c.match_id = o.match_id AND c.selection = o.selection
+                AND c.market = ?
+            WHERE o.market = ?
+        """, (close_mkt, open_mkt))
+        rows = cur.fetchall()
+        if not rows:
+            out[label] = {"eslesen_mac_sayisi": 0}
+            continue
+        n = len(rows)
+        avg_open = sum(r[2] for r in rows) / n
+        avg_close = sum(r[3] for r in rows) / n
+        # Kapanisa dogru oran DUSMESI o secimin daha favori hale geldigini
+        # (piyasanin o yonde hareket ettigini) gosterir.
+        out[label] = {
+            "eslesen_mac_sayisi": n,
+            "ortalama_acilis_oran": round(avg_open, 3),
+            "ortalama_kapanis_oran": round(avg_close, 3),
+            "ortalama_hareket": round(avg_close - avg_open, 3),
+        }
+    conn.close()
+    return {"success": True, "clv": out}
 
 
 @app.get("/api/monitor")

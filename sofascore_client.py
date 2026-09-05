@@ -183,8 +183,22 @@ def main():
             start = time.time()
             pause = CYCLE_PAUSE_SECONDS
             blok = False
+            # KENDI API'MIZIN hatasi mi, SofaScore'un mu? Bu ayrim kritik:
+            # SofaScore'a SADECE Playwright'in page.evaluate(fetch(...))'i ile
+            # gidiyoruz; kendi Railway API'mize ise `requests` ile. Yani bir
+            # requests istisnasi HER ZAMAN bizim tarafimizin sorunudur.
+            # 2026-09-05 HATASI: bu ayrim yoktu - Railway yavasladiginda
+            # (o gunku "database is locked" tikanmasi) gelen 30sn'lik timeout
+            # asagidaki "sessiz engel" sezgisine takiliyor ve SofaScore bizi
+            # engellemis gibi sayilip 6 SAATLIK devre kesiciye giriliyordu.
+            # Iki sorun birbirini besliyordu; artik kendi hatamiz engel SAYILMAZ.
+            api_hatasi = False
             try:
                 canli, islenen, basarili = run_cycle(args.api_base, secret, page)
+            except requests.exceptions.RequestException as e:
+                canli, islenen, basarili = 0, 0, 0
+                api_hatasi = True
+                print(f"⚠️  Kendi API'mize yazilamadi (SofaScore engeli DEGIL): {e}", flush=True)
             except Exception as e:
                 msg = str(e)
                 canli, islenen, basarili = 0, 0, 0
@@ -196,8 +210,9 @@ def main():
 
             # Sessiz engel: canli mac listesi BOS dondu ama fetch uzun surdu.
             # Normalde bos liste ~1sn'de doner; 20sn+ = istek takiliyor / kisitlaniyor
-            # (page.evaluate'in 30sn timeout'una dayaniyor). Bunu da engel say.
-            if not blok and canli == 0 and elapsed >= SILENT_BLOCK_MIN_ELAPSED:
+            # (page.evaluate'in 30sn timeout'una dayaniyor). Bunu da engel say -
+            # ama SADECE hata bizim API'mizden gelmediyse (bkz. api_hatasi).
+            if not blok and not api_hatasi and canli == 0 and elapsed >= SILENT_BLOCK_MIN_ELAPSED:
                 blok = True
 
             if blok:

@@ -794,3 +794,56 @@ def delete_unresolvable_void(verbose=True):
     if verbose and silinen:
         print(f"[settlement] {silinen} kalici cozulemeyen VOID sinyal silindi", flush=True)
     return silinen
+
+
+# live_snapshots SINIRSIZ BUYUYORDU (2026-09-05'te tespit edildi). Iki canli
+# kaynak (fs_/7m_) her turda (15-20sn) HER canli mac icin bir satir yaziyor;
+# 344 canli macla bu dakikada ~2000 insert demek ve hicbir yerde silinmiyordu.
+# Sonuc: veritabani 583MB'a ulasmis, her insert index bakimiyla yavaslamis ve
+# SQLite'in TEK YAZICI kisiti yuzunden tum sistem kilitlenir olmustu - o gun
+# orchestrator BASLANGIC verilerini (taban oranlar, takim profilleri, oran
+# profilleri) bile kuramadi: "database is locked". Botlar referans verisi
+# olmayinca "yetersiz veri" deyip cekildi ve 12 saat boyunca HIC sinyal
+# uretilmedi (kullanici raporu: "web sitemiz hala 3 macta kalmis").
+SNAPSHOT_PRUNE_BATCH = 20000      # tek cagirida en fazla bu kadar satir
+SNAPSHOT_KEEP_DAYS = 3            # bitmis maclarin bu kadar eski snapshot'lari silinir
+
+
+def prune_old_snapshots(batch=SNAPSHOT_PRUNE_BATCH, keep_days=SNAPSHOT_KEEP_DAYS, verbose=True):
+    """Bitmis maclarin eski live_snapshots satirlarini SINIRLI partiler halinde siler.
+
+    NEDEN SINIRLI: tek seferde milyonlarca satir silmek yazma kilidini uzun
+    sure tutar ve cozmeye calistigimiz sorunu GECICI OLARAK BUYUTUR. Her
+    cagirida en fazla `batch` satir silinir; bakim kadansinda (5dk) tekrar
+    tekrar cagrilarak birikmis borc zamanla eritilir.
+
+    NEDEN GUVENLI: sadece TERMINAL durumdaki (bitmis/iptal) maclarin
+    `keep_days` gunden eski satirlari siliniyor. Sonuclandirma bir sinyali
+    en gec 3 SAAT icinde kapatiyor (void_timed_out_signals), _time_based_fh_end
+    gibi geriye donuk okumalar da mac taze iken calisiyor - 3 gun onceki
+    bitmis maclarin snapshot'larina kimse bakmiyor. consensus_predictions'a
+    (ve outcome'a) DOKUNULMUYOR - CLAUDE.md kural 4 korunuyor.
+
+    Silme id sirasindan (en eski satirlar once) ilerler; captured_at icin ayri
+    bir index gerekmez, LIMIT sayesinde tarama erken durur.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute(f'''
+        DELETE FROM live_snapshots
+        WHERE id IN (
+            SELECT ls.id FROM live_snapshots ls
+            JOIN matches m ON m.id = ls.match_id
+            WHERE m.status IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+              AND ls.captured_at < datetime('now', '-{int(keep_days)} days')
+            ORDER BY ls.id ASC
+            LIMIT {int(batch)}
+        )
+    ''')
+    silinen = cur.rowcount
+    conn.commit()
+    conn.close()
+    if verbose and silinen:
+        print(f"[settlement] {silinen} eski snapshot silindi (bitmis maclar, "
+              f"{keep_days}+ gun once)", flush=True)
+    return silinen

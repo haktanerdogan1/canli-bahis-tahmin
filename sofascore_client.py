@@ -98,7 +98,36 @@ def run_cycle(api_base, secret, page):
     # SADECE en uzun suredir taranmayan BATCH_SIZE kadar maci hedefle - flashscore_xg_client.py
     # ile ayni ilke (tum canli maclara degil, kucuk bir gruba, zamanla hepsi kapsanir).
     havuz = [m for m in live_summary if m["mid"] in kabul_edilen]
-    havuz.sort(key=lambda m: _last_scraped_at.get(m["mid"], 0))
+
+    # 2026-09-05: SINYAL-ILGILI MACLARA DARALT. Onceki davranis tum canli
+    # maclar arasinda round-robin donuyordu - halbuki orchestrator'in bugunku
+    # kurallariyla (bkz. app/core/orchestrator.py) maclarin cogunda ZATEN
+    # sinyal uretilmiyor, o maclarin istatistigini cekmek SofaScore'a bosuna
+    # istek atmak demekti. Her bosa istek de yeni bir IP engellenme riski
+    # (olculen: 528 basarili cekime karsilik 181 engellenme, ve engel
+    # kullanicinin KENDI tarayicisini da vuruyor). Artik oncelik sirasi:
+    #   1) ilk yari + henuz gol yok  -> "Ilk Yari 0.5 Ust" hala iyi kalibre
+    #      (%70.3), sinyal GERCEKTEN buradan cikiyor
+    #   2) ikinci yari                -> "Mac Sonu X.5 Ust" marketleri acik
+    # Bu iki gruba hic aday yoksa o turda HIC istatistik istegi atilmiyor
+    # (sadece 1 canli-liste istegi) - sakin saatlerde ayak izi ~7 istekten
+    # 2 istege duser.
+    def _oncelik(m):
+        stage = str(m.get("stage") or "")
+        gol = (m.get("score_h") or 0) + (m.get("score_a") or 0)
+        if stage.isdigit():
+            dk = int(stage)
+            if dk <= 45:
+                return 0 if gol == 0 else 3   # ilk yari: golsuzler en oncelikli
+            return 1                           # ikinci yari: MS marketleri acik
+        return 3                               # devre arasi/bitmis/bilinmeyen
+
+    havuz = [m for m in havuz if _oncelik(m) < 3]
+    if not havuz:
+        print("↷ [sofascore] sinyal-ilgili canli mac yok - istatistik istegi atlandi", flush=True)
+        return len(live_summary), 0, 0
+
+    havuz.sort(key=lambda m: (_oncelik(m), _last_scraped_at.get(m["mid"], 0)))
     hedefler = havuz[:BATCH_SIZE]
 
     islenen = basarili = 0

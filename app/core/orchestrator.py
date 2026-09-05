@@ -245,7 +245,25 @@ def run_orchestrator():
     signal_cooldowns = {}
     COOLDOWN_SECONDS = 300 # Aynı maça 5 dakikada bir sinyal at
 
+    # Bakim fonksiyonlarinin kadansi (2026-09-05). ONCEKI DAVRANIS: asagidaki
+    # BES bakim fonksiyonunun HEPSI her turda (15sn) calisiyordu; her biri
+    # KENDI yazma transaction'ini aciyor. Ayni container'da api (flashscore'un
+    # 99 macli live-sync yazmalari), sevenm_client, iddaa_odds_client,
+    # x_poster ve telegram_poster de ayni SQLite dosyasina yaziyor - SQLite'ta
+    # yazicilar SERILESIR, yani 15sn'de 5 ekstra yazma sirasi tum sistemi
+    # bekletiyordu. Gozlem (2026-09-05 loglari): saatlerce suren "database is
+    # locked" - busy_timeout 30sn olmasina RAGMEN, hem orchestrator'in kendi
+    # bakimlari hem de API'nin kullanici istekleri hata veriyordu.
+    # YENI: sadece settle_pending her turda kalir (sonucun siteye ve paylasim
+    # botlarina HIZLI yansimasi gerekiyor). Digerleri saat/yarim saat olcekli
+    # ESIKLERE sahip guvenlik aglari - 15sn'de bir calismalarinin hicbir
+    # islevsel faydasi yok, 5 dakikada bir fazlasiyla yeterli.
+    BAKIM_HER_N_TUR = 20  # 20 x 15sn = 5 dakika
+    tur_sayaci = 0
+
     while True:
+        tur_sayaci += 1
+        bakim_turu = (tur_sayaci % BAKIM_HER_N_TUR == 0)
         try:
             conn = connect()
             conn.row_factory = sqlite3.Row
@@ -508,18 +526,19 @@ def run_orchestrator():
                 print(f"⚠️  Sonuclandirma hatasi: {se}")
 
             # VOID yazilmis sinyalleri kesin sonuca ulasip ulasmadigini kontrol
-            # eder - kullanici talebi. settle_pending ile ayni cadansta calisir
-            # (kapasite kontrolunden VOID olan maclar hala canli olabilir).
-            try:
-                settlement.reconcile_void_signals()
-            except Exception as ve:
-                print(f"⚠️  VOID yeniden kontrol hatasi: {ve}")
+            # eder - kullanici talebi. (kapasite kontrolunden VOID olan maclar
+            # hala canli olabilir). BAKIM TURUNDA calisir - bkz. BAKIM_HER_N_TUR.
+            if bakim_turu:
+                try:
+                    settlement.reconcile_void_signals()
+                except Exception as ve:
+                    print(f"⚠️  VOID yeniden kontrol hatasi: {ve}")
 
-            # Kalici olarak asla cozulemeyecek VOID sinyalleri sil - kullanici talebi.
-            try:
-                settlement.delete_unresolvable_void()
-            except Exception as de:
-                print(f"⚠️  VOID silme hatasi: {de}")
+                # Kalici olarak asla cozulemeyecek VOID sinyalleri sil - kullanici talebi.
+                try:
+                    settlement.delete_unresolvable_void()
+                except Exception as de:
+                    print(f"⚠️  VOID silme hatasi: {de}")
 
             # settlement.finalize_fully_settled_matches() KASITLI OLARAK
             # devre disi (2026-08-24, kullanici raporu: "sonuçlar ekranında
@@ -540,19 +559,30 @@ def run_orchestrator():
 
             # GUVENLIK AGI: match tracking katmaninda ne olursa olsun, hicbir
             # sinyal 3 saatten uzun PENDING kalamaz. Ayri try/except - biri
-            # patlarsa digeri yine de calissin.
-            try:
-                settlement.void_timed_out_signals()
-            except Exception as ve:
-                print(f"⚠️  Zaman asimi guvenlik agi hatasi: {ve}")
+            # patlarsa digeri yine de calissin. Esigi 3 SAAT oldugu icin
+            # 5 dakikalik bakim kadansi fazlasiyla yeterli.
+            if bakim_turu:
+                try:
+                    settlement.void_timed_out_signals()
+                except Exception as ve:
+                    print(f"⚠️  Zaman asimi guvenlik agi hatasi: {ve}")
 
-            # GUVENLIK AGI 2: last_progress_at zincirinden BAGIMSIZ, daha hizli
-            # tetiklenen kontrol - 30dk+ PENDING VE macin dakikasi hala <20 ise
-            # feed'in bu mac icin donmus/kesilmis oldugu kesindir.
-            try:
-                settlement.void_stuck_signals()
-            except Exception as se2:
-                print(f"⚠️  Takilma guvenlik agi hatasi: {se2}")
+                # GUVENLIK AGI 2: last_progress_at zincirinden BAGIMSIZ, daha hizli
+                # tetiklenen kontrol - 30dk+ PENDING VE macin dakikasi hala <20 ise
+                # feed'in bu mac icin donmus/kesilmis oldugu kesindir. Esigi 30dk,
+                # yine 5 dakikalik kadans yeterli.
+                try:
+                    settlement.void_stuck_signals()
+                except Exception as se2:
+                    print(f"⚠️  Takilma guvenlik agi hatasi: {se2}")
+
+                # live_snapshots'in sinirsiz buyumesini frenle - bkz.
+                # settlement.prune_old_snapshots docstring'i (2026-09-05'teki
+                # "database is locked" tikanmasinin kok nedeni buydu).
+                try:
+                    settlement.prune_old_snapshots()
+                except Exception as pe:
+                    print(f"⚠️  Snapshot temizleme hatasi: {pe}")
 
         except Exception as e:
             print(f"❌ Orkestratör Hatası: {e}")

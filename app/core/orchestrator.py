@@ -616,6 +616,20 @@ def run_orchestrator():
                 except Exception as ze:
                     print(f"⚠️  Zombi mac kapatma hatasi: {ze}")
 
+                # Acilista kilit yuzunden kurulamayan referans verilerini
+                # tekrar dene (bkz. REFERANS_ISLERI yorumu). Hepsi kurulunca
+                # liste bosalir ve bu blok bir daha is yapmaz.
+                #
+                # TEMIZLIKTEN ONCE calismali: bu veriler olmadan botlar
+                # "yetersiz veri" deyip cekiliyor, yani SINYAL URETIMI buna
+                # bagli. Snapshot temizligi ise arka plan isi - bekleyebilir.
+                # Sirasi tersken (2026-09-05 ilk hali) 200bin satirlik silme
+                # DB'yi mesgul birakiyor, hemen ardindan denenen referans
+                # isleri kilide takiliyordu: onemsiz is onemlisini aciktiriyordu.
+                if _referans_bekleyen:
+                    _referans_bekleyen = _referans_verileri_kur(
+                        _referans_bekleyen, acilis=False)
+
                 # live_snapshots'in sinirsiz buyumesini frenle - bkz.
                 # settlement.prune_old_snapshots docstring'i (2026-09-05'teki
                 # "database is locked" tikanmasinin kok nedeni buydu).
@@ -632,13 +646,6 @@ def run_orchestrator():
                     settlement.log_db_health()
                 except Exception as he:
                     print(f"⚠️  DB durumu loglanamadi: {he}")
-
-                # Acilista kilit yuzunden kurulamayan referans verilerini
-                # tekrar dene (bkz. REFERANS_ISLERI yorumu). Hepsi kurulunca
-                # liste bosalir ve bu blok bir daha is yapmaz.
-                if _referans_bekleyen:
-                    _referans_bekleyen = _referans_verileri_kur(
-                        _referans_bekleyen, acilis=False)
 
         except Exception as e:
             print(f"❌ Orkestratör Hatası: {e}")

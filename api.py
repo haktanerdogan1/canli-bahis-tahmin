@@ -223,6 +223,78 @@ def admin_panel_ozet(request: Request):
     }
 
 
+@app.get("/api/admin/panel/db-teshis")
+def admin_panel_db_teshis(request: Request):
+    """Yavaslik teshisi: DB/WAL boyutu, tablo satir sayilari, temizlik kuyrugu.
+
+    NEDEN: /api/live-matches 9-40sn arasi dalgalaniyor. WAL acik oldugu icin
+    okuyucular yaziciyi beklemiyor, yani yavaslik kilit degil boyut/plan
+    kaynakli. Neyin buyudugunu tahmin etmek yerine olcmek icin bu uc var
+    (CLAUDE.md kural 2: olcmeden iddia yok).
+    """
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    import os
+    dosyalar = {}
+    for etiket, yol in (("db", DB_PATH), ("wal", DB_PATH + "-wal"), ("shm", DB_PATH + "-shm")):
+        try:
+            dosyalar[etiket + "_mb"] = round(os.path.getsize(yol) / 1024 / 1024, 1)
+        except OSError:
+            dosyalar[etiket + "_mb"] = None
+
+    conn = connect()
+    cur = conn.cursor()
+
+    satirlar = {}
+    for tablo in ("live_snapshots", "bot_predictions", "consensus_predictions", "matches"):
+        try:
+            cur.execute(f"SELECT COUNT(*) FROM {tablo}")
+            satirlar[tablo] = cur.fetchone()[0]
+        except sqlite3.Error as e:
+            satirlar[tablo] = f"hata: {e}"
+
+    cur.execute("SELECT status, COUNT(*) FROM matches GROUP BY status")
+    mac_durumlari = dict(cur.fetchall())
+
+    # prune_old_snapshots'in silmeyi bekledigi backlog: bitmis maclarin
+    # 3 gunden eski snapshot'lari. Bu sayi dusmuyorsa temizlik yetismiyordur.
+    cur.execute("""
+        SELECT COUNT(*) FROM live_snapshots ls
+        JOIN matches m ON m.match_id = ls.match_id
+        WHERE m.status IN ('FINISHED','ABANDONED','CANCELLED','POSTPONED')
+          AND ls.captured_at < datetime('now', '-3 days')
+    """)
+    temizlik_kuyrugu = cur.fetchone()[0]
+
+    plan = []
+    try:
+        cur.execute("""
+            EXPLAIN QUERY PLAN
+            SELECT ls.match_id, MAX(ls.captured_at)
+            FROM live_snapshots ls
+            GROUP BY ls.match_id
+        """)
+        plan = [" ".join(str(x) for x in r) for r in cur.fetchall()]
+    except sqlite3.Error as e:
+        plan = [f"hata: {e}"]
+
+    cur.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='live_snapshots'")
+    snapshot_indexleri = [r[0] for r in cur.fetchall()]
+
+    conn.close()
+    return {
+        "success": True,
+        "dosya_boyutlari": dosyalar,
+        "satir_sayilari": satirlar,
+        "mac_durumlari": mac_durumlari,
+        "temizlik_kuyrugu": temizlik_kuyrugu,
+        "snapshot_indexleri": snapshot_indexleri,
+        "ornek_plan": plan,
+    }
+
+
 @app.get("/api/admin/panel/uyeler")
 def admin_panel_uyeler(request: Request):
     """Uye listesi. NOT: uyelik tipi (Free/Pro) henuz DB'de tutulmuyor -

@@ -101,6 +101,46 @@ launchctl bootout gui/$(id -u)/com.matchrix.sofascoreclient
 otomatik açılırlar — sadece ilk kurulumda/manuel durdurulduysa elle
 bootstrap etmek gerekir.
 
+## 6b. Veritabanı bakımı — 2026-09-05 tıkanması ve kalıcı korumalar
+
+**Ne oldu:** `live_snapshots` hiç temizlenmiyordu. Tablo 13 milyon satıra,
+DB 1.1 GB'a ulaştı; yazma kilidi sürekli doldu. Orkestratör AÇILIŞTA taban
+oranları ve oran profillerini kuramadı ("database is locked"), bu veriler
+SADECE açılışta bir kez kurulduğu için bir daha denenmedi ve botlar
+"yetersiz veri" deyip çekildi: **12 saat boyunca sıfır sinyal**.
+Kullanıcı bunu "web sitemiz hala 3 maçta kalmış" diye bildirdi.
+
+**Artık geçerli olan kurallar:**
+
+1. **Referans verisi kurulumu tek seferlik OLAMAZ.** `orchestrator.py`
+   `REFERANS_ISLERI` + `_referans_bekleyen`: açılışta kurulamayan iş bakım
+   turunda kurulana kadar tekrar denenir. Yeni bir "açılışta bir kez kurulan"
+   şey eklerken bu listeye ekle — geçici bir kilidi kalıcı körlüğe çeviren
+   desen tam olarak budur.
+2. **Bakım turunda referans verisi temizlikten ÖNCE gelir.** Sinyal üretimi
+   ona bağlı; snapshot temizliği 5 dakika bekleyebilir. Ters sırada 200 binlik
+   silme DB'yi meşgul bırakıp referans işlerini aç bırakıyordu.
+3. **Toplu silme parti SAYISIYLA büyütülür, parti BOYUTUYLA değil**
+   (`drain_old_snapshots`). Tek işlemde 200 bin satır silmek kilidi onlarca
+   saniye tutar ve 30sn'lik `busy_timeout`'a takılan herkesi aç bırakır —
+   çözmeye çalıştığımız sorunun ta kendisi.
+4. **Yazma uçlarında `try/finally: conn.close()` zorunlu.** İstisna
+   `conn.close()`'u atlarsa bağlantı ancak çöp toplayıcıyla kapanır; o ana
+   kadar tuttuğu okuma anlık görüntüsü WAL'ın checkpoint edilmesini engeller,
+   yani her hata bir sonrakini daha olası kılar (bkz. `live_stats_update`).
+5. **DB dosyası küçülmez, küçülmesi de gerekmez.** SQLite silinen sayfaları
+   serbest listeye alıp yeniden kullanır. Önemli olan taranan satır sayısı.
+   `VACUUM` tüm veritabanını dakikalarca kilitler — canlı sistemde çalıştırma.
+
+**İzleme:** `log_db_health()` her bakım turunda `[settlement] DB durumu:
+db=... snapshot=... temizlik_kuyrugu=...` yazar. Yavaşlık şikayetinde ÖNCE
+bu seriye bak — kuyruk erimiyorsa temizlik yetişmiyordur.
+
+**Uyarı (acı deneyim):** `/api/live-matches` sorgusunu "optimize etme"
+denemesi sentetik veriyle doğrulanmasına rağmen üretimde 2.5-10.7sn'yi
+**53.6sn'ye çıkardı** ve geri alındı. Bu uçta sorgu değişikliği ÜRETİMDE
+ölçülmeden gönderilmez.
+
 ## 7. Bilinen açık konular
 
 - `bot_red_card` ve `bot_attack_volume`: baktıkları veri alanı canlı

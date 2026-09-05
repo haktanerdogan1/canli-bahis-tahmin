@@ -7,6 +7,7 @@ import json
 import re
 import secrets
 import time
+import threading
 import unicodedata
 from collections import defaultdict, deque
 from urllib.parse import urlencode
@@ -1959,11 +1960,52 @@ def google_callback(request: Request, code: str = None, state: str = None, error
     redirect_response.delete_cookie(GOOGLE_STATE_COOKIE, path="/")
     return redirect_response
 
+# /api/live-matches kisa omurlu onbellegi.
+#
+# NEDEN: bu ucun sorgusu 13 milyon satirlik live_snapshots uzerinde calisiyor
+# ve 2026-09-05 olcumunde 3-56sn suruyordu. Her uye istegi ayni agir sorguyu
+# BASTAN calistiriyordu, oysa veriyi ureten orchestrator dongusu zaten 15
+# saniyede bir guncelliyor - yani ayni saniye icindeki 20 istek 20 kez ayni
+# cevabi hesapliyordu. TTL bilerek dongu araligindan kisa (12sn < 15sn):
+# kullanici hicbir zaman bir dongudén fazla eski veri gormez.
+#
+# ANAHTAR is_member: cevap SADECE uyelik durumuna gore degisiyor (asagidaki
+# maskeleme blogu), kullaniciya ozel hicbir alan yok. Uye ve uye olmayan
+# AYRI anahtarlarda tutuluyor ve payload onbellege MASKELENDIKTEN SONRA
+# giriyor - boylece uye verisi uye olmayana sizamaz.
+_LIVE_MATCHES_TTL = 12.0
+_live_matches_cache = {}          # is_member -> (zaman, payload)
+_live_matches_lock = threading.Lock()
+
+
 @app.get("/api/live-matches")
 def get_live_matches(request: Request):
     if _scrape_guarded(request, "live-matches"):
         return {"success": False, "error": "Çok fazla istek. Lütfen biraz yavaşlayın."}
     is_member = current_user_id(request) is not None
+
+    def _onbellekten(anahtar):
+        kayit = _live_matches_cache.get(anahtar)
+        if kayit and (time.monotonic() - kayit[0]) < _LIVE_MATCHES_TTL:
+            return kayit[1]
+        return None
+
+    taze = _onbellekten(is_member)
+    if taze is not None:
+        return taze
+
+    # Tek-ucus kilidi: onbellek bostayken gelen 20 es zamanli istek 20 ayri
+    # agir sorgu acmasin. Kilidi alan hesaplar, digerleri bekleyip hazir
+    # cevabi alir - kilidi aldiktan SONRA tekrar onbellege bakmalarinin
+    # sebebi bu (bekleyen istek icin bu arada cevap uretilmis olabilir).
+    with _live_matches_lock:
+        taze = _onbellekten(is_member)
+        if taze is not None:
+            return taze
+        return _live_matches_hesapla(is_member)
+
+
+def _live_matches_hesapla(is_member):
     conn = connect()
     cursor = conn.cursor()
     cursor.execute('''
@@ -2145,8 +2187,12 @@ def get_live_matches(request: Request):
             # bulaniklastirilmis olarak gostermeye yarar.
             chosen["locked"] = True
 
-    return {"success": True, "data": results, "is_member": is_member,
-            "today_tr": today_tr}
+    payload = {"success": True, "data": results, "is_member": is_member,
+               "today_tr": today_tr}
+    # Maskeleme YUKARIDA bitti; onbellege giren payload artik bu uyelik
+    # durumu icin nihai halde. Girdikten sonra hicbir yerde degistirilmiyor.
+    _live_matches_cache[is_member] = (time.monotonic(), payload)
+    return payload
 
 
 @app.get("/api/bet-assistant/latest")

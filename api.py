@@ -1644,20 +1644,31 @@ def live_stats_update(request: Request, payload: dict):
         return JSONResponse({"error": "gecerli stat alani yok"}, status_code=400)
 
     conn = connect()
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM matches WHERE source_match_id = ?", (f"{source}_{ext_id}",))
-    row = cur.fetchone()
-    if not row:
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM matches WHERE source_match_id = ?", (f"{source}_{ext_id}",))
+        row = cur.fetchone()
+        if not row:
+            return JSONResponse({"error": "mac bulunamadi"}, status_code=404)
+        match_db_id = row[0]
+        sql = (f"UPDATE live_snapshots SET {', '.join(set_parts)} "
+               "WHERE id = (SELECT id FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1)")
+        params.append(match_db_id)
+        cur.execute(sql, params)
+        updated = cur.rowcount
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        # Yogun yazma altinda bu UPDATE 30sn'lik busy_timeout'a takilabiliyor.
+        # Istisnayi disari birakmak iki sey yapiyordu: her hatada uzun bir
+        # traceback loglaniyor ve baglanti SADECE cop toplayici devreye
+        # girince kapaniyordu - o ana kadar tuttugu okuma anlik goruntusu
+        # WAL'in checkpoint edilmesini engelliyor, yani hata yavasligi
+        # BUYUTUYOR. Veri kaybi degil: istemci her dongude ayni istatistigi
+        # yeniden scrape edip gonderiyor, atlanan guncelleme bir sonraki
+        # turda zaten yaziliyor.
+        return JSONResponse({"success": False, "skipped": str(e)}, status_code=503)
+    finally:
         conn.close()
-        return JSONResponse({"error": "mac bulunamadi"}, status_code=404)
-    match_db_id = row[0]
-    sql = (f"UPDATE live_snapshots SET {', '.join(set_parts)} "
-           "WHERE id = (SELECT id FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1)")
-    params.append(match_db_id)
-    cur.execute(sql, params)
-    updated = cur.rowcount
-    conn.commit()
-    conn.close()
     return {"success": True, "updated_rows": updated}
 
 

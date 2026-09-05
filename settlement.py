@@ -911,7 +911,15 @@ def drain_old_snapshots(rounds=SNAPSHOT_PRUNE_ROUNDS, pause=SNAPSHOT_PRUNE_PAUSE
     """
     toplam = 0
     for i in range(rounds):
-        silinen = prune_old_snapshots(batch=batch, keep_days=keep_days, verbose=False)
+        try:
+            silinen = prune_old_snapshots(batch=batch, keep_days=keep_days, verbose=False)
+        except sqlite3.OperationalError as e:
+            # Bir parti kilide takilirsa TUR IPTAL EDILMEZ. Onceki partiler
+            # zaten commit edildi; burada durup o ilerlemeyi raporlamak,
+            # istisnayi yukari firlatip sessizce kaybetmekten iyidir. Kalan
+            # borc 5 dakika sonraki turda kaldigi yerden erimeye devam eder.
+            print(f"[settlement] snapshot temizligi {i}. partide durdu: {e}", flush=True)
+            break
         toplam += silinen
         if silinen < batch:
             break          # kuyruk bitti, bos yere kilit alma

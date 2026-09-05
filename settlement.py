@@ -887,3 +887,47 @@ def prune_old_snapshots(batch=SNAPSHOT_PRUNE_BATCH, keep_days=SNAPSHOT_KEEP_DAYS
         print(f"[settlement] {silinen} eski snapshot silindi (bitmis maclar, "
               f"{keep_days}+ gun once)", flush=True)
     return silinen
+
+
+def log_db_health(keep_days=SNAPSHOT_KEEP_DAYS):
+    """DB/WAL boyutunu ve temizlik borcunu loga yazar.
+
+    NEDEN LOG: ayni bilgiyi veren admin ucu ADMIN_SECRET istiyor; loglara
+    yazinca Railway uzerinden secret olmadan izlenebiliyor ve gecmise donuk
+    bir seri olusuyor - "kuyruk eriyor mu" sorusu ancak seriyle cevaplanir.
+
+    Sadece okur. COUNT(*) yerine max_rowid kullanilmaz cunku silme sonrasi
+    yaniltir; bu fonksiyon bakim kadansinda (5dk) calistigi icin tam sayim
+    kabul edilebilir.
+    """
+    import os as _os
+    parcalar = []
+    for etiket, yol in (("db", DB_PATH), ("wal", DB_PATH + "-wal")):
+        try:
+            parcalar.append(f"{etiket}={_os.path.getsize(yol) / 1024 / 1024:.0f}MB")
+        except OSError:
+            parcalar.append(f"{etiket}=?")
+
+    conn = _connect()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM live_snapshots")
+        toplam = cur.fetchone()[0]
+        # prune_old_snapshots ile AYNI kosul - kuyruk gercekten erimiyorsa
+        # burada gorunur (join m.id = ls.match_id, m.match_id DEGIL).
+        cur.execute(f'''
+            SELECT COUNT(*) FROM live_snapshots ls
+            JOIN matches m ON m.id = ls.match_id
+            WHERE m.status IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+              AND ls.captured_at < datetime('now', '-{int(keep_days)} days')
+        ''')
+        kuyruk = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM matches WHERE status IN ('LIVE','HT')")
+        canli = cur.fetchone()[0]
+        print(f"[settlement] DB durumu: {' '.join(parcalar)} "
+              f"snapshot={toplam} temizlik_kuyrugu={kuyruk} canli_mac={canli}",
+              flush=True)
+    except sqlite3.Error as e:
+        print(f"[settlement] DB durumu okunamadi: {e}", flush=True)
+    finally:
+        conn.close()

@@ -593,6 +593,15 @@ def run_orchestrator():
                 except Exception as pe:
                     print(f"⚠️  Snapshot temizleme hatasi: {pe}")
 
+                # Temizligin HEMEN ARDINDAN olc: kuyruk her turda eriyor mu,
+                # yoksa yeni snapshot'lar silinenden hizli mi birikiyor?
+                # Site yavasliginin boyut kaynakli olup olmadigi bu seriyle
+                # anlasilacak (CLAUDE.md kural 2).
+                try:
+                    settlement.log_db_health()
+                except Exception as he:
+                    print(f"⚠️  DB durumu loglanamadi: {he}")
+
         except Exception as e:
             print(f"❌ Orkestratör Hatası: {e}")
             

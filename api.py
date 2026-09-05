@@ -262,8 +262,8 @@ def admin_panel_db_teshis(request: Request):
     # 3 gunden eski snapshot'lari. Bu sayi dusmuyorsa temizlik yetismiyordur.
     cur.execute("""
         SELECT COUNT(*) FROM live_snapshots ls
-        JOIN matches m ON m.match_id = ls.match_id
-        WHERE m.status IN ('FINISHED','ABANDONED','CANCELLED','POSTPONED')
+        JOIN matches m ON m.id = ls.match_id
+        WHERE m.status IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
           AND ls.captured_at < datetime('now', '-3 days')
     """)
     temizlik_kuyrugu = cur.fetchone()[0]

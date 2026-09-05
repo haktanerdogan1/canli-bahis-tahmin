@@ -1894,14 +1894,6 @@ def get_live_matches(request: Request):
         FROM matches m
         JOIN consensus_predictions p ON m.id = p.match_id
         LEFT JOIN live_snapshots s ON p.snapshot_id = s.id
-        -- PERFORMANS (2026-09-05): asagidaki iki turetilmis tablo eskiden
-        -- TAMAMEN hesaplaniyordu ve ancak ondan sonra 5000 satirlik sonucla
-        -- eslestiriliyordu. live_snapshots milyonlarca satira ulasinca
-        -- (bkz. settlement.prune_old_snapshots) bu, her sayfa yuklemesinde
-        -- tum tabloyu gruplamak demekti - olculen: 2.5-10.7sn. Ikisini de
-        -- "sonucta gorunebilecek maclar"la sinirladik. ANLAM DEGISMIYOR:
-        -- dis sorgu zaten `JOIN consensus_predictions` yaptigi icin donen
-        -- her m.id kacinilmaz olarak o kumede.
         LEFT JOIN (
             SELECT ls1.match_id, ls1.home_score AS fh_end_home, ls1.away_score AS fh_end_away
             FROM live_snapshots ls1
@@ -1909,24 +1901,22 @@ def get_live_matches(request: Request):
                 SELECT match_id, MAX(minute) AS max_min
                 FROM live_snapshots
                 WHERE minute <= 45
-                  AND match_id IN (SELECT match_id FROM consensus_predictions)
                 GROUP BY match_id
             ) ls2 ON ls1.match_id = ls2.match_id AND ls1.minute = ls2.max_min
         ) fh ON fh.match_id = m.id
         LEFT JOIN (
             -- Konsensuse "goal" diyen botlar arasinda en yuksek olasilik veren
             -- (yani sinyali en cok sahiplenen) bot - karta "hangi bot" etiketi
-            -- icin. Esitlik durumunda rastgele birini secer, sorun degil.
-            -- Eskiden her satir icin AYRI bir korelasyonlu MAX(probability)
-            -- alt sorgusu calisiyordu; pencere fonksiyonu ile tek gecise indi.
-            SELECT match_id, snapshot_id, bot_name AS lead_bot FROM (
-                SELECT match_id, snapshot_id, bot_name,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY match_id, snapshot_id ORDER BY probability DESC
-                       ) AS sira
-                FROM bot_predictions
-                WHERE decision = 'goal'
-            ) WHERE sira = 1
+            -- icin. Esitlik durumunda GROUP BY rastgele birini secer, sorun degil.
+            SELECT match_id, snapshot_id, bot_name AS lead_bot
+            FROM bot_predictions b1
+            WHERE decision = 'goal'
+              AND probability = (
+                  SELECT MAX(probability) FROM bot_predictions b2
+                  WHERE b2.match_id = b1.match_id AND b2.snapshot_id = b1.snapshot_id
+                    AND b2.decision = 'goal'
+              )
+            GROUP BY match_id, snapshot_id
         ) lb ON lb.match_id = p.match_id AND lb.snapshot_id = p.snapshot_id
         ORDER BY p.created_at DESC
         LIMIT 5000

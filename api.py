@@ -1974,8 +1974,34 @@ def google_callback(request: Request, code: str = None, state: str = None, error
 # AYRI anahtarlarda tutuluyor ve payload onbellege MASKELENDIKTEN SONRA
 # giriyor - boylece uye verisi uye olmayana sizamaz.
 _LIVE_MATCHES_TTL = 12.0
+# TTL dolunca kullaniciyi BEKLETMIYORUZ: elimizdeki cevabi hemen verip
+# tazelemeyi arka planda yapiyoruz ("stale-while-revalidate"). Olcum
+# (2026-09-05 18:41): onbellekten gelen istek 0.7sn, onbellegi yenilemek
+# zorunda kalan istek 50sn suruyordu - yani her 12 saniyede bir talihsiz
+# uye tum bedeli tek basina odeyordu. Arka plan tazelemesiyle o bedeli
+# kimse odemiyor.
+#
+# _LIVE_MATCHES_MAX_STALE ise emniyet freni: tazeleme surekli basarisiz
+# oluyorsa (or. DB kilitli) sonsuza kadar bayat veri servis etmeyelim.
+# Bu siniri asan kayit atilir ve istek normal yolla, senkron hesaplanir.
+_LIVE_MATCHES_MAX_STALE = 180.0
 _live_matches_cache = {}          # is_member -> (zaman, payload)
 _live_matches_lock = threading.Lock()
+_live_matches_yenilenen = set()   # arka planda tazelenmekte olan anahtarlar
+
+
+def _live_matches_arka_planda_tazele(is_member):
+    """Onbellegi arka planda yeniler; hata olursa ESKI KAYDI BOZMAZ."""
+    try:
+        _live_matches_hesapla(is_member)
+    except Exception as e:
+        # Bilerek yutuluyor: bu bir arka plan is parcacigi, istegi bekleten
+        # kimse yok. Eski kayit yerinde kaliyor, bir sonraki istek yeniden
+        # tazelemeyi tetikliyor.
+        print(f"[api] live-matches arka plan tazeleme hatasi: {e}", flush=True)
+    finally:
+        with _live_matches_lock:
+            _live_matches_yenilenen.discard(is_member)
 
 
 @app.get("/api/live-matches")
@@ -1984,24 +2010,39 @@ def get_live_matches(request: Request):
         return {"success": False, "error": "Çok fazla istek. Lütfen biraz yavaşlayın."}
     is_member = current_user_id(request) is not None
 
-    def _onbellekten(anahtar):
+    def _bak(anahtar):
+        """(payload, yas) dondurur; kayit yoksa (None, None)."""
         kayit = _live_matches_cache.get(anahtar)
-        if kayit and (time.monotonic() - kayit[0]) < _LIVE_MATCHES_TTL:
-            return kayit[1]
-        return None
+        if not kayit:
+            return None, None
+        return kayit[1], time.monotonic() - kayit[0]
 
-    taze = _onbellekten(is_member)
-    if taze is not None:
-        return taze
+    payload, yas = _bak(is_member)
+    if payload is not None and yas < _LIVE_MATCHES_TTL:
+        return payload
 
-    # Tek-ucus kilidi: onbellek bostayken gelen 20 es zamanli istek 20 ayri
-    # agir sorgu acmasin. Kilidi alan hesaplar, digerleri bekleyip hazir
-    # cevabi alir - kilidi aldiktan SONRA tekrar onbellege bakmalarinin
-    # sebebi bu (bekleyen istek icin bu arada cevap uretilmis olabilir).
+    # Suresi dolmus ama makul olcude taze bir kayit varsa: kullaniciya HEMEN
+    # onu ver, tazelemeyi arka planda tetikle. Kullanici en fazla bir dongu
+    # + tazeleme suresi kadar eski veri gorur; karsiliginda 50 saniyelik
+    # bekleme ortadan kalkar.
+    if payload is not None and yas < _LIVE_MATCHES_MAX_STALE:
+        with _live_matches_lock:
+            if is_member not in _live_matches_yenilenen:
+                _live_matches_yenilenen.add(is_member)
+                threading.Thread(
+                    target=_live_matches_arka_planda_tazele,
+                    args=(is_member,), daemon=True,
+                ).start()
+        return payload
+
+    # Hic kayit yok (ilk istek) ya da kayit fazla bayat: senkron hesapla.
+    # Tek-ucus kilidi es zamanli 20 istegin 20 ayri agir sorgu acmasini
+    # engelliyor - kilidi aldiktan SONRA tekrar bakiyoruz cunku beklerken
+    # baska bir istek cevabi uretmis olabilir.
     with _live_matches_lock:
-        taze = _onbellekten(is_member)
-        if taze is not None:
-            return taze
+        payload, yas = _bak(is_member)
+        if payload is not None and yas < _LIVE_MATCHES_TTL:
+            return payload
         return _live_matches_hesapla(is_member)
 
 

@@ -576,6 +576,15 @@ def run_orchestrator():
                 except Exception as se2:
                     print(f"⚠️  Takilma guvenlik agi hatasi: {se2}")
 
+                # Kaynagi durmus (ornek: engellenen SofaScore) maclari kapat.
+                # prune_old_snapshots'tan ONCE calismali: temizlik sadece
+                # TERMINAL durumdaki maclara bakiyor, zombiler kapanmadan
+                # hicbir sey silinemiyor (bkz. iki fonksiyonun docstring'leri).
+                try:
+                    settlement.close_zombie_matches()
+                except Exception as ze:
+                    print(f"⚠️  Zombi mac kapatma hatasi: {ze}")
+
                 # live_snapshots'in sinirsiz buyumesini frenle - bkz.
                 # settlement.prune_old_snapshots docstring'i (2026-09-05'teki
                 # "database is locked" tikanmasinin kok nedeni buydu).

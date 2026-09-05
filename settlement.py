@@ -808,6 +808,46 @@ def delete_unresolvable_void(verbose=True):
 SNAPSHOT_PRUNE_BATCH = 20000      # tek cagirida en fazla bu kadar satir
 SNAPSHOT_KEEP_DAYS = 3            # bitmis maclarin bu kadar eski snapshot'lari silinir
 
+# Hicbir futbol maci 3 saatten uzun surmez. Bu esigi asan LIVE/HT kayitlar
+# gercek degil, "zombi" maclardir.
+ZOMBIE_MATCH_HOURS = 3
+
+
+def close_zombie_matches(hours=ZOMBIE_MATCH_HOURS, verbose=True):
+    """Kaynaktan BAGIMSIZ eskime guvenlik agi: uzun suredir feed'de gorulmemis
+    LIVE/HT maclari kapatir.
+
+    NEDEN GEREKLI (2026-09-05): api.py:_fs_close_stale maclari kapatiyor ama
+    SADECE o kaynak o an senkron olurken ve SADECE kendi onekli (fs_/ss_/7m_)
+    maclarina bakarak. Bir kaynak tamamen durursa (ornek: SofaScore 24 saat
+    engellendi) o kaynagin maclarini KAPATACAK KIMSE KALMIYOR - sonsuza kadar
+    LIVE kaliyorlar. Gozlenen sonuc: canli_mac=344 (gercekte olmayan maclarla
+    sisirilmis), orchestrator her 15sn'de bu olu maclari da tariyor ve
+    prune_old_snapshots hicbir seyi silemiyor cunku hicbiri terminal duruma
+    gecmiyor.
+
+    last_seen_at api.py:live_sync tarafindan her senkronda guncelleniyor;
+    NULL ise dokunulmuyor (guvenli taraf). minute >= 85 ise mac muhtemelen
+    normal bitmistir (FINISHED), degilse yarida kalmistir (ABANDONED) -
+    _fs_close_stale ile ayni ayrim.
+    """
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute(f'''
+        UPDATE matches
+        SET status = CASE WHEN COALESCE(minute, 0) >= 85 THEN 'FINISHED' ELSE 'ABANDONED' END
+        WHERE status IN ('LIVE','HT')
+          AND last_seen_at IS NOT NULL
+          AND last_seen_at < datetime('now', '-{int(hours)} hours')
+    ''')
+    kapatilan = cur.rowcount
+    conn.commit()
+    conn.close()
+    if verbose and kapatilan:
+        print(f"[settlement] {kapatilan} zombi mac kapatildi ({hours}+ saattir "
+              f"feed'de gorulmemis)", flush=True)
+    return kapatilan
+
 
 def prune_old_snapshots(batch=SNAPSHOT_PRUNE_BATCH, keep_days=SNAPSHOT_KEEP_DAYS, verbose=True):
     """Bitmis maclarin eski live_snapshots satirlarini SINIRLI partiler halinde siler.

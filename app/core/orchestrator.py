@@ -181,48 +181,79 @@ def _ensure_schema():
     settlement.backfill_false_void_stale_progress()
     settlement.backfill_void_reconsidered()
 
+def _takim_profilleri():
+    prematch.build_profiles()
+
+
+def _taban_oranlar():
+    baserates.build()
+    baserates.tazele()
+
+
+def _oran_profilleri():
+    odds_profile.build()
+    odds_profile.tazele()
+    odds_profile.build_fine()  # bkz. bot_odds_profile.py - artik ince dilimleri kullaniyor
+
+
+def _cok_market_dilimler():
+    # Kullanici talebi 2026-08-25: yerel iddaa_karsilastirma.py aracinda
+    # MS 4.5 Ust, IY 1.5 Ust, IY/2Y KG, IY-MS kombinasyonlari secilebilsin -
+    # bkz. odds_profile.MARKET_LABELS. Hicbir bota/sinyale baglanmiyor,
+    # sadece /api/archive-market-bins ucundan yerel araca servis ediliyor.
+    odds_profile.build_market_fine()
+
+
+def _takim_gecmisi():
+    # /api/match/{id} formu icin - bkz. team_history.py
+    team_history.build()
+
+
+# Botlarin dayandigi referans verileri. Acilista kurulur; BIRI BILE
+# BASARISIZ OLURSA bakim turunda tekrar denenir.
+#
+# NEDEN TEKRAR DENEME: bunlar eskiden sadece acilista, tek seferlik
+# calisiyordu. 2026-09-05'te acilis anina denk gelen "database is locked"
+# firtinasi taban oranlari + oran profillerini kuramadi ve orkestrator
+# omrunun geri kalanini referans verisi OLMADAN gecirdi - sonuc 12 saat
+# boyunca SIFIR sinyaldi. Tek seferlik kurulum, gecici bir kilidi kalici
+# bir korluge cevirdigi icin tehlikeli.
+REFERANS_ISLERI = (
+    ("Takim profilleri", _takim_profilleri),
+    ("Taban oranlar", _taban_oranlar),
+    ("Oran profilleri", _oran_profilleri),
+    ("Cok-market ince dilimler", _cok_market_dilimler),
+    ("Takim mac gecmisi", _takim_gecmisi),
+)
+
+_referans_bekleyen = []  # henuz basarili olmamis isler
+
+
+def _referans_verileri_kur(isler=None, acilis=True):
+    """Referans verilerini kurar; basarisiz olanlarin listesini dondurur."""
+    kalan = []
+    for ad, fn in (isler if isler is not None else REFERANS_ISLERI):
+        try:
+            fn()
+            if not acilis:
+                print(f"✅ {ad} tekrar denemede kuruldu.", flush=True)
+        except Exception as e:
+            print(f"⚠️  {ad} kurulamadi: {e}", flush=True)
+            kalan.append((ad, fn))
+    return kalan
+
+
 def run_orchestrator():
+    global _referans_bekleyen
     print("🧠 Başlatılıyor: Sinyal Avcısı (Konsensüs Orkestratörü)", flush=True)
     _ensure_schema()
 
-    # Arsivden takim profillerini kur (bir kez, acilista).
-    # Bunlar botlarin macin ilk dakikalarinda kullanacagi mac oncesi bilgidir.
-    try:
-        prematch.build_profiles()
-    except Exception as e:
-        print(f"⚠️  Takim profilleri kurulamadi: {e}")
+    _referans_bekleyen = _referans_verileri_kur()
+    if _referans_bekleyen:
+        print(f"⚠️  {len(_referans_bekleyen)} referans isi acilista kurulamadi - "
+              f"bakim turunda tekrar denenecek.", flush=True)
 
-    # Olculmus taban oranlari hesapla (veri biriktikce her aciliste tazelenir)
-    try:
-        baserates.build()
-        baserates.tazele()
-    except Exception as e:
-        print(f"⚠️  Taban oranlar hesaplanamadi: {e}")
 
-    # Oran profili tablosu (arsiv oranlari -> tarihsel sonuc)
-    try:
-        odds_profile.build()
-        odds_profile.tazele()
-        odds_profile.build_fine()  # bkz. bot_odds_profile.py - artik ince dilimleri kullaniyor
-    except Exception as e:
-        print(f"⚠️  Oran profilleri hesaplanamadi: {e}")
-
-    # Cok-market ince dilimler (kullanici talebi 2026-08-25: yerel
-    # iddaa_karsilastirma.py aracinda MS 4.5 Ust, IY 1.5 Ust, IY/2Y KG,
-    # IY-MS kombinasyonlari secilebilsin) - bkz. odds_profile.MARKET_LABELS.
-    # Hicbir bota/sinyale baglanmiyor, sadece /api/archive-market-bins
-    # ucundan yerel araca servis ediliyor.
-    try:
-        odds_profile.build_market_fine()
-    except Exception as e:
-        print(f"⚠️  Cok-market ince dilimler hesaplanamadi: {e}")
-
-    # Takim mac gecmisi (/api/match/{id} formu icin - bkz. team_history.py)
-    try:
-        team_history.build()
-    except Exception as e:
-        print(f"⚠️  Takim mac gecmisi kurulamadi: {e}")
-    
     # BOT KADROSU
     # Eski kadroda 18 bottan 12'si birebir ayni formulu kullaniyordu; bu yuzden
     # "18 bot oy verdi" demek aslinda tek botun oyunu 18 kez saymak anlamina
@@ -601,6 +632,13 @@ def run_orchestrator():
                     settlement.log_db_health()
                 except Exception as he:
                     print(f"⚠️  DB durumu loglanamadi: {he}")
+
+                # Acilista kilit yuzunden kurulamayan referans verilerini
+                # tekrar dene (bkz. REFERANS_ISLERI yorumu). Hepsi kurulunca
+                # liste bosalir ve bu blok bir daha is yapmaz.
+                if _referans_bekleyen:
+                    _referans_bekleyen = _referans_verileri_kur(
+                        _referans_bekleyen, acilis=False)
 
         except Exception as e:
             print(f"❌ Orkestratör Hatası: {e}")

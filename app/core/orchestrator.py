@@ -620,7 +620,7 @@ def run_orchestrator():
                 # settlement.prune_old_snapshots docstring'i (2026-09-05'teki
                 # "database is locked" tikanmasinin kok nedeni buydu).
                 try:
-                    settlement.prune_old_snapshots()
+                    settlement.drain_old_snapshots()
                 except Exception as pe:
                     print(f"⚠️  Snapshot temizleme hatasi: {pe}")
 

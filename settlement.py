@@ -805,8 +805,19 @@ def delete_unresolvable_void(verbose=True):
 # profilleri) bile kuramadi: "database is locked". Botlar referans verisi
 # olmayinca "yetersiz veri" deyip cekildi ve 12 saat boyunca HIC sinyal
 # uretilmedi (kullanici raporu: "web sitemiz hala 3 macta kalmis").
-SNAPSHOT_PRUNE_BATCH = 20000      # tek cagirida en fazla bu kadar satir
+SNAPSHOT_PRUNE_BATCH = 20000      # tek ISLEMDE en fazla bu kadar satir
 SNAPSHOT_KEEP_DAYS = 3            # bitmis maclarin bu kadar eski snapshot'lari silinir
+
+# Her bakim turunda kac parti silinecegi. Parti BOYUTUNU buyutmek yerine
+# parti SAYISINI artiriyoruz: 200bin satiri tek islemde silmek yazma kilidini
+# on saniyelerce tutar ve 30sn'lik busy_timeout'a takilan diger surecleri
+# ac birakir - cozmeye calistigimiz sorunun ta kendisi. 10 ayri islem ise
+# kilidi her partide birakir, aralardaki nefes payi diger yazicilara gider.
+#
+# 2026-09-05 olcumu: 13.0M snapshot satirinin 9.7M'i silinebilir durumdaydi.
+# Tur basi 20bin ile bu borcun erimesi 40 saat surerdi; 200bin ile ~4 saat.
+SNAPSHOT_PRUNE_ROUNDS = 10
+SNAPSHOT_PRUNE_PAUSE = 0.5        # partiler arasi nefes payi (saniye)
 
 # Hicbir futbol maci 3 saatten uzun surmez. Bu esigi asan LIVE/HT kayitlar
 # gercek degil, "zombi" maclardir.
@@ -887,6 +898,29 @@ def prune_old_snapshots(batch=SNAPSHOT_PRUNE_BATCH, keep_days=SNAPSHOT_KEEP_DAYS
         print(f"[settlement] {silinen} eski snapshot silindi (bitmis maclar, "
               f"{keep_days}+ gun once)", flush=True)
     return silinen
+
+
+def drain_old_snapshots(rounds=SNAPSHOT_PRUNE_ROUNDS, pause=SNAPSHOT_PRUNE_PAUSE,
+                        batch=SNAPSHOT_PRUNE_BATCH, keep_days=SNAPSHOT_KEEP_DAYS):
+    """prune_old_snapshots'i pes pese birkac kez cagirir (bkz. SNAPSHOT_PRUNE_ROUNDS).
+
+    Her cagiri AYRI bir islem oldugu icin yazma kilidi her partide birakilir;
+    aradaki kisa bekleme diger yazicilarin siraya girmesine izin verir.
+    Silinecek bir sey kalmayinca erken cikar - borc eridiginde bu fonksiyon
+    bedavaya gelir.
+    """
+    toplam = 0
+    for i in range(rounds):
+        silinen = prune_old_snapshots(batch=batch, keep_days=keep_days, verbose=False)
+        toplam += silinen
+        if silinen < batch:
+            break          # kuyruk bitti, bos yere kilit alma
+        if i < rounds - 1:
+            time.sleep(pause)
+    if toplam:
+        print(f"[settlement] {toplam} eski snapshot silindi (bitmis maclar, "
+              f"{keep_days}+ gun once)", flush=True)
+    return toplam
 
 
 def log_db_health(keep_days=SNAPSHOT_KEEP_DAYS):

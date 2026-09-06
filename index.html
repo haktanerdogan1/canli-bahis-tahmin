@@ -1027,6 +1027,29 @@
 
         .btn-notif:hover { border-color: var(--accent-brand); color: var(--accent-brand); }
 
+        /* Dil secici (kullanici talebi, 2026-09-06): navbar'in sol ustunde,
+           marka logosunun hemen yaninda - .btn-notif ile ayni gorsel dilde
+           ama metin de tasidigi icin genislik otomatik (auto-width pill). */
+        .lang-toggle {
+            background: transparent;
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
+            height: 30px;
+            padding: 0 10px;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            letter-spacing: 0.3px;
+        }
+        .lang-toggle:hover { border-color: var(--accent-brand); color: var(--accent-brand); }
+        .lang-toggle i { font-size: 0.85rem; }
+
         @media (max-width: 720px) {
             .navbar-content { flex-wrap: wrap; gap: 0.75rem; }
         }
@@ -1093,19 +1116,24 @@
     <!-- Navbar -->
     <nav class="navbar">
         <div class="navbar-content">
-            <div class="brand">
-                <img src="/apple-touch-icon.png" alt="Matchrix" style="width: 28px; height: 28px; border-radius: 8px;">
-                <span style="color: #fff;">MATCHRIX</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div class="brand">
+                    <img src="/apple-touch-icon.png" alt="Matchrix" style="width: 28px; height: 28px; border-radius: 8px;">
+                    <span style="color: #fff;">MATCHRIX</span>
+                </div>
+                <button class="lang-toggle" id="langToggle" onclick="toggleLanguage()" title="Switch language / Dili değiştir">
+                    <i class="fa-solid fa-globe"></i> <span id="langToggleLabel">EN</span>
+                </button>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-                <a href="https://instagram.com/matchrixapp" target="_blank" rel="noopener" class="btn-notif" title="Instagram'da takip et" style="text-decoration:none;">
+                <a href="https://instagram.com/matchrixapp" target="_blank" rel="noopener" class="btn-notif" data-i18n-title="nav_instagram_title" title="Instagram'da takip et" style="text-decoration:none;">
                     <i class="fa-brands fa-instagram"></i>
                 </a>
-                <a href="https://t.me/+_BcKD_4hQQxhZWY0" target="_blank" rel="noopener" class="btn-notif btn-telegram-cta" title="Bizi Telegram'da takip et" style="text-decoration:none; position:relative; border-color:#26A5E4; color:#26A5E4;">
+                <a href="https://t.me/+_BcKD_4hQQxhZWY0" target="_blank" rel="noopener" class="btn-notif btn-telegram-cta" data-i18n-title="nav_telegram_title" title="Bizi Telegram'da takip et" style="text-decoration:none; position:relative; border-color:#26A5E4; color:#26A5E4;">
                     <i class="fa-brands fa-telegram"></i>
                     <span style="position:absolute; top:-3px; right:-3px; width:9px; height:9px; border-radius:50%; background:#26A5E4; box-shadow:0 0 0 2px #0f172a; animation: pulse 1.6s ease-in-out infinite;"></span>
                 </a>
-                <button class="btn-notif" id="notifToggle" onclick="toggleNotifications()" title="Tahmin ve kazanma bildirimlerini aç">
+                <button class="btn-notif" id="notifToggle" onclick="toggleNotifications()" data-i18n-title="nav_notif_off_title" title="Tahmin ve kazanma bildirimlerini aç">
                     <i class="fa-solid fa-bell-slash"></i>
                 </button>
             </div>
@@ -1115,13 +1143,13 @@
     <!-- Bottom Navigation -->
     <nav class="bottom-nav">
         <button class="bnav-btn active" onclick="switchTab('today', this)">
-            <i class="fa-solid fa-star"></i><span>Bugün</span>
+            <i class="fa-solid fa-star"></i><span data-i18n="bnav_today">Bugün</span>
         </button>
         <button class="bnav-btn" onclick="switchTab('results', this)">
-            <i class="fa-solid fa-list-check"></i><span>Sonuçlar</span>
+            <i class="fa-solid fa-list-check"></i><span data-i18n="bnav_results">Sonuçlar</span>
         </button>
         <button class="bnav-btn" id="bnavLogin" onclick="switchTab('login', this)">
-            <i class="fa-solid fa-right-to-bracket" id="bnavAuthIcon"></i><span id="bnavAuthLabel">Hesabım</span>
+            <i class="fa-solid fa-right-to-bracket" id="bnavAuthIcon"></i><span id="bnavAuthLabel" data-i18n="bnav_account">Hesabım</span>
         </button>
     </nav>
 
@@ -1134,22 +1162,22 @@
             <div style="width:56px; height:56px; margin:0 auto 1.25rem; border-radius:50%; background:rgba(0,229,255,0.1); border:1px solid rgba(0,229,255,0.3); display:flex; align-items:center; justify-content:center;">
                 <i class="fa-solid fa-scale-balanced" style="font-size:1.4rem; color:var(--accent-brand);"></i>
             </div>
-            <h2 style="font-family:'Outfit',sans-serif; font-size:1.2rem; font-weight:700; margin-bottom:0.9rem;">
+            <h2 style="font-family:'Outfit',sans-serif; font-size:1.2rem; font-weight:700; margin-bottom:0.9rem;" data-i18n="legal_title">
                 Önemli Bilgilendirme
             </h2>
-            <p style="color:var(--text-secondary); font-size:0.9rem; line-height:1.7; text-align:left; margin-bottom:1rem;">
+            <p style="color:var(--text-secondary); font-size:0.9rem; line-height:1.7; text-align:left; margin-bottom:1rem;" data-i18n-html="legal_p1">
                 <b style="color:var(--text-primary);">Matchrix bir bahis uygulaması değildir.</b>
                 Bahis kabul etmez, kullanıcı adına bahis işlemi gerçekleştirmez, bahis parası veya
                 kullanıcı fonu tutmaz, ödeme aracılığı yapmaz ve kazanç garantisi vermez.
             </p>
-            <p style="color:var(--text-secondary); font-size:0.9rem; line-height:1.7; text-align:left; margin-bottom:1.5rem;">
+            <p style="color:var(--text-secondary); font-size:0.9rem; line-height:1.7; text-align:left; margin-bottom:1.5rem;" data-i18n-html="legal_p2">
                 Burada sunulan içerikler, canlı maç verilerinin istatistiksel analizinden üretilen
                 <b style="color:var(--text-primary);">bilgilendirme ve analiz amaçlı</b> sinyallerdir.
                 Herhangi bir bahis kararı tamamen kullanıcının kendi sorumluluğundadır; yasal bahis
                 işlemleri yalnızca lisanslı kuruluşlar üzerinden yapılabilir. 18 yaşından küçükler
                 için uygun değildir.
             </p>
-            <button onclick="closeLegalGateModal()" style="width:100%; background:var(--accent-brand); color:#001014; border:none; padding:13px; border-radius:var(--radius-md); font-family:'Outfit',sans-serif; font-weight:700; font-size:0.95rem; cursor:pointer;">
+            <button onclick="closeLegalGateModal()" style="width:100%; background:var(--accent-brand); color:#001014; border:none; padding:13px; border-radius:var(--radius-md); font-family:'Outfit',sans-serif; font-weight:700; font-size:0.95rem; cursor:pointer;" data-i18n="legal_accept_btn">
                 Anladım, Devam Et
             </button>
         </div>
@@ -1172,11 +1200,11 @@
          localStorage ile kalici kapatilabilir, marka+kullanici-dostu mesaj. -->
     <div id="welcomeBanner" style="display:none; max-width:1000px; margin:0 auto 1.5rem; padding:0 1.5rem;">
         <div style="position:relative; background:linear-gradient(135deg, rgba(0,229,255,0.08), rgba(0,0,0,0.6)); border:1px solid var(--border-strong); border-radius:var(--radius-lg); padding:1.25rem 1.5rem; box-shadow:var(--shadow-glow);">
-            <button onclick="closeWelcomeBanner()" aria-label="Kapat" style="position:absolute; top:10px; right:12px; background:transparent; border:none; color:var(--text-secondary); font-size:1.1rem; cursor:pointer; line-height:1;"><i class="fa-solid fa-xmark"></i></button>
-            <div style="font-family:'Outfit',sans-serif; font-weight:700; font-size:1.1rem; margin-bottom:0.4rem; padding-right:1.5rem;">
+            <button onclick="closeWelcomeBanner()" aria-label="Kapat" data-i18n-aria="close_label" style="position:absolute; top:10px; right:12px; background:transparent; border:none; color:var(--text-secondary); font-size:1.1rem; cursor:pointer; line-height:1;"><i class="fa-solid fa-xmark"></i></button>
+            <div style="font-family:'Outfit',sans-serif; font-weight:700; font-size:1.1rem; margin-bottom:0.4rem; padding-right:1.5rem;" data-i18n="welcome_title">
                 👋 Matchrix'e hoş geldin!
             </div>
-            <div style="color:var(--text-secondary); font-size:0.92rem; line-height:1.6;">
+            <div style="color:var(--text-secondary); font-size:0.92rem; line-height:1.6;" data-i18n-html="welcome_body">
                 Botlarımız canlı maçları saniyeler içinde tarayıp yüksek olasılıklı gol fırsatlarını sana bildiriyor —
                 kurulumsuz, karmaşık grafik yok, tek bakışta anlaşılır. Sizinle tanışmamızın şerefine
                 <b style="color:var(--accent-brand);">ilk 1 ay ücretsiz</b>.
@@ -1207,19 +1235,19 @@
                     <canvas id="heroMatrixCanvas"></canvas>
                 </div>
 
-                <div class="hero-live-badge"><span class="hero-live-dot"></span> 16 bot şu anda maçları tarıyor</div>
+                <div class="hero-live-badge"><span class="hero-live-dot"></span> <span data-i18n="hero_live_badge">16 bot şu anda maçları tarıyor</span></div>
 
                 <h2 class="hero-title">
-                    <span style="color: #fff;">Gol gelmeden</span> <span style="color: var(--accent-brand);">önce haber verir</span>
+                    <span style="color: #fff;" data-i18n="hero_title_1">Gol gelmeden</span> <span style="color: var(--accent-brand);" data-i18n="hero_title_2">önce haber verir</span>
                 </h2>
-                <p class="hero-sub">
+                <p class="hero-sub" data-i18n="hero_sub">
                     Canlı maçların görünmeyen istatistiklerini saniyeler içinde tarayan yapay zeka algoritmaları,
                     yüksek olasılıklı gol fırsatlarını tespit eder. Botlar 7/24 arka planda çalışır, sana sadece
                     hazır analizleri incelemek kalır.
                 </p>
                 <div style="position:relative; display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap;">
-                    <span style="background: rgba(255,255,255,0.05); padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> <span id="heroLeagueCount">+500</span> Veri Kaynağı</span>
-                    <span style="background: rgba(0,229,255,0.1); padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> Aylık Başarı Oranı: <span id="heroMonthlyRate">—</span></span>
+                    <span style="background: rgba(255,255,255,0.05); padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> <span id="heroLeagueCount">+500</span> <span data-i18n="hero_data_sources">Veri Kaynağı</span></span>
+                    <span style="background: rgba(0,229,255,0.1); padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> <span data-i18n="hero_monthly_rate_label">Aylık Başarı Oranı:</span> <span id="heroMonthlyRate">—</span></span>
                 </div>
             </div>
 
@@ -1227,16 +1255,16 @@
 
             <!-- Tiklanabilir donem ozeti: Bu Hafta / Bu Ay / Tum Zamanlar -->
             <div class="period-toggle" id="periodToggle">
-                <button class="period-btn" data-donem="bugun" onclick="secDonem('bugun')">Bugün</button>
-                <button class="period-btn active" data-donem="hafta" onclick="secDonem('hafta')">Bu Hafta</button>
-                <button class="period-btn" data-donem="ay" onclick="secDonem('ay')">Bu Ay</button>
-                <button class="period-btn" data-donem="tum" onclick="secDonem('tum')">Tüm Zamanlar</button>
+                <button class="period-btn" data-donem="bugun" onclick="secDonem('bugun')" data-i18n="period_today">Bugün</button>
+                <button class="period-btn active" data-donem="hafta" onclick="secDonem('hafta')" data-i18n="period_week">Bu Hafta</button>
+                <button class="period-btn" data-donem="ay" onclick="secDonem('ay')" data-i18n="period_month">Bu Ay</button>
+                <button class="period-btn" data-donem="tum" onclick="secDonem('tum')" data-i18n="period_all">Tüm Zamanlar</button>
             </div>
-            <div style="max-width:1000px; margin:0 auto 0.75rem; padding:0 0.25rem; color:var(--text-muted); font-size:0.7rem; text-align:center;">
+            <div style="max-width:1000px; margin:0 auto 0.75rem; padding:0 0.25rem; color:var(--text-muted); font-size:0.7rem; text-align:center;" data-i18n="disclaimer_short">
                 Matchrix bir bahis uygulaması değildir; bahis kabul etmez, bahis parası tutmaz, kazanç garantisi vermez.
             </div>
             <div class="ozet-strip" id="ozetStrip">
-                <div class="ozet-row"><span class="ozet-item">Ölçülen sonuçlar yükleniyor...</span></div>
+                <div class="ozet-row"><span class="ozet-item" data-i18n="ozet_loading">Ölçülen sonuçlar yükleniyor...</span></div>
             </div>
 
             <div id="streakBadgeWrap" style="text-align:center; margin:0 auto 0.75rem;">
@@ -1247,11 +1275,11 @@
 
             <div class="kasa-card" id="kasaCard" style="display:none; max-width:1000px; margin:0.5rem auto 1.25rem; padding:1rem 1.25rem; background:var(--bg-surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg);">
                 <div id="kasaCardHeader" onclick="toggleKasaCard()" style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-family:'Outfit',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer;">
-                    <span><i class="fa-solid fa-shield-halved" style="color:var(--accent-brand);"></i> Kasanı Nasıl Yönetmelisin?</span>
+                    <span><i class="fa-solid fa-shield-halved" style="color:var(--accent-brand);"></i> <span data-i18n="kasa_header">Kasanı Nasıl Yönetmelisin?</span></span>
                     <i class="fa-solid fa-chevron-down" id="kasaCardChevron" style="color:var(--text-muted); transition:transform 0.2s;"></i>
                 </div>
                 <div id="kasaCardBody" style="display:none; margin-top:0.6rem;">
-                    <div style="color:var(--text-secondary); font-size:0.88rem; line-height:1.65;">
+                    <div style="color:var(--text-secondary); font-size:0.88rem; line-height:1.65;" id="kasaCardBodyText">
                         Son 30 günde haftada ortalama <b id="kasaHaftalik" style="color:var(--text-primary);">-</b> sinyal paylaştık,
                         isabet oranımız <b id="kasaIsabet" style="color:var(--accent-success);">-</b>.
                         Ama bu, <u>her sinyalin kazanacağı</u> anlamına gelmez — kayıp seriler normaldir ve olacaktır.
@@ -1259,7 +1287,7 @@
                         <b style="color:var(--text-primary);">tek sinyale kasanın %10-20'sinden fazlasını ayırma</b>,
                         kayıp gelse bile bahis miktarını artırma (martingale yapma), ve asla kaybetmeyi göze alamayacağın parayla oynama.
                     </div>
-                    <div style="color:var(--text-muted); font-size:0.74rem; margin-top:0.6rem;">
+                    <div style="color:var(--text-muted); font-size:0.74rem; margin-top:0.6rem;" data-i18n="kasa_footnote">
                         Bu genel bir kasa-yönetimi bilgilendirmesidir, kişisel finansal tavsiye değildir. Geçmiş performans gelecekteki sonuçları garanti etmez.
                     </div>
                 </div>
@@ -1269,7 +1297,7 @@
         <div id="matchListContainer">
             <div class="loader">
                 <i class="fa-solid fa-circle-notch"></i>
-                <p>Veriler Yükleniyor...</p>
+                <p data-i18n="loading_data">Veriler Yükleniyor...</p>
             </div>
         </div>
     </main>
@@ -1279,22 +1307,22 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div class="modal-title" id="modalTitle">
-                    Maç Detayı
-                    <small>Yükleniyor...</small>
+                    <span data-i18n="modal_match_detail">Maç Detayı</span>
+                    <small data-i18n="loading_ellipsis">Yükleniyor...</small>
                 </div>
                 <button class="btn-close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                
+
                 <!-- GoalGPT Style Radar Section -->
                 <div style="position: relative; width: 100%; height: 280px; margin-bottom: 2rem; display: flex; justify-content: center;">
                     <canvas id="liveRadarChart"></canvas>
                 </div>
-                
+
                 <!-- Momentum Section -->
                 <div class="stat-card" style="margin-bottom: 1.5rem; background: rgba(0,0,0,0.6); border: 1px solid var(--border-strong); box-shadow: 0 0 15px rgba(0, 229, 255, 0.05);">
                     <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h4 style="color: var(--accent-brand); font-size:1.1rem; margin:0;">MOMENTUM YÜKSELİYOR</h4>
+                        <h4 style="color: var(--accent-brand); font-size:1.1rem; margin:0;" data-i18n="modal_momentum_rising">MOMENTUM YÜKSELİYOR</h4>
                         <span style="background: var(--accent-brand); color:#000; padding:4px 8px; border-radius:12px; font-weight:bold; font-size:0.85rem;" id="momentumScore">%-- &uarr;</span>
                     </div>
                     <div id="momentumContainer" style="display: flex; align-items: flex-end; justify-content: space-between; gap: 4px; height: 60px; padding-top: 10px;">
@@ -1309,16 +1337,16 @@
                 <!-- Form Section -->
                 <div class="stats-grid">
                     <div class="stat-card" style="background: rgba(255,255,255,0.03); border-color: var(--border-strong);">
-                        <h4 style="color: #fff;"><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> EV SAHİBİ</h4>
-                        <div class="stat-row"><span class="stat-label">Kazanma Oranı</span><span class="stat-val" id="mHomeWin">-</span></div>
-                        <div class="stat-row"><span class="stat-label">İlk Yarı Gol</span><span class="stat-val" id="mHomeFh">-</span></div>
-                        <div class="stat-row"><span class="stat-label">Maç Başı Gol</span><span class="stat-val" id="mHomeAvg">-</span></div>
+                        <h4 style="color: #fff;"><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> <span data-i18n="modal_home_team">EV SAHİBİ</span></h4>
+                        <div class="stat-row"><span class="stat-label" data-i18n="modal_win_rate">Kazanma Oranı</span><span class="stat-val" id="mHomeWin">-</span></div>
+                        <div class="stat-row"><span class="stat-label" data-i18n="modal_fh_goal">İlk Yarı Gol</span><span class="stat-val" id="mHomeFh">-</span></div>
+                        <div class="stat-row"><span class="stat-label" data-i18n="modal_avg_goal">Maç Başı Gol</span><span class="stat-val" id="mHomeAvg">-</span></div>
                     </div>
                     <div class="stat-card" style="background: rgba(255,255,255,0.03); border-color: var(--border-strong);">
-                        <h4 style="color: #fff;"><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> DEPLASMAN</h4>
-                        <div class="stat-row"><span class="stat-label">Kazanma Oranı</span><span class="stat-val" id="mAwayWin">-</span></div>
-                        <div class="stat-row"><span class="stat-label">İlk Yarı Gol</span><span class="stat-val" id="mAwayFh">-</span></div>
-                        <div class="stat-row"><span class="stat-label">Maç Başı Gol</span><span class="stat-val" id="mAwayAvg">-</span></div>
+                        <h4 style="color: #fff;"><i class="fa-solid fa-shield" style="color:var(--text-muted)"></i> <span data-i18n="modal_away_team">DEPLASMAN</span></h4>
+                        <div class="stat-row"><span class="stat-label" data-i18n="modal_win_rate">Kazanma Oranı</span><span class="stat-val" id="mAwayWin">-</span></div>
+                        <div class="stat-row"><span class="stat-label" data-i18n="modal_fh_goal">İlk Yarı Gol</span><span class="stat-val" id="mAwayFh">-</span></div>
+                        <div class="stat-row"><span class="stat-label" data-i18n="modal_avg_goal">Maç Başı Gol</span><span class="stat-val" id="mAwayAvg">-</span></div>
                     </div>
                 </div>
 
@@ -1331,6 +1359,469 @@
         let refreshTimer = null;
         let currentTodayTR = null;
         let currentUserEmail = null;
+
+        // --- Dil secimi (i18n) ----------------------------------------------
+        // Kullanici talebi (2026-09-06): siteye Ingilizce dil secenegi, sol
+        // ustte. Varsayilan TURKCE korunuyor (mevcut kullanicilar icin hicbir
+        // sey degismiyor); secim localStorage'da kalici tutuluyor. Backend
+        // TEK dilde (Turkce) veri uretiyor - market adlari (orn. "Ilk Yari
+        // 1.5 Ust") ve tarihler client tarafinda cevriliyor, takim/lig adlari
+        // gercek isim olduklari icin CEVRILMIYOR (flashscore/sofascore de
+        // cevirmiyor).
+        let currentLang = (function () {
+            try {
+                const saved = localStorage.getItem('matchrix_lang');
+                if (saved === 'tr' || saved === 'en') return saved;
+            } catch (e) {}
+            return 'tr';
+        })();
+
+        const I18N = {
+            tr: {
+                close_label: 'Kapat',
+                nav_instagram_title: "Instagram'da takip et",
+                nav_telegram_title: "Bizi Telegram'da takip et",
+                nav_notif_off_title: 'Tahmin ve kazanma bildirimlerini aç',
+                nav_notif_on_title: 'Tahmin ve kazanma bildirimleri açık',
+                bnav_today: 'Bugün',
+                bnav_results: 'Sonuçlar',
+                bnav_account: 'Hesabım',
+                legal_title: 'Önemli Bilgilendirme',
+                legal_p1: `<b style="color:var(--text-primary);">Matchrix bir bahis uygulaması değildir.</b>
+                    Bahis kabul etmez, kullanıcı adına bahis işlemi gerçekleştirmez, bahis parası veya
+                    kullanıcı fonu tutmaz, ödeme aracılığı yapmaz ve kazanç garantisi vermez.`,
+                legal_p2: `Burada sunulan içerikler, canlı maç verilerinin istatistiksel analizinden üretilen
+                    <b style="color:var(--text-primary);">bilgilendirme ve analiz amaçlı</b> sinyallerdir.
+                    Herhangi bir bahis kararı tamamen kullanıcının kendi sorumluluğundadır; yasal bahis
+                    işlemleri yalnızca lisanslı kuruluşlar üzerinden yapılabilir. 18 yaşından küçükler
+                    için uygun değildir.`,
+                legal_accept_btn: 'Anladım, Devam Et',
+                welcome_title: "👋 Matchrix'e hoş geldin!",
+                welcome_body: `Botlarımız canlı maçları saniyeler içinde tarayıp yüksek olasılıklı gol fırsatlarını sana bildiriyor —
+                    kurulumsuz, karmaşık grafik yok, tek bakışta anlaşılır. Sizinle tanışmamızın şerefine
+                    <b style="color:var(--accent-brand);">ilk 1 ay ücretsiz</b>.`,
+                hero_live_badge: '16 bot şu anda maçları tarıyor',
+                hero_title_1: 'Gol gelmeden',
+                hero_title_2: 'önce haber verir',
+                hero_sub: `Canlı maçların görünmeyen istatistiklerini saniyeler içinde tarayan yapay zeka algoritmaları,
+                    yüksek olasılıklı gol fırsatlarını tespit eder. Botlar 7/24 arka planda çalışır, sana sadece
+                    hazır analizleri incelemek kalır.`,
+                hero_data_sources: 'Veri Kaynağı',
+                hero_monthly_rate_label: 'Aylık Başarı Oranı:',
+                period_today: 'Bugün',
+                period_week: 'Bu Hafta',
+                period_month: 'Bu Ay',
+                period_all: 'Tüm Zamanlar',
+                disclaimer_short: 'Matchrix bir bahis uygulaması değildir; bahis kabul etmez, bahis parası tutmaz, kazanç garantisi vermez.',
+                ozet_loading: 'Ölçülen sonuçlar yükleniyor...',
+                ozet_settled: 'Sonuçlanan',
+                ozet_won: 'Kazanan',
+                ozet_hit_rate: 'İsabet',
+                ozet_small_sample: 'Örneklem küçük ({n} sinyal) — bu oran henüz güvenilir değil.',
+                kasa_header: 'Kasanı Nasıl Yönetmelisin?',
+                kasa_body: `Son 30 günde haftada ortalama <b id="kasaHaftalik" style="color:var(--text-primary);">{haftalik}</b> sinyal paylaştık,
+                    isabet oranımız <b id="kasaIsabet" style="color:var(--accent-success);">{isabet}</b>.
+                    Ama bu, <u>her sinyalin kazanacağı</u> anlamına gelmez — kayıp seriler normaldir ve olacaktır.
+                    Haftanı karlı kapatmanın yolu tek bir büyük bahis değil, disiplinli kasa yönetimidir:
+                    <b style="color:var(--text-primary);">tek sinyale kasanın %10-20'sinden fazlasını ayırma</b>,
+                    kayıp gelse bile bahis miktarını artırma (martingale yapma), ve asla kaybetmeyi göze alamayacağın parayla oynama.`,
+                kasa_footnote: 'Bu genel bir kasa-yönetimi bilgilendirmesidir, kişisel finansal tavsiye değildir. Geçmiş performans gelecekteki sonuçları garanti etmez.',
+                loading_data: 'Veriler Yükleniyor...',
+                loading_ellipsis: 'Yükleniyor...',
+                modal_match_detail: 'Maç Detayı',
+                modal_momentum_rising: 'MOMENTUM YÜKSELİYOR',
+                modal_home_team: 'EV SAHİBİ',
+                modal_away_team: 'DEPLASMAN',
+                modal_win_rate: 'Kazanma Oranı',
+                modal_fh_goal: 'İlk Yarı Gol',
+                modal_avg_goal: 'Maç Başı Gol',
+                modal_premium_analysis: 'Premium Analiz',
+                modal_data_not_found: 'Veri bulunamadı.',
+                modal_connection_error: 'Bağlantı hatası.',
+                today_open_count: 'Bugün {n} açık tahmin var',
+                today_no_signals: 'Bugün için henüz açık tahmin yok, botlar hâlâ tarıyor — bu arada kasanı nasıl yöneteceğini öğren',
+                fetch_error_data: 'Veri çekilemedi.',
+                fetch_error_server: 'Sunucuya bağlanılamadı. API açık mı?',
+                no_matches_title: 'Şu an gösterilecek maç yok',
+                other_leagues: 'Diğer Ligler',
+                live_alerts_fallback: 'Canlı Alarmlar',
+                outcome_won: 'KAZANDI',
+                outcome_lost: 'KAYBETTİ',
+                outcome_void: 'GEÇERSİZ',
+                signal_minute_label: "Tahmin Dakikası: {n}'",
+                lead_bot_title: 'Sinyale en çok katkı veren bot',
+                xg_sniper_title: 'En çok katkı veren bot: xG Sniper',
+                locked_market_placeholder: 'Maç Sonu 2.5 Üst',
+                locked_probability_placeholder: '%78 Olasılık',
+                locked_team_a: 'Gizli Takım A',
+                locked_team_b: 'Gizli Takım B',
+                btn_data: 'Veri',
+                lock_cta: 'Görmek için Üye Olun',
+                match_starting: 'Başlıyor',
+                status_ft: 'MS',
+                status_ht: 'İY',
+                status_abandoned: 'GD',
+                probability_suffix: 'Olasılık',
+                radar_possession: 'Topla Oynama',
+                radar_xg: 'xG',
+                radar_shots: 'Şut',
+                radar_shots_target: 'İsabetli Şut',
+                radar_corners: 'Korner',
+                notif_win_title: '🎉 Kazandı!',
+                notif_new_title: '🎯 Yeni Tahmin',
+                auth_register_title: 'Üye Ol',
+                auth_login_title: 'Giriş Yap',
+                auth_register_sub: 'Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.',
+                auth_login_sub: 'Hesabınıza giriş yapın.',
+                auth_submit_create: 'Hesap Oluştur',
+                auth_submit_login: 'Giriş Yap',
+                auth_please_wait: 'Lütfen bekleyin...',
+                auth_generic_error: 'Bir hata oluştu.',
+                auth_server_error: 'Sunucuya bağlanılamadı.',
+                auth_google_cta: 'Google ile devam et',
+                auth_or_email: 'veya e-posta ile',
+                auth_email_label: 'E-posta',
+                auth_password_label: 'Şifre',
+                auth_email_placeholder: 'ornek@mail.com',
+                auth_password_placeholder: 'En az 6 karakter',
+                auth_forgot_link: 'Şifremi unuttum',
+                forgot_intro: 'E-posta adresini gir, şifreni sıfırlaman için bir bağlantı gönderelim.',
+                forgot_submit: 'Sıfırlama Bağlantısı Gönder',
+                forgot_back: 'Girişe geri dön',
+                forgot_sending: 'Gönderiliyor...',
+                forgot_default_message: 'Eğer bu e-posta kayıtlıysa, sıfırlama bağlantısı gönderildi.',
+                forgot_check_email_suffix: ' E-postanı (spam klasörü dahil) kontrol et.',
+                reset_intro: 'Yeni şifreni belirle.',
+                reset_new_password_label: 'Yeni Şifre',
+                reset_submit: 'Şifreyi Güncelle',
+                reset_updating: 'Güncelleniyor...',
+                reset_success: 'Şifren güncellendi. Şimdi yeni şifrenle giriş yapabilirsin.',
+                reset_go_to_login: 'Girişe Dön',
+                google_auth_failed: 'Google ile giriş başarısız oldu, tekrar deneyin.',
+                account_pro: 'PRO ÜYE',
+                account_free: 'ÜCRETSİZ ÜYE',
+                account_notif_group: 'Bildirimler',
+                account_notif_row_title: 'Tahmin ve kazanma bildirimleri',
+                account_notif_row_sub: 'Yeni tahmin ve sonuç anında haber ver',
+                account_policies_group: 'Politikalar ve Bilgilendirme',
+                account_legal_title: 'Yasal Uyarı',
+                account_legal_text: `Bu uygulama yalnızca spor karşılaşmalarına ilişkin tahmin içerikleri sunar.
+                    Bahis kabul etmez, kullanıcı fonu tutmaz, kullanıcı adına bahis işlemi
+                    gerçekleştirmez ve kazanç garantisi vermez. Geçmiş performans gelecekteki
+                    sonuçları garanti etmez. 18 yaşından küçük kullanıcılar için uygun değildir.`,
+                account_privacy_title: 'Gizlilik Politikası',
+                account_privacy_text: `Hesap oluştururken yalnızca e-posta adresin ve şifren (geri döndürülemez
+                    biçimde hash'lenerek) saklanır. Google ile giriş yaptığında Google'ın verdiği
+                    e-posta adresi dışında bir bilgi alınmaz. Ödeme bilgilerin sunucularımızda
+                    tutulmaz; abonelik işlemleri Apple App Store üzerinden yürütülür. Verilerin
+                    üçüncü taraflarla paylaşılmaz veya satılmaz. Hesabının silinmesini istersen
+                    destek@matchrix.app adresinden bize ulaşabilirsin.`,
+                account_terms_title: 'Kullanım Şartları',
+                account_terms_text: `Matchrix, spor karşılaşmaları hakkında yapay zeka destekli tahmin içerikleri
+                    sunan bir bilgilendirme uygulamasıdır; bahis oynatmaz ve kazanç garantisi
+                    vermez. Hizmet olduğu gibi sunulur; kesintisiz veya hatasız çalışacağı garanti
+                    edilmez. Abonelik/ücretlendirme koşulları, ücretli plan aktif hale geldiğinde
+                    burada ayrıca yayınlanacaktır.`,
+                account_support_group: 'Destek',
+                account_logout: 'Çıkış Yap',
+                paywall_back: 'Geri',
+                paywall_title: "Pro'ya Geç",
+                paywall_sub: 'Sana uygun planı seç',
+                paywall_permonth: "Aylık {v}'ye denk gelir",
+                paywall_feature_1: 'Tüm açık tahminlere erişim',
+                paywall_feature_2: 'Yeni tahmin bildirimleri',
+                paywall_feature_3: 'Geçmiş sonuç arşivi',
+                paywall_feature_4: 'İstenildiği zaman iptal',
+                paywall_cta: "{label} - {price} ile Pro'ya Geç",
+                paywall_alert: 'Ödeme altyapısı yakında aktif olacak. Seçilen plan: {label} — {price}/{period}',
+                paywall_autorenew: 'Otomatik yenilenir, istediğin zaman iptal edebilirsin.',
+                plan_weekly_label: 'Haftalık', plan_weekly_period: 'hafta',
+                plan_monthly_label: 'Aylık', plan_monthly_period: 'ay',
+                plan_quarterly_label: '3 Aylık', plan_quarterly_period: '3 ay', plan_quarterly_badge: '%17 Tasarruf',
+                plan_yearly_label: 'Yıllık', plan_yearly_period: 'yıl', plan_yearly_badge: 'En Avantajlı · %38 Tasarruf',
+                market_first_half_over: 'İlk Yarı {n} Üst',
+                market_full_time_over: 'Maç Sonu {n} Üst',
+                day_today: 'Bugün',
+                day_yesterday: 'Dün',
+                months: ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'],
+                streak_badge: '{n} maçlık kazanma serisi',
+            },
+            en: {
+                close_label: 'Close',
+                nav_instagram_title: 'Follow us on Instagram',
+                nav_telegram_title: 'Follow us on Telegram',
+                nav_notif_off_title: 'Turn on prediction & win notifications',
+                nav_notif_on_title: 'Prediction & win notifications are on',
+                bnav_today: 'Today',
+                bnav_results: 'Results',
+                bnav_account: 'Account',
+                legal_title: 'Important Notice',
+                legal_p1: `<b style="color:var(--text-primary);">Matchrix is not a betting app.</b>
+                    It does not accept bets, place bets on a user's behalf, hold betting funds or user
+                    funds, act as a payment intermediary, or guarantee any profit.`,
+                legal_p2: `The content shown here consists of <b style="color:var(--text-primary);">informational and
+                    analytical</b> signals produced by statistical analysis of live match data.
+                    Any betting decision is entirely the user's own responsibility; legal betting
+                    can only be placed through licensed operators. Not suitable for users under 18.`,
+                legal_accept_btn: 'I Understand, Continue',
+                welcome_title: '👋 Welcome to Matchrix!',
+                welcome_body: `Our bots scan live matches within seconds and flag high-probability goal
+                    opportunities for you — no setup, no complicated charts, understandable at a glance.
+                    To celebrate getting to know you, <b style="color:var(--accent-brand);">your first month is free</b>.`,
+                hero_live_badge: '16 bots are scanning matches right now',
+                hero_title_1: 'It tells you before',
+                hero_title_2: 'the goal happens',
+                hero_sub: `AI algorithms scan the hidden statistics of live matches within seconds and detect
+                    high-probability goal opportunities. The bots run in the background 24/7 — all that's
+                    left for you is to review the ready-made analysis.`,
+                hero_data_sources: 'Data Sources',
+                hero_monthly_rate_label: 'Monthly Hit Rate:',
+                period_today: 'Today',
+                period_week: 'This Week',
+                period_month: 'This Month',
+                period_all: 'All Time',
+                disclaimer_short: 'Matchrix is not a betting app; it does not accept bets, hold betting funds, or guarantee any profit.',
+                ozet_loading: 'Loading measured results...',
+                ozet_settled: 'Settled',
+                ozet_won: 'Won',
+                ozet_hit_rate: 'Hit Rate',
+                ozet_small_sample: 'Small sample ({n} signals) — this rate is not yet reliable.',
+                kasa_header: 'How Should You Manage Your Bankroll?',
+                kasa_body: `Over the last 30 days we shared an average of <b id="kasaHaftalik" style="color:var(--text-primary);">{haftalik}</b> signals per week,
+                    with a hit rate of <b id="kasaIsabet" style="color:var(--accent-success);">{isabet}</b>.
+                    That does <u>not</u> mean every signal will win — losing streaks are normal and will happen.
+                    Closing your week in profit isn't about one big bet, it's disciplined bankroll management:
+                    <b style="color:var(--text-primary);">don't put more than 10-20% of your bankroll on a single signal</b>,
+                    don't raise your stake after a loss (no martingale), and never play with money you can't afford to lose.`,
+                kasa_footnote: 'This is general bankroll-management information, not personal financial advice. Past performance does not guarantee future results.',
+                loading_data: 'Loading Data...',
+                loading_ellipsis: 'Loading...',
+                modal_match_detail: 'Match Detail',
+                modal_momentum_rising: 'MOMENTUM RISING',
+                modal_home_team: 'HOME',
+                modal_away_team: 'AWAY',
+                modal_win_rate: 'Win Rate',
+                modal_fh_goal: 'First Half Goal',
+                modal_avg_goal: 'Goals Per Match',
+                modal_premium_analysis: 'Premium Analysis',
+                modal_data_not_found: 'Data not found.',
+                modal_connection_error: 'Connection error.',
+                today_open_count: '{n} open predictions today',
+                today_no_signals: "No open predictions yet today, the bots are still scanning — meanwhile learn how to manage your bankroll",
+                fetch_error_data: 'Could not fetch data.',
+                fetch_error_server: 'Could not connect to the server. Is the API up?',
+                no_matches_title: 'No matches to show right now',
+                other_leagues: 'Other Leagues',
+                live_alerts_fallback: 'Live Alerts',
+                outcome_won: 'WON',
+                outcome_lost: 'LOST',
+                outcome_void: 'VOID',
+                signal_minute_label: "Signal Minute: {n}'",
+                lead_bot_title: 'Bot that contributed most to this signal',
+                xg_sniper_title: 'Top contributing bot: xG Sniper',
+                locked_market_placeholder: 'Full Time Over 2.5',
+                locked_probability_placeholder: '78% Probability',
+                locked_team_a: 'Hidden Team A',
+                locked_team_b: 'Hidden Team B',
+                btn_data: 'Data',
+                lock_cta: 'Sign Up to View',
+                match_starting: 'Starting',
+                status_ft: 'FT',
+                status_ht: 'HT',
+                status_abandoned: 'ABD',
+                probability_suffix: 'Probability',
+                radar_possession: 'Possession',
+                radar_xg: 'xG',
+                radar_shots: 'Shots',
+                radar_shots_target: 'Shots on Target',
+                radar_corners: 'Corners',
+                notif_win_title: '🎉 Won!',
+                notif_new_title: '🎯 New Prediction',
+                auth_register_title: 'Sign Up',
+                auth_login_title: 'Log In',
+                auth_register_sub: 'Create a free account to see the AI signals.',
+                auth_login_sub: 'Log in to your account.',
+                auth_submit_create: 'Create Account',
+                auth_submit_login: 'Log In',
+                auth_please_wait: 'Please wait...',
+                auth_generic_error: 'Something went wrong.',
+                auth_server_error: 'Could not connect to the server.',
+                auth_google_cta: 'Continue with Google',
+                auth_or_email: 'or with email',
+                auth_email_label: 'Email',
+                auth_password_label: 'Password',
+                auth_email_placeholder: 'you@example.com',
+                auth_password_placeholder: 'At least 6 characters',
+                auth_forgot_link: 'Forgot my password',
+                forgot_intro: "Enter your email and we'll send you a link to reset your password.",
+                forgot_submit: 'Send Reset Link',
+                forgot_back: 'Back to login',
+                forgot_sending: 'Sending...',
+                forgot_default_message: 'If this email is registered, a reset link has been sent.',
+                forgot_check_email_suffix: ' Check your email (including spam folder).',
+                reset_intro: 'Set your new password.',
+                reset_new_password_label: 'New Password',
+                reset_submit: 'Update Password',
+                reset_updating: 'Updating...',
+                reset_success: 'Your password has been updated. You can now log in with your new password.',
+                reset_go_to_login: 'Back to Login',
+                google_auth_failed: 'Google sign-in failed, please try again.',
+                account_pro: 'PRO MEMBER',
+                account_free: 'FREE MEMBER',
+                account_notif_group: 'Notifications',
+                account_notif_row_title: 'Prediction & win notifications',
+                account_notif_row_sub: 'Get notified instantly on new predictions and results',
+                account_policies_group: 'Policies & Information',
+                account_legal_title: 'Legal Notice',
+                account_legal_text: `This app only offers predictive content about sports matches.
+                    It does not accept bets, hold user funds, place bets on a user's behalf, or
+                    guarantee any profit. Past performance does not guarantee future results.
+                    Not suitable for users under 18.`,
+                account_privacy_title: 'Privacy Policy',
+                account_privacy_text: `When you create an account, only your email address and password
+                    (stored as an irreversible hash) are saved. When you sign in with Google, no
+                    information beyond the email address Google provides is collected. Your payment
+                    details are not stored on our servers; subscriptions are handled through the
+                    Apple App Store. Your data is not shared with or sold to third parties. If you'd
+                    like your account deleted, reach us at destek@matchrix.app.`,
+                account_terms_title: 'Terms of Use',
+                account_terms_text: `Matchrix is an informational app offering AI-assisted predictive
+                    content about sports matches; it does not run betting and does not guarantee any
+                    profit. The service is provided as-is; uninterrupted or error-free operation is
+                    not guaranteed. Subscription/pricing terms will be published here separately once
+                    a paid plan goes live.`,
+                account_support_group: 'Support',
+                account_logout: 'Log Out',
+                paywall_back: 'Back',
+                paywall_title: 'Go Pro',
+                paywall_sub: 'Choose the plan that suits you',
+                paywall_permonth: 'Works out to {v}/month',
+                paywall_feature_1: 'Access to all open predictions',
+                paywall_feature_2: 'New prediction notifications',
+                paywall_feature_3: 'Past results archive',
+                paywall_feature_4: 'Cancel anytime',
+                paywall_cta: 'Go Pro with {label} - {price}',
+                paywall_alert: 'Payment infrastructure will be active soon. Selected plan: {label} — {price}/{period}',
+                paywall_autorenew: 'Renews automatically, cancel anytime.',
+                plan_weekly_label: 'Weekly', plan_weekly_period: 'week',
+                plan_monthly_label: 'Monthly', plan_monthly_period: 'month',
+                plan_quarterly_label: '3 Months', plan_quarterly_period: '3 months', plan_quarterly_badge: 'Save 17%',
+                plan_yearly_label: 'Yearly', plan_yearly_period: 'year', plan_yearly_badge: 'Best Value · Save 38%',
+                market_first_half_over: 'First Half Over {n}',
+                market_full_time_over: 'Full Time Over {n}',
+                day_today: 'Today',
+                day_yesterday: 'Yesterday',
+                months: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+                streak_badge: '{n}-match winning streak',
+            },
+        };
+
+        // Anahtar bulunamazsa TR'ye, o da yoksa anahtarin kendisine duser -
+        // ceviri eksikse sayfa BOZULMAZ, sadece o tek metin Turkce kalir.
+        function t(key, vars) {
+            const dict = I18N[currentLang] || I18N.tr;
+            let s = (dict[key] != null) ? dict[key] : (I18N.tr[key] != null ? I18N.tr[key] : key);
+            if (vars) {
+                Object.keys(vars).forEach(k => { s = s.split('{' + k + '}').join(vars[k]); });
+            }
+            return s;
+        }
+
+        // Turkce yuzde-ONCE ("%78"), Ingilizce yuzde-SONRA ("78%") yazar.
+        function fmtPct(n) {
+            return currentLang === 'en' ? `${n}%` : `%${n}`;
+        }
+
+        // Backend TEK dilde (Turkce) uretiyor: "Ilk Yari 1.5 Ust" / "Mac Sonu
+        // 2.5 Ust" - bu iki sabit kalibin disinda bir sey gelirse (beklenmez)
+        // oldugu gibi birakilir, sayfa bozulmaz.
+        function translateMarket(market) {
+            if (!market || currentLang === 'tr') return market;
+            let m = market.match(/^İlk Yarı ([\d.]+) Üst$/);
+            if (m) return t('market_first_half_over', { n: m[1] });
+            m = market.match(/^Maç Sonu ([\d.]+) Üst$/);
+            if (m) return t('market_full_time_over', { n: m[1] });
+            return market;
+        }
+
+        // Backend hata/basari mesajlari (auth.py, api.py) sabit Turkce
+        // metinler - burada BILINEN, SONLU bir liste olarak Ingilizce'ye
+        // cevriliyor. Listede olmayan (beklenmeyen) bir sunucu mesaji
+        // oldugu gibi gosterilir - sessizce kaybolmaz, sadece Turkce kalir.
+        const SERVER_TEXT_EN = {
+            'Geçerli bir e-posta adresi girin.': 'Please enter a valid email address.',
+            'Şifre en az 6 karakter olmalı.': 'Password must be at least 6 characters.',
+            'Bu e-posta zaten kayıtlı.': 'This email is already registered.',
+            'E-posta veya şifre hatalı.': 'Incorrect email or password.',
+            'Çok fazla deneme yapıldı. Birkaç dakika sonra tekrar deneyin.': 'Too many attempts. Please try again in a few minutes.',
+            'Bağlantının süresi dolmuş veya geçersiz. Yeniden talep et.': 'This link has expired or is invalid. Please request a new one.',
+            'Çok fazla istek. Lütfen biraz yavaşlayın.': 'Too many requests. Please slow down.',
+            'Eğer bu e-posta kayıtlıysa, sıfırlama bağlantısı gönderildi.': 'If this email is registered, a reset link has been sent.',
+        };
+        function translateServerText(msg) {
+            if (!msg || currentLang === 'tr') return msg;
+            return SERVER_TEXT_EN[msg] || msg;
+        }
+
+        // Sayfadaki TUM data-i18n(-html/-title/-placeholder) elemanlarini
+        // gecerli dile gore doldurur. Statik markup icin tek giris noktasi;
+        // dinamik (JS'in ürettigi) icerik kendi render fonksiyonlarinda t()
+        // cagirarak zaten dogru dilde uretiliyor, o yuzden burada dokunulmuyor.
+        function applyStaticTranslations() {
+            document.documentElement.lang = currentLang;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                el.textContent = t(key);
+            });
+            document.querySelectorAll('[data-i18n-html]').forEach(el => {
+                const key = el.getAttribute('data-i18n-html');
+                el.innerHTML = t(key);
+            });
+            document.querySelectorAll('[data-i18n-title]').forEach(el => {
+                const key = el.getAttribute('data-i18n-title');
+                el.title = t(key);
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                const key = el.getAttribute('data-i18n-placeholder');
+                el.placeholder = t(key);
+            });
+            document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+                const key = el.getAttribute('data-i18n-aria');
+                el.setAttribute('aria-label', t(key));
+            });
+            const label = document.getElementById('langToggleLabel');
+            // Buton HER ZAMAN gecilecek DIGER dili gosterir (Wikipedia deseni).
+            if (label) label.textContent = currentLang === 'tr' ? 'EN' : 'TR';
+        }
+
+        // Dil degisince: statik metinler ANINDA guncellenir; o an ekranda
+        // gorunen dinamik icerik (mac listesi/hesap/paywall/kasa/ozet), zaten
+        // sunucu tarafinda onbelleklendigi icin ucuz olan ayni fetch'leri
+        // TEKRAR calistirarak yeniden ciziliyor - iki ayri "TR sablon / EN
+        // sablon" render yolu tutmaktan (ve aralarinda tutarsizlik riskinden)
+        // kacinmak icin bilerek boyle.
+        function setLanguage(lang) {
+            if (lang !== 'tr' && lang !== 'en') return;
+            currentLang = lang;
+            try { localStorage.setItem('matchrix_lang', lang); } catch (e) {}
+            applyStaticTranslations();
+            updateNotifButton();
+            if (currentTab === 'login') {
+                renderLoginTab();
+            } else if (currentTab === 'paywall') {
+                renderPaywallTab();
+            } else {
+                fetchData();
+            }
+            fetchDonemOzet();
+            loadKasaOzet();
+            loadHeroMonthlyRate();
+            loadHeroLeagueCount();
+        }
+
+        function toggleLanguage() {
+            setLanguage(currentLang === 'tr' ? 'en' : 'tr');
+        }
 
         // --- Kazanma bildirimleri (tarayici bildirimi + ses) ----------------
         // Hangi sinyallerin (match_id:signal_period) icin daha once bildirim
@@ -1350,10 +1841,10 @@
             if (!('Notification' in window)) { btn.style.display = 'none'; return; }
             if (notificationsEnabled) {
                 btn.innerHTML = '<i class="fa-solid fa-bell" style="color:var(--accent-brand)"></i>';
-                btn.title = 'Tahmin ve kazanma bildirimleri açık';
+                btn.title = t('nav_notif_on_title');
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-bell-slash"></i>';
-                btn.title = 'Tahmin ve kazanma bildirimlerini aç';
+                btn.title = t('nav_notif_off_title');
             }
         }
 
@@ -1398,8 +1889,8 @@
             playWinSound();
             if (!('Notification' in window) || Notification.permission !== 'granted') return;
             const body = `${m.home_team} ${m.home_score}-${m.away_score} ${m.away_team}`
-                + (m.market ? ` · ${m.market}` : '');
-            const n = new Notification('🎉 Kazandı!', {
+                + (m.market ? ` · ${translateMarket(m.market)}` : '');
+            const n = new Notification(t('notif_win_title'), {
                 body,
                 tag: `win-${m.match_id}-${m.signal_period}`,
             });
@@ -1428,9 +1919,9 @@
         function notifyNewSignal(m) {
             playNewSignalSound();
             if (!('Notification' in window) || Notification.permission !== 'granted') return;
-            const olasilik = (m.probability != null) ? ` · %${Math.round(100 * m.probability)}` : '';
-            const body = `${m.home_team} - ${m.away_team}` + (m.market ? ` · ${m.market}` : '') + olasilik;
-            const n = new Notification('🎯 Yeni Tahmin', {
+            const olasilik = (m.probability != null) ? ` · ${fmtPct(Math.round(100 * m.probability))}` : '';
+            const body = `${m.home_team} - ${m.away_team}` + (m.market ? ` · ${translateMarket(m.market)}` : '') + olasilik;
+            const n = new Notification(t('notif_new_title'), {
                 body,
                 tag: `new-${m.match_id}-${m.signal_period}`,
             });
@@ -1524,11 +2015,11 @@
         function switchAuthMode(mode) {
             authMode = mode;
             const isReg = mode === 'register';
-            document.getElementById('authTitle').innerText = isReg ? 'Üye Ol' : 'Giriş Yap';
+            document.getElementById('authTitle').innerText = isReg ? t('auth_register_title') : t('auth_login_title');
             document.getElementById('authSub').innerText = isReg
-                ? 'Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.'
-                : 'Hesabınıza giriş yapın.';
-            document.getElementById('authSubmit').innerText = isReg ? 'Hesap Oluştur' : 'Giriş Yap';
+                ? t('auth_register_sub')
+                : t('auth_login_sub');
+            document.getElementById('authSubmit').innerText = isReg ? t('auth_submit_create') : t('auth_submit_login');
             document.getElementById('tabRegister').classList.toggle('active', isReg);
             document.getElementById('tabLogin').classList.toggle('active', !isReg);
             document.getElementById('authPassword').setAttribute(
@@ -1558,7 +2049,7 @@
             const email = document.getElementById('forgotEmail').value.trim();
             btn.disabled = true;
             const original = btn.innerText;
-            btn.innerText = 'Gönderiliyor...';
+            btn.innerText = t('forgot_sending');
             try {
                 const res = await fetch('/api/forgot-password', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1567,12 +2058,12 @@
                 const d = await res.json();
                 document.getElementById('forgotForm').innerHTML =
                     `<p style="color:var(--text-primary); font-size:0.9rem; line-height:1.6;">` +
-                    (d.message || 'Eğer bu e-posta kayıtlıysa, sıfırlama bağlantısı gönderildi.') +
-                    ` E-postanı (spam klasörü dahil) kontrol et.</p>`;
+                    translateServerText(d.message || 'Eğer bu e-posta kayıtlıysa, sıfırlama bağlantısı gönderildi.') +
+                    t('forgot_check_email_suffix') + `</p>`;
             } catch (e) {
                 btn.disabled = false;
                 btn.innerText = original;
-                showAuthError('Sunucuya bağlanılamadı.');
+                showAuthError(t('auth_server_error'));
             }
         }
 
@@ -1584,7 +2075,7 @@
             const token = params.get('reset_token');
             btn.disabled = true;
             const original = btn.innerText;
-            btn.innerText = 'Güncelleniyor...';
+            btn.innerText = t('reset_updating');
             try {
                 const res = await fetch('/api/reset-password', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1595,17 +2086,17 @@
                     btn.disabled = false;
                     btn.innerText = original;
                     document.getElementById('resetForm').insertAdjacentHTML('afterbegin',
-                        `<div class="auth-error" style="display:block;">${d.error}</div>`);
+                        `<div class="auth-error" style="display:block;">${translateServerText(d.error)}</div>`);
                     return;
                 }
                 history.replaceState(null, '', location.pathname);
                 document.getElementById('resetForm').innerHTML =
-                    `<p style="color:var(--text-primary); font-size:0.9rem;">Şifren güncellendi. Şimdi yeni şifrenle giriş yapabilirsin.</p>
-                     <button class="auth-submit" onclick="document.getElementById('resetForm').style.display='none'; document.getElementById('authForm').style.display='block'; document.querySelector('.auth-tabs').style.display='flex'; switchAuthMode('login');">Girişe Dön</button>`;
+                    `<p style="color:var(--text-primary); font-size:0.9rem;">${t('reset_success')}</p>
+                     <button class="auth-submit" onclick="document.getElementById('resetForm').style.display='none'; document.getElementById('authForm').style.display='block'; document.querySelector('.auth-tabs').style.display='flex'; switchAuthMode('login');">${t('reset_go_to_login')}</button>`;
             } catch (e) {
                 btn.disabled = false;
                 btn.innerText = original;
-                showAuthError('Sunucuya bağlanılamadı.');
+                showAuthError(t('auth_server_error'));
             }
         }
 
@@ -1632,7 +2123,7 @@
 
             btn.disabled = true;
             const originalText = btn.innerText;
-            btn.innerText = 'Lütfen bekleyin...';
+            btn.innerText = t('auth_please_wait');
 
             try {
                 const res = await fetch(authMode === 'register' ? '/api/register' : '/api/login', {
@@ -1646,10 +2137,10 @@
                     await checkAuth();
                     fetchData();
                 } else {
-                    showAuthError(d.error || 'Bir hata oluştu.');
+                    showAuthError(translateServerText(d.error) || t('auth_generic_error'));
                 }
             } catch (e) {
-                showAuthError('Sunucuya bağlanılamadı.');
+                showAuthError(t('auth_server_error'));
             } finally {
                 btn.disabled = false;
                 btn.innerText = originalText;
@@ -1678,7 +2169,7 @@
             // kaliyor, "yanlis sekme icerigi gorunuyor" izlenimi veriyordu.
             if (['today', 'results'].includes(tab)) {
                 document.getElementById('matchListContainer').innerHTML =
-                    `<div class="loader"><i class="fa-solid fa-circle-notch"></i><p>Veriler Yükleniyor...</p></div>`;
+                    `<div class="loader"><i class="fa-solid fa-circle-notch"></i><p>${t('loading_data')}</p></div>`;
             }
 
             // Bir onceki sekmede olusan yatay kayma (icerik tasmasi) varsa,
@@ -1710,19 +2201,19 @@
                 if (!d.success) return;
 
                 const oranTxt = (d.isabet_orani !== null && d.isabet_orani !== undefined)
-                    ? `%${Math.round(d.isabet_orani * 100)}` : '—';
+                    ? fmtPct(Math.round(d.isabet_orani * 100)) : '—';
 
                 let html = `<div class="ozet-row">` +
-                    `<span class="ozet-item">Sonuçlanan <b>${d.sonuclanan}</b></span>` +
+                    `<span class="ozet-item">${t('ozet_settled')} <b>${d.sonuclanan}</b></span>` +
                     `<span class="ozet-sep">·</span>` +
-                    `<span class="ozet-item ozet-win">Kazanan <b>${d.kazanan}</b></span>` +
+                    `<span class="ozet-item ozet-win">${t('ozet_won')} <b>${d.kazanan}</b></span>` +
                     `<span class="ozet-sep">·</span>` +
-                    `<span class="ozet-item">İsabet <b>${oranTxt}</b></span>` +
+                    `<span class="ozet-item">${t('ozet_hit_rate')} <b>${oranTxt}</b></span>` +
                     `</div>`;
 
                 // DURUSTLUK: kucuk orneklemde oran guvenilir degildir, bunu gizlemiyoruz.
                 if (d.sonuclanan < 100) {
-                    html += `<div class="ozet-warning">Örneklem küçük (${d.sonuclanan} sinyal) — bu oran henüz güvenilir değil.</div>`;
+                    html += `<div class="ozet-warning">${t('ozet_small_sample', { n: d.sonuclanan })}</div>`;
                 }
 
                 el.innerHTML = html;
@@ -1743,7 +2234,7 @@
                             <div class="account-avatar"><i class="fa-solid fa-user"></i></div>
                             <div>
                                 <div class="account-email">${currentUserEmail || ''}</div>
-                                <div class="account-badge ${isPro ? 'is-pro' : ''}">${isPro ? 'PRO ÜYE' : 'ÜCRETSİZ ÜYE'}</div>
+                                <div class="account-badge ${isPro ? 'is-pro' : ''}">${isPro ? t('account_pro') : t('account_free')}</div>
                             </div>
                         </div>
 
@@ -1753,12 +2244,12 @@
                              yukaridaki settings-group bloğu geri eklenmeli. -->
 
                         <div class="settings-group">
-                            <div class="settings-group-title">Bildirimler</div>
+                            <div class="settings-group-title">${t('account_notif_group')}</div>
                             <label class="settings-row" for="hesabimNotifToggle">
                                 <i class="fa-solid fa-bell" style="color:var(--accent-brand);"></i>
                                 <span class="settings-row-text">
-                                    Tahmin ve kazanma bildirimleri
-                                    <small>Yeni tahmin ve sonuç anında haber ver</small>
+                                    ${t('account_notif_row_title')}
+                                    <small>${t('account_notif_row_sub')}</small>
                                 </span>
                                 <span class="settings-toggle">
                                     <input type="checkbox" id="hesabimNotifToggle" onchange="toggleNotifications()" ${notificationsEnabled ? 'checked' : ''}>
@@ -1768,49 +2259,37 @@
                         </div>
 
                         <div class="settings-group">
-                            <div class="settings-group-title">Politikalar ve Bilgilendirme</div>
+                            <div class="settings-group-title">${t('account_policies_group')}</div>
                             <button class="settings-row" onclick="togglePolicy('legal')">
                                 <i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning);"></i>
-                                <span class="settings-row-text">Yasal Uyarı</span>
+                                <span class="settings-row-text">${t('account_legal_title')}</span>
                                 <i class="fa-solid fa-chevron-down settings-chevron" id="chev-legal"></i>
                             </button>
                             <div class="policy-text" id="policy-legal">
-                                Bu uygulama yalnızca spor karşılaşmalarına ilişkin tahmin içerikleri sunar.
-                                Bahis kabul etmez, kullanıcı fonu tutmaz, kullanıcı adına bahis işlemi
-                                gerçekleştirmez ve kazanç garantisi vermez. Geçmiş performans gelecekteki
-                                sonuçları garanti etmez. 18 yaşından küçük kullanıcılar için uygun değildir.
+                                ${t('account_legal_text')}
                             </div>
 
                             <button class="settings-row" onclick="togglePolicy('privacy')">
                                 <i class="fa-solid fa-lock" style="color:var(--accent-brand);"></i>
-                                <span class="settings-row-text">Gizlilik Politikası</span>
+                                <span class="settings-row-text">${t('account_privacy_title')}</span>
                                 <i class="fa-solid fa-chevron-down settings-chevron" id="chev-privacy"></i>
                             </button>
                             <div class="policy-text" id="policy-privacy">
-                                Hesap oluştururken yalnızca e-posta adresin ve şifren (geri döndürülemez
-                                biçimde hash'lenerek) saklanır. Google ile giriş yaptığında Google'ın verdiği
-                                e-posta adresi dışında bir bilgi alınmaz. Ödeme bilgilerin sunucularımızda
-                                tutulmaz; abonelik işlemleri Apple App Store üzerinden yürütülür. Verilerin
-                                üçüncü taraflarla paylaşılmaz veya satılmaz. Hesabının silinmesini istersen
-                                destek@matchrix.app adresinden bize ulaşabilirsin.
+                                ${t('account_privacy_text')}
                             </div>
 
                             <button class="settings-row" onclick="togglePolicy('terms')">
                                 <i class="fa-solid fa-file-contract" style="color:var(--accent-brand);"></i>
-                                <span class="settings-row-text">Kullanım Şartları</span>
+                                <span class="settings-row-text">${t('account_terms_title')}</span>
                                 <i class="fa-solid fa-chevron-down settings-chevron" id="chev-terms"></i>
                             </button>
                             <div class="policy-text" id="policy-terms">
-                                Matchrix, spor karşılaşmaları hakkında yapay zeka destekli tahmin içerikleri
-                                sunan bir bilgilendirme uygulamasıdır; bahis oynatmaz ve kazanç garantisi
-                                vermez. Hizmet olduğu gibi sunulur; kesintisiz veya hatasız çalışacağı garanti
-                                edilmez. Abonelik/ücretlendirme koşulları, ücretli plan aktif hale geldiğinde
-                                burada ayrıca yayınlanacaktır.
+                                ${t('account_terms_text')}
                             </div>
                         </div>
 
                         <div class="settings-group">
-                            <div class="settings-group-title">Destek</div>
+                            <div class="settings-group-title">${t('account_support_group')}</div>
                             <a class="settings-row" href="https://t.me/matchrixapp" target="_blank" rel="noopener">
                                 <i class="fa-brands fa-telegram" style="color:var(--accent-brand);"></i>
                                 <span class="settings-row-text">@matchrixapp</span>
@@ -1818,7 +2297,7 @@
                             </a>
                         </div>
 
-                        <button class="btn-logout" style="width:100%; padding:12px;" onclick="doLogout()">Çıkış Yap</button>
+                        <button class="btn-logout" style="width:100%; padding:12px;" onclick="doLogout()">${t('account_logout')}</button>
                     </div>`;
                 return;
             }
@@ -1826,8 +2305,8 @@
             container.innerHTML = `
                 <div style="display:flex; justify-content:center; padding: 2rem 0;">
                     <div class="auth-card" style="max-width:400px; width:100%;">
-                        <div class="auth-title" id="authTitle">Üye Ol</div>
-                        <div class="auth-sub" id="authSub">Yapay zeka sinyallerini görmek için ücretsiz hesap oluşturun.</div>
+                        <div class="auth-title" id="authTitle">${t('auth_register_title')}</div>
+                        <div class="auth-sub" id="authSub">${t('auth_register_sub')}</div>
 
                         <a href="/api/auth/google/login" class="btn-google">
                             <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
@@ -1836,56 +2315,56 @@
                                 <path fill="#FBBC05" d="M3.96 10.7c-.18-.54-.28-1.11-.28-1.7s.1-1.16.28-1.7V4.97H.96C.35 6.19 0 7.56 0 9s.35 2.81.96 4.03l3-2.33z"/>
                                 <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l3 2.33C4.67 5.16 6.66 3.58 9 3.58z"/>
                             </svg>
-                            Google ile devam et
+                            ${t('auth_google_cta')}
                         </a>
 
-                        <div class="auth-divider"><span>veya e-posta ile</span></div>
+                        <div class="auth-divider"><span>${t('auth_or_email')}</span></div>
 
                         <div class="auth-tabs">
-                            <button class="auth-tab active" id="tabRegister" onclick="switchAuthMode('register')">Üye Ol</button>
-                            <button class="auth-tab" id="tabLogin" onclick="switchAuthMode('login')">Giriş Yap</button>
+                            <button class="auth-tab active" id="tabRegister" onclick="switchAuthMode('register')">${t('auth_register_title')}</button>
+                            <button class="auth-tab" id="tabLogin" onclick="switchAuthMode('login')">${t('auth_login_title')}</button>
                         </div>
 
                         <div class="auth-error" id="authError"></div>
 
                         <form id="authForm" onsubmit="submitAuth(event)">
                             <div class="auth-field">
-                                <label for="authEmail">E-posta</label>
-                                <input type="email" id="authEmail" autocomplete="email" required placeholder="ornek@mail.com">
+                                <label for="authEmail">${t('auth_email_label')}</label>
+                                <input type="email" id="authEmail" autocomplete="email" required placeholder="${t('auth_email_placeholder')}">
                             </div>
                             <div class="auth-field">
-                                <label for="authPassword">Şifre</label>
-                                <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" placeholder="En az 6 karakter">
+                                <label for="authPassword">${t('auth_password_label')}</label>
+                                <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" placeholder="${t('auth_password_placeholder')}">
                             </div>
                             <div id="forgotPasswordLink" style="text-align:right; margin:-0.6rem 0 1rem; display:none;">
-                                <a href="#" onclick="showForgotPassword(event)" style="font-size:0.78rem; color:var(--text-secondary);">Şifremi unuttum</a>
+                                <a href="#" onclick="showForgotPassword(event)" style="font-size:0.78rem; color:var(--text-secondary);">${t('auth_forgot_link')}</a>
                             </div>
-                            <button type="submit" class="auth-submit" id="authSubmit">Hesap Oluştur</button>
+                            <button type="submit" class="auth-submit" id="authSubmit">${t('auth_submit_create')}</button>
                         </form>
 
                         <form id="forgotForm" onsubmit="submitForgotPassword(event)" style="display:none;">
                             <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:1rem;">
-                                E-posta adresini gir, şifreni sıfırlaman için bir bağlantı gönderelim.
+                                ${t('forgot_intro')}
                             </p>
                             <div class="auth-field">
-                                <label for="forgotEmail">E-posta</label>
-                                <input type="email" id="forgotEmail" required placeholder="ornek@mail.com">
+                                <label for="forgotEmail">${t('auth_email_label')}</label>
+                                <input type="email" id="forgotEmail" required placeholder="${t('auth_email_placeholder')}">
                             </div>
-                            <button type="submit" class="auth-submit" id="forgotSubmit">Sıfırlama Bağlantısı Gönder</button>
+                            <button type="submit" class="auth-submit" id="forgotSubmit">${t('forgot_submit')}</button>
                             <div style="text-align:center; margin-top:1rem;">
-                                <a href="#" onclick="hideForgotPassword(event)" style="font-size:0.82rem; color:var(--text-secondary);">Girişe geri dön</a>
+                                <a href="#" onclick="hideForgotPassword(event)" style="font-size:0.82rem; color:var(--text-secondary);">${t('forgot_back')}</a>
                             </div>
                         </form>
 
                         <form id="resetForm" onsubmit="submitResetPassword(event)" style="display:none;">
                             <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:1rem;">
-                                Yeni şifreni belirle.
+                                ${t('reset_intro')}
                             </p>
                             <div class="auth-field">
-                                <label for="resetNewPassword">Yeni Şifre</label>
-                                <input type="password" id="resetNewPassword" required minlength="6" placeholder="En az 6 karakter">
+                                <label for="resetNewPassword">${t('reset_new_password_label')}</label>
+                                <input type="password" id="resetNewPassword" required minlength="6" placeholder="${t('auth_password_placeholder')}">
                             </div>
-                            <button type="submit" class="auth-submit" id="resetSubmit">Şifreyi Güncelle</button>
+                            <button type="submit" class="auth-submit" id="resetSubmit">${t('reset_submit')}</button>
                         </form>
                     </div>
                 </div>`;
@@ -1909,16 +2388,26 @@
             renderPaywallTab();
         }
 
+        // label/period/badge dile gore t() ile cekilir (asagida planLabel/
+        // planPeriod/planBadge), burada SADECE dilden bagimsiz sayisal
+        // degerler tutulur - fiyat her iki dilde de ayni Turk Lirasi tutari.
         const PRO_PLANS = {
-            weekly:    { label: "Haftalık",  price: 129.99,  period: "hafta", perMonth: null, badge: null },
-            monthly:   { label: "Aylık",     price: 399.99,  period: "ay",    perMonth: null, badge: null },
-            quarterly: { label: "3 Aylık",   price: 999.99,  period: "3 ay",  perMonth: 333.33, badge: "%17 Tasarruf" },
-            yearly:    { label: "Yıllık",    price: 2999.99, period: "yıl",   perMonth: 250.00,  badge: "En Avantajlı · %38 Tasarruf" },
+            weekly:    { price: 129.99,  perMonth: null,   hasBadge: false },
+            monthly:   { price: 399.99,  perMonth: null,   hasBadge: false },
+            quarterly: { price: 999.99,  perMonth: 333.33, hasBadge: true },
+            yearly:    { price: 2999.99, perMonth: 250.00, hasBadge: true },
         };
         let selectedProPlan = 'yearly';
 
+        function planLabel(key)  { return t('plan_' + key + '_label'); }
+        function planPeriod(key) { return t('plan_' + key + '_period'); }
+        function planBadge(key)  { return t('plan_' + key + '_badge'); }
+
+        // Fiyat her iki dilde de TL (gercek para birimi degismiyor); sadece
+        // binlik/ondalik ayracin gorunumu dile gore degisir (129,99 vs 129.99).
         function fmtTL(n) {
-            return n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TL';
+            const locale = currentLang === 'en' ? 'en-US' : 'tr-TR';
+            return n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TL';
         }
 
         function selectProPlan(key) {
@@ -1932,10 +2421,10 @@
 
             const cardsHtml = Object.entries(PRO_PLANS).map(([key, p]) => `
                 <button class="plan-card ${key === selectedProPlan ? 'selected' : ''}" onclick="selectProPlan('${key}')">
-                    ${p.badge ? `<div class="plan-badge">${p.badge}</div>` : ''}
-                    <div class="plan-label">${p.label}</div>
-                    <div class="plan-price">${fmtTL(p.price)}<span>/${p.period}</span></div>
-                    ${p.perMonth ? `<div class="plan-permonth">Aylık ${fmtTL(p.perMonth)}'ye denk gelir</div>` : ''}
+                    ${p.hasBadge ? `<div class="plan-badge">${planBadge(key)}</div>` : ''}
+                    <div class="plan-label">${planLabel(key)}</div>
+                    <div class="plan-price">${fmtTL(p.price)}<span>/${planPeriod(key)}</span></div>
+                    ${p.perMonth ? `<div class="plan-permonth">${t('paywall_permonth', { v: fmtTL(p.perMonth) })}</div>` : ''}
                 </button>
             `).join('');
 
@@ -1943,25 +2432,25 @@
                 <div style="display:flex; justify-content:center; padding: 1.5rem 0;">
                     <div class="auth-card" style="max-width:440px; width:100%;">
                         <button onclick="switchTab('today', document.querySelector('.bnav-btn'))" style="background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer; padding:0; margin-bottom:1rem;">
-                            <i class="fa-solid fa-arrow-left"></i> Geri
+                            <i class="fa-solid fa-arrow-left"></i> ${t('paywall_back')}
                         </button>
 
-                        <div class="auth-title" style="text-align:center;">Pro'ya Geç</div>
-                        <div class="auth-sub" style="text-align:center;">Sana uygun planı seç</div>
+                        <div class="auth-title" style="text-align:center;">${t('paywall_title')}</div>
+                        <div class="auth-sub" style="text-align:center;">${t('paywall_sub')}</div>
 
                         <div class="plan-grid">${cardsHtml}</div>
 
                         <ul class="pro-feature-list">
-                            <li><i class="fa-solid fa-check"></i> Tüm açık tahminlere erişim</li>
-                            <li><i class="fa-solid fa-check"></i> Yeni tahmin bildirimleri</li>
-                            <li><i class="fa-solid fa-check"></i> Geçmiş sonuç arşivi</li>
-                            <li><i class="fa-solid fa-check"></i> İstenildiği zaman iptal</li>
+                            <li><i class="fa-solid fa-check"></i> ${t('paywall_feature_1')}</li>
+                            <li><i class="fa-solid fa-check"></i> ${t('paywall_feature_2')}</li>
+                            <li><i class="fa-solid fa-check"></i> ${t('paywall_feature_3')}</li>
+                            <li><i class="fa-solid fa-check"></i> ${t('paywall_feature_4')}</li>
                         </ul>
 
-                        <button class="auth-submit" onclick="alert('Ödeme altyapısı yakında aktif olacak. Seçilen plan: ${plan.label} — ${fmtTL(plan.price)}/${plan.period}')">
-                            ${plan.label} - ${fmtTL(plan.price)} ile Pro'ya Geç
+                        <button class="auth-submit" onclick="alert('${t('paywall_alert', { label: planLabel(selectedProPlan), price: fmtTL(plan.price), period: planPeriod(selectedProPlan) })}')">
+                            ${t('paywall_cta', { label: planLabel(selectedProPlan), price: fmtTL(plan.price) })}
                         </button>
-                        <div class="auth-sub" style="text-align:center; margin-top:0.75rem; margin-bottom:0;">Otomatik yenilenir, istediğin zaman iptal edebilirsin.</div>
+                        <div class="auth-sub" style="text-align:center; margin-top:0.75rem; margin-bottom:0;">${t('paywall_autorenew')}</div>
                     </div>
                 </div>`;
         }
@@ -2016,8 +2505,8 @@
                         const counterEl = document.getElementById('todayCounter');
                         if (counterEl) {
                             counterEl.innerHTML = dataToRender.length
-                                ? `Bugün ${dataToRender.length} açık tahmin var`
-                                : 'Bugün için henüz açık tahmin yok, botlar hâlâ tarıyor — bu arada kasanı nasıl yöneteceğini öğren <i class="fa-solid fa-arrow-down" style="font-size:0.75em;"></i>';
+                                ? t('today_open_count', { n: dataToRender.length })
+                                : t('today_no_signals') + ' <i class="fa-solid fa-arrow-down" style="font-size:0.75em;"></i>';
                         }
                     } else if (requestTab === 'results') {
                         // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
@@ -2034,13 +2523,13 @@
                     // veri yoksa hata mesaji goster; sonraki yenilemelerde son
                     // basarili goruntu ekranda kalsin.
                     if (!container.querySelector('.league-group')) {
-                        container.innerHTML = `<div class="loader"><i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning)"></i><p>Veri çekilemedi.</p></div>`;
+                        container.innerHTML = `<div class="loader"><i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-warning)"></i><p>${t('fetch_error_data')}</p></div>`;
                     }
                 }
             } catch(e) {
                 if (currentTab !== requestTab) return;
                 if (!container.querySelector('.league-group')) {
-                    container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>Sunucuya bağlanılamadı. API açık mı?</p></div>`;
+                    container.innerHTML = `<div class="loader"><i class="fa-solid fa-server" style="color:var(--accent-danger)"></i><p>${t('fetch_error_server')}</p></div>`;
                 }
             }
 
@@ -2053,13 +2542,13 @@
 
         function formatSignalDate(dateStr) {
             if (!dateStr) return '';
-            if (dateStr === currentTodayTR) return 'Bugün';
+            if (dateStr === currentTodayTR) return t('day_today');
             try {
                 const d = new Date(dateStr + 'T00:00:00');
                 const today = new Date((currentTodayTR || dateStr) + 'T00:00:00');
                 const diffDays = Math.round((today - d) / 86400000);
-                if (diffDays === 1) return 'Dün';
-                const aylar = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+                if (diffDays === 1) return t('day_yesterday');
+                const aylar = (I18N[currentLang] || I18N.tr).months;
                 return `${d.getDate()} ${aylar[d.getMonth()]}`;
             } catch (e) {
                 return dateStr;
@@ -2083,15 +2572,23 @@
                 container.innerHTML = `
                     <div style="text-align:center; padding: 4rem 1rem; color: var(--text-muted);">
                         <i class="fa-solid fa-futbol" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
-                        <h3 style="font-family:'Outfit', sans-serif; font-weight:500;">Şu an gösterilecek maç yok</h3>
+                        <h3 style="font-family:'Outfit', sans-serif; font-weight:500;">${t('no_matches_title')}</h3>
                     </div>`;
                 return;
             }
 
+            // "Diger Ligler" ve "Canli Alarmlar" backend'in kendi sabit
+            // Turkce yer tutuculari (bkz. api.py) - hem gruplama ANAHTARI
+            // hem siralama karsilastirmasi TURKCE degerle yapiliyor (veri
+            // modeli dilden bagimsiz kalsin diye), sadece EKRANDA t() ile
+            // gosteriliyor (asagida league_header render'inda).
+            const DIGER_LIGLER = 'Diğer Ligler';
+            const CANLI_ALARMLAR = 'Canlı Alarmlar';
+
             // Group by league
             const groups = {};
             matches.forEach(m => {
-                const lname = m.league_name || "Diğer Ligler";
+                const lname = m.league_name || DIGER_LIGLER;
                 if(!groups[lname]) groups[lname] = [];
                 groups[lname].push(m);
             });
@@ -2111,24 +2608,33 @@
             } else {
                 // Diger sekmede (Acik Bahisler) eski davranis korunur.
                 sortedLeagues = Object.keys(groups).sort((a,b) => {
-                    if(a === "Canlı Alarmlar" || a === "UEFA Conference League" || a === "UEFA Champions League") return -1;
-                    if(a === "Diğer Ligler") return 1;
+                    if(a === CANLI_ALARMLAR || a === "UEFA Conference League" || a === "UEFA Champions League") return -1;
+                    if(a === DIGER_LIGLER) return 1;
                     return a.localeCompare(b);
                 });
+            }
+
+            // Ekranda gosterilecek lig adi: sadece bu iki backend yer
+            // tutucusu cevriliyor, gercek lig adlari (Premier League vb.)
+            // takim adlari gibi PROPER NAME - cevrilmiyor.
+            function leagueDisplayName(league) {
+                if (league === DIGER_LIGLER) return t('other_leagues');
+                if (league === CANLI_ALARMLAR) return t('live_alerts_fallback');
+                return league;
             }
 
             let html = '';
             sortedLeagues.forEach(league => {
                 const leagueMatches = groups[league];
-                const logoHtml = leagueMatches[0].league_logo 
-                    ? `<img src="${leagueMatches[0].league_logo}" onerror="this.style.display='none'">` 
+                const logoHtml = leagueMatches[0].league_logo
+                    ? `<img src="${leagueMatches[0].league_logo}" onerror="this.style.display='none'">`
                     : '<i class="fa-solid fa-trophy" style="color:var(--accent-warning)"></i>';
-                
+
                 html += `
                 <div class="league-group">
                     <div class="league-header">
                         ${logoHtml}
-                        <span>${league}</span>
+                        <span>${leagueDisplayName(league)}</span>
                     </div>
                     <div class="match-list">
                 `;
@@ -2137,9 +2643,9 @@
                     let radarHtml = '';
                     if (type !== 'all') {
                         let outcomeBadge = '';
-                        if (m.outcome === 'WON') outcomeBadge = '<span style="color:var(--accent-success); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-check"></i> KAZANDI</span>';
-                        else if (m.outcome === 'LOST') outcomeBadge = '<span style="color:var(--accent-danger); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-times"></i> KAYBETTİ</span>';
-                        else if (m.outcome === 'VOID') outcomeBadge = '<span style="color:var(--accent-warning); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-circle-minus"></i> GEÇERSİZ</span>';
+                        if (m.outcome === 'WON') outcomeBadge = `<span style="color:var(--accent-success); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-check"></i> ${t('outcome_won')}</span>`;
+                        else if (m.outcome === 'LOST') outcomeBadge = `<span style="color:var(--accent-danger); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-times"></i> ${t('outcome_lost')}</span>`;
+                        else if (m.outcome === 'VOID') outcomeBadge = `<span style="color:var(--accent-warning); margin-left:10px; font-weight:bold;"><i class="fa-solid fa-circle-minus"></i> ${t('outcome_void')}</span>`;
 
                         // GUNCELLIK: Sonuclar'da her karta ne zaman paylasildigi yazilir -
                         // kullanici hangi sonucun bugune, hangisinin gecmise ait oldugunu
@@ -2157,25 +2663,25 @@
                             radarHtml = `
                             <div class="radar-panel locked">
                                 <div class="locked-blur">
-                                    <div class="radar-target"><i class="fa-solid fa-bullseye"></i> Maç Sonu 2.5 Üst ${outcomeBadge}${dateBadge}</div>
-                                    <div class="radar-prob">%78 Olasılık</div>
+                                    <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${t('locked_market_placeholder')} ${outcomeBadge}${dateBadge}</div>
+                                    <div class="radar-prob">${t('locked_probability_placeholder')}</div>
                                 </div>
                             </div>`;
                         } else {
                             const signalMinuteHtml = (m.signal_minute !== undefined && m.signal_minute !== null)
-                                ? `<div class="radar-signal-minute" style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-clock"></i> Tahmin Dakikası: ${m.signal_minute}'</div>`
+                                ? `<div class="radar-signal-minute" style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-clock"></i> ${t('signal_minute_label', { n: m.signal_minute })}</div>`
                                 : '';
                             // Konsensuse en cok katki veren (en yuksek olasilikli "goal"
                             // diyen) bot - seffaflik icin karta iliştiriliyor.
                             const botTagHtml = m.lead_bot
-                                ? `<div class="radar-bot-tag" title="Sinyale en cok katki veren bot"><i class="fa-solid fa-robot"></i> ${formatBotName(m.lead_bot)}</div>`
+                                ? `<div class="radar-bot-tag" title="${t('lead_bot_title')}"><i class="fa-solid fa-robot"></i> ${formatBotName(m.lead_bot)}</div>`
                                 : '';
 
                             radarHtml = `
                             <div class="radar-panel">
                                 ${botTagHtml}
-                                <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${m.market} ${outcomeBadge}${dateBadge}</div>
-                                <div class="radar-prob">%${Math.round(m.probability * 100)} Olasılık</div>
+                                <div class="radar-target"><i class="fa-solid fa-bullseye"></i> ${translateMarket(m.market)} ${outcomeBadge}${dateBadge}</div>
+                                <div class="radar-prob">${fmtPct(Math.round(m.probability * 100))} ${t('probability_suffix')}</div>
                                 ${signalMinuteHtml}
                             </div>`;
                         }
@@ -2191,20 +2697,20 @@
                             <div class="match-time">--'</div>
                             <div class="match-teams locked-blur">
                                 <div class="team">
-                                    <span class="team-name">Gizli Takım A</span>
+                                    <span class="team-name">${t('locked_team_a')}</span>
                                     <span class="team-score">-</span>
                                 </div>
                                 <div class="team">
-                                    <span class="team-name">Gizli Takım B</span>
+                                    <span class="team-name">${t('locked_team_b')}</span>
                                     <span class="team-score">-</span>
                                 </div>
                             </div>
                             <div class="match-action locked-blur">
-                                <button class="btn-stats"><i class="fa-solid fa-chart-bar"></i> Veri</button>
+                                <button class="btn-stats"><i class="fa-solid fa-chart-bar"></i> ${t('btn_data')}</button>
                             </div>
                             ${radarHtml}
                             <div class="lock-overlay" onclick="event.stopPropagation(); openAuth('register')">
-                                <button class="lock-btn"><i class="fa-solid fa-lock"></i> Görmek için Üye Olun</button>
+                                <button class="lock-btn"><i class="fa-solid fa-lock"></i> ${t('lock_cta')}</button>
                             </div>
                         </div>`;
                         return;
@@ -2215,13 +2721,13 @@
                     const isHalftime = m.match_status === 'HT';
                     let timeStr;
                     if (isAbandoned) {
-                        timeStr = 'GD';
+                        timeStr = t('status_abandoned');
                     } else if (isFinished) {
-                        timeStr = 'MS';
+                        timeStr = t('status_ft');
                     } else if (isHalftime) {
-                        timeStr = 'İY';
+                        timeStr = t('status_ht');
                     } else {
-                        timeStr = m.minute >= 0 ? `${m.minute}'` : 'Başlıyor';
+                        timeStr = m.minute >= 0 ? `${m.minute}'` : t('match_starting');
                     }
                     const isLive = !isFinished && !isAbandoned && !isHalftime && m.minute > 0 && m.minute <= 120;
 
@@ -2232,7 +2738,7 @@
                     // renkle/rozetle ayirt edilsin - en isabetli botumuz oldugu icin.
                     const isXgSignal = m.lead_bot === 'bot_xg_sniper';
                     const xgBadgeHtml = isXgSignal
-                        ? `<span class="xg-signal-badge" title="En cok katki veren bot: xG Sniper"><i class="fa-solid fa-crosshairs"></i> xG Sniper</span>`
+                        ? `<span class="xg-signal-badge" title="${t('xg_sniper_title')}"><i class="fa-solid fa-crosshairs"></i> xG Sniper</span>`
                         : '';
 
                     html += `
@@ -2255,7 +2761,7 @@
                                 </div>
                             </div>
                             <div class="match-action">
-                                <button class="btn-stats"><i class="fa-solid fa-chart-bar"></i> Veri</button>
+                                <button class="btn-stats"><i class="fa-solid fa-chart-bar"></i> ${t('btn_data')}</button>
                             </div>
                             ${radarHtml}
                         </div>
@@ -2306,7 +2812,7 @@
             const homeImg = homeLogo ? `<img src="${homeLogo}" style="width:20px;height:20px;vertical-align:middle;margin-right:6px;border-radius:2px;background:#fff;" onerror="this.style.display='none'">` : '';
             const awayImg = awayLogo ? `<img src="${awayLogo}" style="width:20px;height:20px;vertical-align:middle;margin-right:6px;border-radius:2px;background:#fff;" onerror="this.style.display='none'">` : '';
             
-            document.getElementById('modalTitle').innerHTML = `${homeImg}${homeName} <span style="color:var(--text-muted);margin:0 5px;">-</span> ${awayImg}${awayName} <small style="color:var(--accent-brand);">Premium Analiz</small>`;
+            document.getElementById('modalTitle').innerHTML = `${homeImg}${homeName} <span style="color:var(--text-muted);margin:0 5px;">-</span> ${awayImg}${awayName} <small style="color:var(--accent-brand);">${t('modal_premium_analysis')}</small>`;
             
             const momentumContainer = document.getElementById('momentumContainer');
             momentumContainer.innerHTML = `<div class="loader" style="width:100%;"><i class="fa-solid fa-circle-notch"></i></div>`;
@@ -2355,7 +2861,7 @@
                         radarChartInstance = new Chart(ctx, {
                             type: 'radar',
                             data: {
-                                labels: ['Topla Oynama', 'xG', 'Şut', 'İsabetli Şut', 'Korner'],
+                                labels: [t('radar_possession'), t('radar_xg'), t('radar_shots'), t('radar_shots_target'), t('radar_corners')],
                                 datasets: [{
                                     label: homeName,
                                     data: homeData,
@@ -2393,7 +2899,7 @@
                         let momentumHtml = '';
                         let baseHeight = 20;
                         let momentumScore = Math.min(99, Math.max(10, Math.floor((ls.shots.home * 2 + ls.corners.home * 3 + ls.xg.home * 10))));
-                        document.getElementById('momentumScore').innerText = `%${momentumScore} ⬆`;
+                        document.getElementById('momentumScore').innerText = `${fmtPct(momentumScore)} ⬆`;
                         
                         for(let i=0; i<8; i++) {
                             // Increasing trend
@@ -2410,10 +2916,10 @@
                     await checkAuth();
                     openAuth('login');
                 } else {
-                    momentumContainer.innerHTML = `<div style="color:var(--text-muted)">Veri bulunamadı.</div>`;
+                    momentumContainer.innerHTML = `<div style="color:var(--text-muted)">${t('modal_data_not_found')}</div>`;
                 }
             } catch(e) {
-                momentumContainer.innerHTML = `<div style="color:var(--accent-danger)">Bağlantı hatası.</div>`;
+                momentumContainer.innerHTML = `<div style="color:var(--accent-danger)">${t('modal_connection_error')}</div>`;
             }
         }
 
@@ -2434,7 +2940,7 @@
         if (new URLSearchParams(location.search).get('auth_error')) {
             history.replaceState(null, '', location.pathname);
             openAuth('login');
-            setTimeout(() => showAuthError('Google ile giriş başarısız oldu, tekrar deneyin.'), 150);
+            setTimeout(() => showAuthError(t('google_auth_failed')), 150);
         }
 
         // Sifre sifirlama linkinden gelindiyse (/?reset_token=...) Giris
@@ -2489,6 +2995,13 @@
         // zamanlayici oldugu icin /api/live-matches istekleri ust uste yigiliyor,
         // o endpoint zaten yavas oldugundan (~9sn) tarayicida hic tamamlanmiyor ve
         // "bugun" sayaci + mac listesi sonsuza kadar "Yukleniyor" da kaliyordu.
+        // Sayfa ilk yuklendiginde de statik metinleri gecerli dile gore
+        // doldur - TR icin bu, dosyadaki varsayilan metni aynen geri yazmak
+        // anlamina gelir (zararsiz); EN secilmisse (localStorage) sayfa
+        // TR yazan HTML'den EN'e aninda doner, "once TR gorunup sonra EN'e
+        // atlama" (FOUC benzeri) olmaz.
+        applyStaticTranslations();
+
         updateNotifButton();
         checkAuth().then(fetchData);
         startHeroMatrixRain();
@@ -2505,35 +3018,42 @@
 
         // Kasa yonetimi karti - olculmus (sabit-yazilmamis) haftalik hacim +
         // isabet oranina gore genel bahis-disiplini bilgilendirmesi (kullanici
-        // talebi, 2026-08-28). Tek seferlik yukleme yeterli, donem sekmesine bagli degil.
-        (async function loadKasaOzet(){
+        // talebi, 2026-08-28). IIFE'den isimli fonksiyona cevrildi (2026-09-06)
+        // - dil degisince setLanguage() bunu TEKRAR cagirip kart metnini
+        // (icindeki sayilarla birlikte) yeni dilde yeniden uretebilsin diye.
+        async function loadKasaOzet(){
             try {
                 const res = await fetch('/api/kasa-ozet');
                 const d = await res.json();
                 if (!d.success || d.haftalik_ortalama_sinyal == null) return;
-                document.getElementById('kasaHaftalik').innerText = d.haftalik_ortalama_sinyal;
-                document.getElementById('kasaIsabet').innerText = `%${Math.round(d.isabet_orani * 100)}`;
+                const bodyEl = document.getElementById('kasaCardBodyText');
+                if (bodyEl) {
+                    bodyEl.innerHTML = t('kasa_body', {
+                        haftalik: d.haftalik_ortalama_sinyal,
+                        isabet: fmtPct(Math.round(d.isabet_orani * 100)),
+                    });
+                }
                 document.getElementById('kasaCard').style.display = 'block';
             } catch(e) {}
-        })();
+        }
 
         // Hero banner'daki "Aylik Basari Orani" sabit/eski (%74) yaziliydi,
         // asagidaki Bu Ay sekmesiyle tutarsizdi (kullanici talebi, 2026-08-28) -
         // ayni gercek veriyi (/api/ozet-donem?donem=ay) kullanarak dolduruluyor.
-        (async function loadHeroMonthlyRate(){
+        async function loadHeroMonthlyRate(){
             try {
                 const res = await fetch('/api/ozet-donem?donem=ay');
                 const d = await res.json();
                 const el = document.getElementById('heroMonthlyRate');
                 if (!el) return;
                 el.innerText = (d.success && d.isabet_orani != null)
-                    ? `%${Math.round(d.isabet_orani * 100)}` : '—';
+                    ? fmtPct(Math.round(d.isabet_orani * 100)) : '—';
             } catch(e) {}
-        })();
+        }
 
         // "+500 Veri Kaynagi" da sabit yaziliydi - gercek benzersiz lig sayisiyla
         // dolduruluyor (kullanici talebi, 2026-08-28).
-        (async function loadHeroLeagueCount(){
+        async function loadHeroLeagueCount(){
             try {
                 const res = await fetch('/api/ozet');
                 const d = await res.json();
@@ -2548,12 +3068,21 @@
                     const badge = document.getElementById('streakBadge');
                     const text = document.getElementById('streakBadgeText');
                     if (badge && text) {
-                        text.innerText = `${d.guncel_seri} maçlık kazanma serisi`;
+                        text.innerText = t('streak_badge', { n: d.guncel_seri });
                         badge.style.display = 'inline-flex';
                     }
                 }
             } catch(e) {}
-        })();
+        }
+
+        // Uc yukleme fonksiyonu da (kasa karti, aylik oran, lig sayisi/seri)
+        // IIFE'den isimli fonksiyona cevrildiginden (bkz. yukarida), sayfa
+        // ilk acilista burada ACIKCA cagriliyor - setLanguage() ayni
+        // fonksiyonlari dil degisince tekrar cagirarak kart metinlerini
+        // yeni dilde yeniden uretir.
+        loadKasaOzet();
+        loadHeroMonthlyRate();
+        loadHeroLeagueCount();
     </script>
 </body>
 </html>

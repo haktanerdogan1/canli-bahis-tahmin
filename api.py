@@ -460,10 +460,16 @@ def _bot_canli_durum_verisi():
         GROUP BY bot_name
         ORDER BY (ort_iddia IS NULL), ort_iddia DESC
     """)
+    # DIKKAT: fetchall() BURADA, ikinci bir execute() gelmeden once - ayni
+    # cursor'da yeni bir execute() (asagidaki CURRENT_TIMESTAMP sorgusu)
+    # onceki sorgunun sonuc kumesini SIFIRLIYORDU (fetchall() sessizce bos
+    # liste donuyordu). Ilk deploy'da tam olarak bu yuzden partner panelinde
+    # "Canli Bot Durumu" bos gorundu - kok neden burasiydi.
+    ham_satirlar = cur.fetchall()
     now_row = cur.execute("SELECT CURRENT_TIMESTAMP").fetchone()
     simdi = now_row[0] if now_row else None
     botlar = []
-    for bot_name, son_calisma, toplam_degerlendirme, toplam_sinyal, ort_iddia in cur.fetchall():
+    for bot_name, son_calisma, toplam_degerlendirme, toplam_sinyal, ort_iddia in ham_satirlar:
         botlar.append({
             "bot": bot_name,
             "son_calisma": son_calisma,

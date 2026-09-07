@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Ortak Paneli</title>
+<style>
+    :root {
+        --bg: #0b0f17;
+        --panel: #121826;
+        --border: #232c3f;
+        --text: #e6e9ef;
+        --text-muted: #8892a6;
+        --accent: #4f8cff;
+        --success: #2ecc71;
+        --danger: #ff5c5c;
+        --warn: #f5a623;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+        min-height: 100vh;
+    }
+    .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .login-box {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 2rem;
+        width: 100%;
+        max-width: 360px;
+    }
+    .login-box h1 { font-size: 1.1rem; margin: 0 0 1.25rem; }
+    .login-box input {
+        width: 100%;
+        padding: 0.7rem 0.85rem;
+        background: #0d1220;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 0.95rem;
+        margin-bottom: 0.85rem;
+    }
+    .login-box button, .btn {
+        width: 100%;
+        padding: 0.7rem;
+        background: var(--accent);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.95rem;
+    }
+    .login-box button:hover, .btn:hover { opacity: 0.9; }
+    .err { color: var(--danger); font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em; }
+
+    #panel { display: none; max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem; }
+    header h1 { font-size: 1.25rem; margin: 0; }
+    header .sub { color: var(--text-muted); font-size: 0.78rem; margin-top: 0.15rem; }
+    .logout { background: transparent; border: 1px solid var(--border); color: var(--text-muted); padding: 0.4rem 0.9rem; border-radius: 8px; cursor: pointer; font-size: 0.8rem; }
+
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem; text-align: center; }
+    .stat-card .val { font-size: 1.4rem; font-weight: 700; }
+    .stat-card .lbl { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .stat-card.win .val { color: var(--success); }
+    .stat-card.loss .val { color: var(--danger); }
+    .dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        margin-right: 6px; vertical-align: middle;
+    }
+    .dot-on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot-off { background: var(--text-muted); }
+
+    .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .tab-btn { background: none; border: none; color: var(--text-muted); padding: 0.6rem 1rem; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+
+    .panel-section { display: none; }
+    .panel-section.active { display: block; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.02em; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem; }
+
+    .pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+    .pill.won { background: rgba(46,204,113,0.15); color: var(--success); }
+    .pill.lost { background: rgba(255,92,92,0.15); color: var(--danger); }
+    .pill.void { background: rgba(136,146,166,0.15); color: var(--text-muted); }
+    .pill.pending { background: rgba(245,166,35,0.15); color: var(--warn); }
+
+    .filter-row { display: flex; gap: 0.6rem; margin-bottom: 0.85rem; flex-wrap: wrap; align-items: center; }
+    select { background: #0d1220; border: 1px solid var(--border); color: var(--text); padding: 0.45rem 0.6rem; border-radius: 8px; font-size: 0.85rem; }
+    .warn-note { background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3); color: var(--warn); padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.8rem; margin-bottom: 1rem; }
+    .loading, .empty { color: var(--text-muted); text-align: center; padding: 2rem; }
+    .reasons { color: var(--text-muted); font-size: 0.78rem; max-width: 260px; white-space: normal; }
+
+    /* Canli Bot Durumu - kart grid, tablo degil (durum bir bakista okunmali) */
+    .bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.75rem; }
+    .bot-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+    .bot-card .name { font-weight: 700; font-size: 0.92rem; margin-bottom: 0.5rem; word-break: break-word; }
+    .bot-card .row { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem; }
+    .bot-card .row b { color: var(--text); font-weight: 600; }
+    .bot-card .top-badge {
+        display: inline-block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.03em;
+        background: rgba(79,140,255,0.15); color: var(--accent); border-radius: 999px;
+        padding: 0.15rem 0.5rem; margin-bottom: 0.5rem;
+    }
+    .row-flag { color: var(--warn) !important; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="loginWrap">
+    <div class="login-box">
+        <h1>🔒 Ortak Girişi</h1>
+        <input type="password" id="secretInput" placeholder="Ortak anahtarı" autocomplete="off">
+        <button onclick="tryLogin()">Giriş</button>
+        <div class="err" id="loginErr"></div>
+    </div>
+</div>
+
+<div id="panel">
+    <header>
+        <div>
+            <h1>Ortak Paneli</h1>
+            <div class="sub">Salt-okunur izleme — botların canlı durumu ve geçmiş performans</div>
+        </div>
+        <button class="logout" onclick="logout()">Çıkış</button>
+    </header>
+
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="canli" onclick="switchTab('canli')">Canlı Bot Durumu</button>
+        <button class="tab-btn" data-tab="istatistik" onclick="switchTab('istatistik')">İstatistikler</button>
+        <button class="tab-btn" data-tab="gecmis" onclick="switchTab('gecmis')">Sinyal Geçmişi</button>
+    </div>
+
+    <div class="panel-section active" id="sec-canli">
+        <div class="warn-note" id="canliInfo">
+            Her botun son canlı-maç değerlendirmesini gösterir. "Aktif" — son 5 dakikada çalıştı.
+            Sıralama en iddialıdan (ortalama iddia edilen olasılık) en az iddialıya doğru.
+        </div>
+        <div class="bot-grid" id="botGrid"><div class="loading">Yükleniyor...</div></div>
+    </div>
+
+    <div class="panel-section" id="sec-istatistik">
+        <div class="warn-note" id="istatistikWarn" style="display:none;"></div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Günlük Özet</h3>
+        <div class="warn-note">🟡 sarı işaretli satırlar: o gün 20'nin altında sinyal paylaşılmış — muhtemel bir API/veri kesintisi işareti, iddia değil.</div>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Tarih</th><th>Paylaşılan</th><th>Kazandı</th><th>Kaybetti</th><th>Bekleyen</th><th>İsabet</th></tr></thead>
+                <tbody id="gunlukBody"><tr><td colspan="6" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Bot Bazlı İsabet ve Kalibrasyon</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Bot</th><th>Sinyal</th><th>İsabet</th><th>Ort. İddia</th><th>Kalibrasyon Farkı (puan)</th></tr></thead>
+                <tbody id="botPerfBody"><tr><td colspan="5" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Olasılık Aralığına Göre Kalibrasyon</h3>
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+            <table>
+                <thead><tr><th>Aralık</th><th>Sinyal</th><th>İddia Edilen</th><th>Gerçekleşen</th></tr></thead>
+                <tbody id="kalibrasyonBody"><tr><td colspan="4" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:0.95rem; margin:0.5rem 0;">Piyasa Karşılaştırması</h3>
+        <div class="table-wrap" id="piyasaWrap"><div class="loading">Yükleniyor...</div></div>
+    </div>
+
+    <div class="panel-section" id="sec-gecmis">
+        <div class="filter-row">
+            <select id="botFilter" onchange="loadBotSinyalleri()">
+                <option value="">Tüm botlar</option>
+            </select>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th>Bot</th><th>Maç</th><th>Lig</th><th>Market</th><th>Olasılık</th>
+                    <th>Konsensüs</th><th>Sonuç</th><th>Tarih</th><th>Gerekçe</th>
+                </tr></thead>
+                <tbody id="botlarBody"><tr><td colspan="9" class="loading">Yükleniyor...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let PARTNER_SECRET = sessionStorage.getItem('partner_secret') || '';
+
+function api(path) {
+    return fetch(path, { headers: { 'x-partner-secret': PARTNER_SECRET } }).then(r => r.json());
+}
+
+function tryLogin() {
+    const val = document.getElementById('secretInput').value.trim();
+    if (!val) return;
+    PARTNER_SECRET = val;
+    fetch('/api/partner/ozet', { headers: { 'x-partner-secret': PARTNER_SECRET } })
+        .then(r => {
+            if (!r.ok) throw new Error('yetkisiz');
+            return r.json();
+        })
+        .then(d => {
+            if (!d.success) throw new Error('yetkisiz');
+            sessionStorage.setItem('partner_secret', PARTNER_SECRET);
+            document.getElementById('loginWrap').style.display = 'none';
+            document.getElementById('panel').style.display = 'block';
+            initPanel();
+        })
+        .catch(() => {
+            document.getElementById('loginErr').textContent = 'Hatalı anahtar.';
+        });
+}
+
+function logout() {
+    sessionStorage.removeItem('partner_secret');
+    location.reload();
+}
+
+let istatistikYuklendi = false;
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('active'));
+    document.getElementById('sec-' + tab).classList.add('active');
+    if (tab === 'canli') loadBotDurum();
+    if (tab === 'gecmis') loadBotSinyalleri();
+    if (tab === 'istatistik' && !istatistikYuklendi) {
+        istatistikYuklendi = true;
+        loadIstatistikler();
+    }
+}
+
+function fmtPct(x) {
+    return (x === null || x === undefined) ? '—' : `%${Math.round(x * 100)}`;
+}
+
+function outcomePill(o) {
+    const map = { WON: ['won', 'Kazandı'], LOST: ['lost', 'Kaybetti'], VOID: ['void', 'Geçersiz'], PENDING: ['pending', 'Bekliyor'] };
+    const [cls, label] = map[o] || ['pending', o || '—'];
+    return `<span class="pill ${cls}">${label}</span>`;
+}
+
+function fmtZamanOnce(iso) {
+    if (!iso) return 'Hiç çalışmadı';
+    const t = new Date(iso.replace(' ', 'T') + 'Z');
+    const diffSec = Math.round((Date.now() - t.getTime()) / 1000);
+    if (diffSec < 60) return 'az önce';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} dk önce`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} sa önce`;
+    return `${Math.floor(diffSec / 86400)} gün önce`;
+}
+
+async function loadOzet() {
+    const d = await api('/api/partner/ozet');
+    if (!d.success) return;
+    document.getElementById('statsRow').innerHTML = `
+        <div class="stat-card"><div class="val">${d.uye_sayisi}</div><div class="lbl">Üye</div></div>
+        <div class="stat-card"><div class="val">${d.toplam_sinyal}</div><div class="lbl">Toplam Sinyal</div></div>
+        <div class="stat-card win"><div class="val">${d.kazanan}</div><div class="lbl">Kazanan</div></div>
+        <div class="stat-card loss"><div class="val">${d.kaybeden}</div><div class="lbl">Kaybeden</div></div>
+        <div class="stat-card"><div class="val">${fmtPct(d.isabet_orani)}</div><div class="lbl">İsabet</div></div>
+        <div class="stat-card"><div class="val">${d.bekleyen}</div><div class="lbl">Bekleyen</div></div>
+    `;
+}
+
+async function loadBotDurum() {
+    const grid = document.getElementById('botGrid');
+    const d = await api('/api/partner/bot-durum');
+    if (!d.success) return;
+    if (!d.botlar.length) {
+        grid.innerHTML = '<div class="empty">Henüz bot verisi yok.</div>';
+        return;
+    }
+    const simdi = d.sunucu_saati ? new Date(d.sunucu_saati.replace(' ', 'T') + 'Z') : new Date();
+    grid.innerHTML = d.botlar.map((b, i) => {
+        const son = b.son_calisma ? new Date(b.son_calisma.replace(' ', 'T') + 'Z') : null;
+        const aktif = son && ((simdi.getTime() - son.getTime()) / 1000 < 300);
+        return `
+        <div class="bot-card">
+            ${i === 0 ? '<div class="top-badge">🎯 EN İDDİALI</div><br>' : ''}
+            <div class="name">${aktif ? '<span class="dot dot-on"></span>' : '<span class="dot dot-off"></span>'}${b.bot}</div>
+            <div class="row"><span>Durum</span><b>${aktif ? 'Aktif' : 'Sessiz'}</b></div>
+            <div class="row"><span>Son çalışma</span><b>${fmtZamanOnce(b.son_calisma)}</b></div>
+            <div class="row"><span>Ort. iddia</span><b>${fmtPct(b.ortalama_iddia)}</b></div>
+            <div class="row"><span>Toplam sinyal</span><b>${b.toplam_sinyal}</b></div>
+            <div class="row"><span>Toplam değerlendirme</span><b>${b.toplam_degerlendirme}</b></div>
+        </div>`;
+    }).join('');
+}
+
+async function loadBotFiltre() {
+    const d = await api('/api/partner/botlar');
+    if (!d.success) return;
+    const sel = document.getElementById('botFilter');
+    d.botlar.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.bot;
+        opt.textContent = `${b.bot} (${b.paylasim_sayisi} sinyal, ${fmtPct(b.isabet_orani)} isabet)`;
+        sel.appendChild(opt);
+    });
+}
+
+async function loadBotSinyalleri() {
+    const bot = document.getElementById('botFilter').value;
+    const body = document.getElementById('botlarBody');
+    body.innerHTML = '<tr><td colspan="9" class="loading">Yükleniyor...</td></tr>';
+    const d = await api('/api/partner/bot-sinyalleri?bot=' + encodeURIComponent(bot) + '&limit=200');
+    if (!d.success) return;
+    if (!d.sinyaller.length) {
+        body.innerHTML = '<tr><td colspan="9" class="empty">Sinyal bulunamadı.</td></tr>';
+        return;
+    }
+    body.innerHTML = d.sinyaller.map(s => `
+        <tr>
+            <td>${s.bot}</td>
+            <td>${s.ev_sahibi} - ${s.deplasman}</td>
+            <td>${s.lig || '—'}</td>
+            <td>${s.market || '—'}</td>
+            <td>${fmtPct(s.olasilik)}</td>
+            <td>${fmtPct(s.konsensus_olasilik)}</td>
+            <td>${outcomePill(s.sonuc)}</td>
+            <td>${s.tarih}</td>
+            <td class="reasons">${(s.gerekce || []).join(' · ')}</td>
+        </tr>
+    `).join('');
+}
+
+async function loadIstatistikler() {
+    const d = await api('/api/partner/istatistikler');
+    if (!d.success) return;
+
+    if (d.uyari) {
+        const w = document.getElementById('istatistikWarn');
+        w.style.display = 'block';
+        w.textContent = d.uyari;
+    }
+
+    const bugunStr = new Date().toISOString().slice(0, 10);
+    const gunlukBody = document.getElementById('gunlukBody');
+    if (!(d.gunluk_ozet || []).length) {
+        gunlukBody.innerHTML = '<tr><td colspan="6" class="empty">Henüz sinyal paylaşılmadı.</td></tr>';
+    } else {
+        gunlukBody.innerHTML = d.gunluk_ozet.map(g => `
+            <tr>
+                <td${g.api_sorunu_supheli ? ' class="row-flag"' : ''}>${g.api_sorunu_supheli ? '🟡 ' : ''}${g.tarih}${g.tarih === bugunStr ? ' (bugün)' : ''}</td>
+                <td${g.api_sorunu_supheli ? ' class="row-flag"' : ''}>${g.paylasilan}</td>
+                <td>${g.kazanan}</td>
+                <td>${g.kaybeden}</td>
+                <td>${g.bekleyen}</td>
+                <td>${fmtPct(g.isabet_orani)}</td>
+            </tr>
+        `).join('');
+    }
+
+    const botPerfBody = document.getElementById('botPerfBody');
+    if (!(d.bot_performansi || []).length) {
+        botPerfBody.innerHTML = '<tr><td colspan="5" class="empty">Henüz yeterli sonuçlanmış sinyal yok.</td></tr>';
+    } else {
+        botPerfBody.innerHTML = d.bot_performansi.map(b => {
+            const farkPuan = Math.round((b.asiri_iyimserlik || 0) * 100);
+            return `
+            <tr>
+                <td>${b.bot}</td>
+                <td>${b.sinyal_sayisi}</td>
+                <td>${fmtPct(b.isabet_orani)}</td>
+                <td>${fmtPct(b.ortalama_iddia)}</td>
+                <td>${farkPuan > 0 ? '+' : ''}${farkPuan}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    const kalibrasyonBody = document.getElementById('kalibrasyonBody');
+    if (!(d.kalibrasyon || []).length) {
+        kalibrasyonBody.innerHTML = '<tr><td colspan="4" class="empty">Veri yok.</td></tr>';
+    } else {
+        kalibrasyonBody.innerHTML = d.kalibrasyon.map(k => `
+            <tr>
+                <td>${k.olasilik_araligi}</td>
+                <td>${k.sinyal_sayisi}</td>
+                <td>${fmtPct(k.iddia_edilen)}</td>
+                <td>${fmtPct(k.gerceklesen)}</td>
+            </tr>
+        `).join('');
+    }
+
+    const piyasaWrap = document.getElementById('piyasaWrap');
+    const p = d.piyasa_karsilastirmasi;
+    piyasaWrap.innerHTML = p
+        ? `<div style="padding:0.9rem;">
+            <p style="margin:0 0 0.5rem;">${p.aciklama}</p>
+            <p style="color:var(--text-muted); font-size:0.8rem; margin:0;">Oran bulunan sinyal sayısı: ${p.oran_bulunan_sinyal}</p>
+           </div>`
+        : '<div class="empty">Piyasa oranıyla eşleşen sinyal yok.</div>';
+}
+
+function initPanel() {
+    loadOzet();
+    loadBotDurum();
+    loadBotFiltre();
+}
+
+if (PARTNER_SECRET) {
+    fetch('/api/partner/ozet', { headers: { 'x-partner-secret': PARTNER_SECRET } })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                document.getElementById('loginWrap').style.display = 'none';
+                document.getElementById('panel').style.display = 'block';
+                initPanel();
+            } else {
+                sessionStorage.removeItem('partner_secret');
+            }
+        })
+        .catch(() => {});
+}
+
+document.getElementById('secretInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') tryLogin();
+});
+</script>
+</body>
+</html>

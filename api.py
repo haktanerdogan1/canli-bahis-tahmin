@@ -185,6 +185,20 @@ def _check_admin(request: Request):
     return bool(expected) and provided == expected
 
 
+def _check_partner(request: Request):
+    """Ortak paneli icin kimlik dogrulama - _check_admin ile AYNI desen,
+    AYRI bir gizli anahtar (PARTNER_SECRET). Bilinçli olarak ADMIN_SECRET'tan
+    farkli: ortak sadece OKUMA/izleme yapabilsin diye ayri route'lar
+    (/api/partner/*) altinda sadece salt-okunur uclar acilir - void-pending-
+    signals gibi yazma/silme uclarina partner anahtariyla erisim YOK. Kullanici
+    talebi (2026-09-07): "/admin var, /partner diye bir yer acalim, gecmis
+    istatistiklerimizi detayli gostersin, botlarin o an calistigini
+    izleyebilsin.\""""
+    expected = os.environ.get("PARTNER_SECRET")
+    provided = request.headers.get("x-partner-secret")
+    return bool(expected) and provided == expected
+
+
 @app.get("/admin")
 def serve_admin():
     """Yonetici paneli - ana siteden (index.html) tamamen bagimsiz sayfa,
@@ -195,11 +209,19 @@ def serve_admin():
     return FileResponse(os.path.join(os.path.dirname(__file__), 'admin.html'))
 
 
-@app.get("/api/admin/panel/ozet")
-def admin_panel_ozet(request: Request):
-    from fastapi.responses import JSONResponse
-    if not _check_admin(request):
-        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+@app.get("/partner")
+def serve_partner():
+    """Ortak izleme paneli - /admin ile ayni yaklasim (statik kabuk herkese
+    acik, veri uclari x-partner-secret ile korunur), ama SADECE OKUMA:
+    uye e-postalari ve yonetici aksiyonlari (void-pending-signals vb.)
+    partner paneline hic dahil edilmedi."""
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(os.path.dirname(__file__), 'partner.html'))
+
+
+def _ozet_verisi():
+    """Admin VE partner panelinin ust ozet seridi - ortak govde, iki route'un
+    da (/api/admin/panel/ozet, /api/partner/ozet) davranisi senkron kalsin diye."""
     conn = connect()
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM users")
@@ -222,6 +244,14 @@ def admin_panel_ozet(request: Request):
         "bekleyen": tally.get(None, 0),
         "isabet_orani": round(won / (won + lost), 3) if (won + lost) else None,
     }
+
+
+@app.get("/api/admin/panel/ozet")
+def admin_panel_ozet(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _ozet_verisi()
 
 
 @app.get("/api/admin/panel/db-teshis")
@@ -325,12 +355,9 @@ def admin_panel_uyeler(request: Request):
             "uyari": "Uyelik tipi (Free/Pro) henuz veritabaninda tutulmuyor - odeme entegrasyonu yapilana kadar herkes Free gorunur."}
 
 
-@app.get("/api/admin/panel/botlar")
-def admin_panel_botlar(request: Request):
-    """Her botun kac sinyal urettigi + isabet orani (ozet, filtre dropdown'u icin)."""
-    from fastapi.responses import JSONResponse
-    if not _check_admin(request):
-        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+def _botlar_ozet_verisi():
+    """Her botun kac sinyal urettigi + isabet orani (ozet, filtre dropdown'u icin) -
+    admin VE partner panelinin ortak govdesi."""
     conn = connect()
     cur = conn.cursor()
     cur.execute("""
@@ -353,13 +380,18 @@ def admin_panel_botlar(request: Request):
     return {"success": True, "botlar": botlar}
 
 
-@app.get("/api/admin/panel/bot-sinyalleri")
-def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200):
-    """Tek bir botun (ya da hepsinin) urettigi tum maç paylaşımlarının detayi:
-    hangi mac, ne zaman, ne olasilikla, sonuc ne oldu."""
+@app.get("/api/admin/panel/botlar")
+def admin_panel_botlar(request: Request):
     from fastapi.responses import JSONResponse
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _botlar_ozet_verisi()
+
+
+def _bot_sinyalleri_verisi(bot: str = "", limit: int = 200):
+    """Tek bir botun (ya da hepsinin) urettigi tum maç paylaşımlarının detayi:
+    hangi mac, ne zaman, ne olasilikla, sonuc ne oldu - admin VE partner
+    panelinin ortak govdesi."""
     limit = max(1, min(limit, 1000))
     conn = connect()
     cur = conn.cursor()
@@ -394,6 +426,61 @@ def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200
         })
     conn.close()
     return {"success": True, "sinyaller": rows}
+
+
+@app.get("/api/admin/panel/bot-sinyalleri")
+def admin_panel_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _bot_sinyalleri_verisi(bot, limit)
+
+
+def _bot_canli_durum_verisi():
+    """YENI (2026-09-07, ortak talebi): "botlarin o an calistigini
+    izleyebilsin" + "en iddiali XG sniper en ustte gozuksun". bot_predictions
+    HER canli-mac degerlendirmesinde bir satir yazar (decision='goal'
+    OLMASA bile) - o yuzden "son ne zaman yazdi" botun surecinin fiilen
+    calisip calismadiginin en dogru gostergesi (process/launchd durumu
+    degil, ama UretiM durup durmadigi - asil onemli olan bu).
+
+    Siralama: ortalama iddia edilen olasiliga (sadece decision='goal'
+    olan satirlar uzerinden) gore azalan - "en iddiali" bot en ustte,
+    kullanicinin ornek verdigi "xg sniper" gibi yuksek-esikli/az-ama-
+    keskin botlar dogal olarak buraya cikar."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT bot_name,
+               MAX(created_at) AS son_calisma,
+               COUNT(*) AS toplam_degerlendirme,
+               SUM(CASE WHEN decision='goal' THEN 1 ELSE 0 END) AS toplam_sinyal,
+               ROUND(AVG(CASE WHEN decision='goal' THEN probability END), 3) AS ort_iddia
+        FROM bot_predictions
+        GROUP BY bot_name
+        ORDER BY (ort_iddia IS NULL), ort_iddia DESC
+    """)
+    now_row = cur.execute("SELECT CURRENT_TIMESTAMP").fetchone()
+    simdi = now_row[0] if now_row else None
+    botlar = []
+    for bot_name, son_calisma, toplam_degerlendirme, toplam_sinyal, ort_iddia in cur.fetchall():
+        botlar.append({
+            "bot": bot_name,
+            "son_calisma": son_calisma,
+            "toplam_degerlendirme": toplam_degerlendirme,
+            "toplam_sinyal": toplam_sinyal,
+            "ortalama_iddia": ort_iddia,
+        })
+    conn.close()
+    return {"success": True, "botlar": botlar, "sunucu_saati": simdi}
+
+
+@app.get("/api/admin/panel/bot-durum")
+def admin_panel_bot_durum(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _bot_canli_durum_verisi()
 
 
 @app.post("/api/admin/void-pending-signals")
@@ -2641,19 +2728,27 @@ def _hesapla_metrics():
         ORDER BY gun DESC
         LIMIT 60
     """)
+    bugun_tr = cur.execute("SELECT date('now', '+3 hours')").fetchone()[0]
     gunluk = []
     for gun, paylasilan, kazanan, kaybeden, gecersiz, bekleyen in cur.fetchall():
         sonuclanan = kazanan + kaybeden
+        net_paylasilan = paylasilan - gecersiz
         gunluk.append({
             "tarih": gun,
             # VOID (gecersiz) artik kalici bir kategori degil (bkz. settlement.py
             # reconcile_void_signals / delete_unresolvable_void) - paylasilan
             # sayisina dahil edilmiyor.
-            "paylasilan": paylasilan - gecersiz,
+            "paylasilan": net_paylasilan,
             "kazanan": kazanan,
             "kaybeden": kaybeden,
             "bekleyen": bekleyen,
             "isabet_orani": round(kazanan / sonuclanan, 3) if sonuclanan else None,
+            # Ortak talebi (2026-09-07): "20 macı gecmeyen paylaşımlı günler
+            # API sorunu diye not düşülsün" - 2026-09-07'nin kendisinde
+            # yasanan DB kilitlenmesi tam olarak boyle bir gunde (3 sinyal)
+            # yasandi (bkz. proje notlari). BUGUN henuz bitmedigi icin bu
+            # bayraktan MUAF - gun sonuna kadar dusuk sayi normal.
+            "api_sorunu_supheli": (net_paylasilan < 20) and (gun != bugun_tr),
         })
 
     conn.close()
@@ -2727,6 +2822,54 @@ def admin_panel_istatistikler(request: Request):
     admin paneline tasindi (bkz. _hesapla_metrics)."""
     from fastapi.responses import JSONResponse
     if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _hesapla_metrics()
+
+
+# ============================================================
+# /api/partner/* - Ortak icin salt-okunur izleme uclari
+# (2026-09-07 kullanici talebi). AYRI bir anahtarla (_check_partner)
+# korunur, hepsi admin ile AYNI veriyi doner (ayni yardimci fonksiyonlar
+# cagriliyor) ama yazma/silme ucu (void-pending-signals, db-backup,
+# uye e-postalari) burada YOK - ortak sadece izleyebilir.
+# ============================================================
+
+@app.get("/api/partner/ozet")
+def partner_ozet(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_partner(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _ozet_verisi()
+
+
+@app.get("/api/partner/botlar")
+def partner_botlar(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_partner(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _botlar_ozet_verisi()
+
+
+@app.get("/api/partner/bot-sinyalleri")
+def partner_bot_sinyalleri(request: Request, bot: str = "", limit: int = 200):
+    from fastapi.responses import JSONResponse
+    if not _check_partner(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _bot_sinyalleri_verisi(bot, limit)
+
+
+@app.get("/api/partner/bot-durum")
+def partner_bot_durum(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_partner(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    return _bot_canli_durum_verisi()
+
+
+@app.get("/api/partner/istatistikler")
+def partner_istatistikler(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_partner(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     return _hesapla_metrics()
 

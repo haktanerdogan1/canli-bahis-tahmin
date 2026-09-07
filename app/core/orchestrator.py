@@ -34,7 +34,12 @@ def _has_signal_for_half(cursor, match_id, minute):
     ''', (match_id, 1 if first_half else 0))
     return cursor.fetchone() is not None
 
-SAATLIK_SINYAL_KOTASI = 5  # kullanici talebi: "cok fazla olmasin" - gunluk hacmi dizginler
+SAATLIK_SINYAL_KOTASI = 20  # kullanici talebi (2026-09-07): "sinyal sayisini arttir" -
+# onceki deger 5'ti ("cok fazla olmasin" - eski kullanici tercihi). Isabet
+# oranindaki gunluk dalgalanmanin (bkz. proje notlari, 2026-09-07 analizi)
+# istatistiksel gurultu oldugu, sistemik bir bozulma olmadigi dogrulandiktan
+# SONRA bu degisiklik yapildi - kalite/mutabakat esiginde herhangi bir
+# gevseme YOK, sadece hacim tavani yukseltildi.
 
 
 def _saatlik_kota_doldu_mu(cursor):

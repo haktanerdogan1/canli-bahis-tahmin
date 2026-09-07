@@ -2348,6 +2348,28 @@ def _live_matches_hesapla(is_member):
     return payload
 
 
+@app.on_event("startup")
+def _warm_live_matches_cache():
+    """_live_matches_cache bellek-ici bir dict - HER DEPLOY'DA (uygulama
+    yeniden baslarken) BOS baslar. Bugun (2026-09-07) art arda birkac kez
+    deploy edildi ve her seferinde ilk gercek ziyaretci "hic kayit yok"
+    dalina dusup agir sorguyu (~25-50sn) SENKRON bekledi - kullanici
+    sikayeti: "10-15 saniye donuyor". Ayni durum dusuk trafikli anlarda da
+    olusur (_LIVE_MATCHES_MAX_STALE=180sn'yi asan bos donemler).
+
+    Cozum: acilista HEMEN (arka plan thread'inde, health check'i
+    GECIKTIRMEDEN) hem uye hem uye-olmayan onbellek varyantini bir kez
+    hesaplayip dolduruyoruz - bu bedeli ilk kullaniciya degil, sunucunun
+    kendisine odetiyoruz."""
+    def _isit():
+        for is_member in (False, True):
+            try:
+                _live_matches_hesapla(is_member)
+            except Exception as e:
+                print(f"[api] başlangıç önbellek ısıtma hatası (is_member={is_member}): {e}", flush=True)
+    threading.Thread(target=_isit, daemon=True).start()
+
+
 @app.get("/api/bet-assistant/latest")
 def get_bet_assistant_latest(request: Request):
     """Kisisel tarayici yardimcisi icin en yeni acik sinyali dondurur.

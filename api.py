@@ -733,13 +733,15 @@ def telegram_poster_mark_announced(request: Request, id: int, message_id: str):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _telegram_poster_ensure_schema()
     conn = connect()
-    conn.execute(
-        "INSERT OR IGNORE INTO telegram_posted_signals (prediction_id, announce_message_id, announced_at) "
-        "VALUES (?, ?, CURRENT_TIMESTAMP)",
-        (id, message_id),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO telegram_posted_signals (prediction_id, announce_message_id, announced_at) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (id, message_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
     return {"success": True}
 
 
@@ -783,13 +785,15 @@ def telegram_poster_mark_resulted(request: Request, id: int, message_id: str):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _telegram_poster_ensure_schema()
     conn = connect()
-    conn.execute(
-        "UPDATE telegram_posted_signals SET result_message_id = ?, resulted_at = CURRENT_TIMESTAMP "
-        "WHERE prediction_id = ?",
-        (message_id, id),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            "UPDATE telegram_posted_signals SET result_message_id = ?, resulted_at = CURRENT_TIMESTAMP "
+            "WHERE prediction_id = ?",
+            (message_id, id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
     return {"success": True}
 
 

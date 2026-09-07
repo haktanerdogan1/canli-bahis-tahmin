@@ -59,6 +59,41 @@ def _send_message(bot_token, chat_id, text, reply_to_message_id=None):
     return str(r.json()["result"]["message_id"])
 
 
+# Bu process CALISIRKEN Telegram'a FIILEN gonderilmis (announce) prediction
+# id -> message_id eslemesi. Kullanici talebi (2026-09-07): "1den fazla
+# paylasim yapiyor onu duzelt". Kok neden: mesaj Telegram'a gonderildikten
+# SONRA backend'e "gonderildi" diye yaziliyordu (mark-announced) - o yazma
+# istegi gecici bir sebeple (ag hatasi, o gun yasadigimiz "database is
+# locked" gibi) basarisiz olursa, sinyal DB'de hala "gonderilmemis"
+# gorunuyor ve bir SONRAKI dongude AYNI mesaj TEKRAR Telegram'a atiliyordu.
+# Telegram mesaji GERI ALINAMAZ - DB yazimi ise retry ile duzeltilebilir.
+# Bu yuzden dogru sira: ONCE bu process-ici hafizaya isle (Telegram'a asla
+# ikinci kez gonderme garantisi), SONRA DB'ye yazmayi retry ile dene.
+_ANNOUNCED_LOCALLY = {}
+_RESULTED_LOCALLY = set()
+_RESULTED_LOCALLY_MSG = {}
+
+
+def _mark_with_retry(url, admin_secret, params, tries=4, pause=3):
+    """DB'ye 'gonderildi' yazma islemini birkac kez dener (gecici kilitlenme/
+    ag sorunu icin). Hepsi basarisiz olursa False doner - cagiran taraf
+    Telegram'a TEKRAR GONDERMEZ (bkz. yukaridaki aciklama), sadece bir
+    sonraki dongude DB yazimini tekrar dener."""
+    for attempt in range(tries):
+        try:
+            requests.post(
+                url, headers={"x-admin-secret": admin_secret},
+                params=params, timeout=15,
+            ).raise_for_status()
+            return True
+        except Exception as e:
+            if attempt < tries - 1:
+                time.sleep(pause)
+            else:
+                print(f"⚠️  DB işaretleme {tries} denemede de başarısız oldu ({params}): {e}", flush=True)
+    return False
+
+
 def _handle_pending(api_base, admin_secret, bot_token, chat_id):
     r = requests.get(
         f"{api_base}/api/admin/telegram-poster/next-pending",
@@ -69,14 +104,27 @@ def _handle_pending(api_base, admin_secret, bot_token, chat_id):
     if not data.get("found"):
         return False
 
+    pred_id = data["id"]
+    if pred_id in _ANNOUNCED_LOCALLY:
+        # Mesaj bu process icinde ZATEN gonderildi, sadece DB kaydi eksik
+        # kalmis (onceki denemede basarisiz oldu) - TEKRAR GONDERMEDEN
+        # sadece isaretlemeyi yeniden dene.
+        message_id = _ANNOUNCED_LOCALLY[pred_id]
+        print(f"ℹ️  {pred_id} bu oturumda zaten gönderilmişti, sadece DB kaydı yeniden deneniyor...", flush=True)
+        _mark_with_retry(
+            f"{api_base}/api/admin/telegram-poster/mark-announced", admin_secret,
+            {"id": pred_id, "message_id": message_id},
+        )
+        return False
+
     message_id = _send_message(bot_token, chat_id, _format_announce(data))
     print(f"📢 Anons edildi: {data['home']} - {data['away']} (msg {message_id})", flush=True)
+    _ANNOUNCED_LOCALLY[pred_id] = message_id
 
-    requests.post(
-        f"{api_base}/api/admin/telegram-poster/mark-announced",
-        headers={"x-admin-secret": admin_secret},
-        params={"id": data["id"], "message_id": message_id}, timeout=15,
-    ).raise_for_status()
+    _mark_with_retry(
+        f"{api_base}/api/admin/telegram-poster/mark-announced", admin_secret,
+        {"id": pred_id, "message_id": message_id},
+    )
     return True
 
 
@@ -90,17 +138,27 @@ def _handle_settled(api_base, admin_secret, bot_token, chat_id):
     if not data.get("found"):
         return False
 
+    pred_id = data["id"]
+    if pred_id in _RESULTED_LOCALLY:
+        print(f"ℹ️  {pred_id} sonucu bu oturumda zaten gönderilmişti, sadece DB kaydı yeniden deneniyor...", flush=True)
+        _mark_with_retry(
+            f"{api_base}/api/admin/telegram-poster/mark-resulted", admin_secret,
+            {"id": pred_id, "message_id": _RESULTED_LOCALLY_MSG.get(pred_id, "")},
+        )
+        return False
+
     message_id = _send_message(
         bot_token, chat_id, _format_result(data),
         reply_to_message_id=data["announce_message_id"],
     )
     print(f"🏁 Sonuç paylaşıldı: {data['home']} - {data['away']} ({data['outcome']}, msg {message_id})", flush=True)
+    _RESULTED_LOCALLY.add(pred_id)
+    _RESULTED_LOCALLY_MSG[pred_id] = message_id
 
-    requests.post(
-        f"{api_base}/api/admin/telegram-poster/mark-resulted",
-        headers={"x-admin-secret": admin_secret},
-        params={"id": data["id"], "message_id": message_id}, timeout=15,
-    ).raise_for_status()
+    _mark_with_retry(
+        f"{api_base}/api/admin/telegram-poster/mark-resulted", admin_secret,
+        {"id": pred_id, "message_id": message_id},
+    )
     return True
 
 

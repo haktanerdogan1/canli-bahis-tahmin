@@ -1483,30 +1483,41 @@ def live_sync(request: Request, payload: dict):
     # ASAMA 1: KISA baglanti - temizlik + var olanlari oku (bkz.
     # thesports_bot.process_matches docstring - is_known_match kendi
     # baglantisini acabildigi icin bunu ACIK baglantiyla cakistirmamak lazim)
+    #
+    # try/finally: conn.close() ZORUNLU (bkz. proje notlari 6b/madde 4) -
+    # 2026-09-07'de bu blokta try/finally YOKTU: bir "database is locked"
+    # istisnasi cur.execute()'da patladiginda conn.close()'a hic gelinmiyor,
+    # baglanti sadece cop toplayiciyla kapaniyor, o ana kadar tuttugu okuma
+    # anlik goruntusu WAL checkpoint'ini engelliyor - yani ilk kilitlenme
+    # sonraki HER yazmayi biraz daha kilitli hale getiren bir kartopu
+    # baslatiyor (tam ayni gun orkestratorde de gorulen "database is locked"
+    # ve API'nin kendi live_sync'inin coktugu olayin kok nedeni buydu).
     conn = connect()
-    cur = conn.cursor()
-    if active_ids:
-        placeholders = ','.join('?' for _ in active_ids)
-        cur.execute(f'''
-            UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
-            WHERE status IN ('LIVE','HT') AND source_match_id IN ({placeholders})
-        ''', active_ids)
-    _fs_close_stale(cur, active_ids, source)
-    existing_ids = set()
-    if active_ids:
-        cur.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
-        existing_ids = set(r[0] for r in cur.fetchall())
-    # Capraz-kaynak duplikasyon onleme (2026-08-28, kullanici tarafindan
-    # farkedildi - izleme panelinde ayni mac "Leganes B-CD Guadalajara" ve
-    # "Leganés B-Guadalajara" gibi IKI satir olarak gorunuyordu). Zaten canli
-    # olan tum maclarin normalize edilmis isim ciftini topla - bir kaynak
-    # AYNI maci farkli yaziliskla ilk kez bildirdiginde yeni satir ACILMASIN.
-    cur.execute("SELECT home_team_id, away_team_id FROM matches WHERE status IN ('LIVE','HT')")
-    live_norm_pairs = {
-        (_normalize_team_name(h), _normalize_team_name(a)) for h, a in cur.fetchall()
-    }
-    conn.commit()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        if active_ids:
+            placeholders = ','.join('?' for _ in active_ids)
+            cur.execute(f'''
+                UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
+                WHERE status IN ('LIVE','HT') AND source_match_id IN ({placeholders})
+            ''', active_ids)
+        _fs_close_stale(cur, active_ids, source)
+        existing_ids = set()
+        if active_ids:
+            cur.execute(f"SELECT source_match_id FROM matches WHERE source_match_id IN ({placeholders})", active_ids)
+            existing_ids = set(r[0] for r in cur.fetchall())
+        # Capraz-kaynak duplikasyon onleme (2026-08-28, kullanici tarafindan
+        # farkedildi - izleme panelinde ayni mac "Leganes B-CD Guadalajara" ve
+        # "Leganés B-Guadalajara" gibi IKI satir olarak gorunuyordu). Zaten canli
+        # olan tum maclarin normalize edilmis isim ciftini topla - bir kaynak
+        # AYNI maci farkli yaziliskla ilk kez bildirdiginde yeni satir ACILMASIN.
+        cur.execute("SELECT home_team_id, away_team_id FROM matches WHERE status IN ('LIVE','HT')")
+        live_norm_pairs = {
+            (_normalize_team_name(h), _normalize_team_name(a)) for h, a in cur.fetchall()
+        }
+        conn.commit()
+    finally:
+        conn.close()
 
     # ASAMA 2: HICBIR DB baglantisi ACIK DEGIL - is_known_match guvenle kendi
     # baglantisini acabilir.
@@ -1524,79 +1535,83 @@ def live_sync(request: Request, payload: dict):
         to_write.append(m)
 
     # ASAMA 3: TEK KISA transaction'da hepsini yaz.
+    # try/finally: conn.close() ZORUNLU - ayni gerekce ASAMA 1'deki gibi
+    # (bkz. yukaridaki yorum, proje notlari 6b/madde 4).
     conn = connect()
-    cur = conn.cursor()
-    yeni_sayisi = 0
-    for m in to_write:
-        is_new = m["event_id"] not in existing_ids
-        cur.execute('''
-            INSERT INTO matches
-            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
-            VALUES (?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT(source_match_id) DO UPDATE SET
-                minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
-                status=excluded.status,
-                home_score=excluded.home_score,
-                away_score=excluded.away_score,
-                league_name=excluded.league_name,
-                home_team_logo=excluded.home_team_logo,
-                away_team_logo=excluded.away_team_logo,
-                last_seen_at=CURRENT_TIMESTAMP,
-                last_progress_at=CASE
-                    WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
-                         OR excluded.home_score IS NOT matches.home_score
-                         OR excluded.away_score IS NOT matches.away_score
-                    THEN CURRENT_TIMESTAMP ELSE matches.last_progress_at
-                END
-        ''', (m["event_id"], m["home"], m["away"], m["status"], m["league"],
-              m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
-              m["minute_ok"], m["minute_ok"]))
-
-        cur.execute("SELECT id FROM matches WHERE source_match_id=?", (m["event_id"],))
-        row = cur.fetchone()
-        if not row:
-            continue
-        match_db_id = row[0]
-
-        if is_new:
-            yeni_sayisi += 1
-            minute_to_write = m["minute"] or 0
-            period = 'half_time' if m["status"] == "HT" else ('first_half' if minute_to_write <= 45 else 'second_half')
+    try:
+        cur = conn.cursor()
+        yeni_sayisi = 0
+        for m in to_write:
+            is_new = m["event_id"] not in existing_ids
             cur.execute('''
-                INSERT INTO live_snapshots (match_id, minute, period, home_score, away_score)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"]))
-            _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
-            try:
-                _iddaa_transfer_odds(cur, match_db_id, m["home"], m["away"])
-            except Exception as e:
-                print(f"⚠️  Iddaa oran aktarimi basarisiz: {e}", flush=True)
-        else:
-            cur.execute('''
-                SELECT minute, home_possession, away_possession, home_attacks, away_attacks,
-                       home_dangerous_attacks, away_dangerous_attacks, home_corners, away_corners,
-                       home_red_cards, away_red_cards, home_shots_on_target, away_shots_on_target,
-                       home_shots_off_target, away_shots_off_target, home_shots, away_shots,
-                       home_xg, away_xg, home_big_chances, away_big_chances
-                FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1
-            ''', (match_db_id,))
-            prev = cur.fetchone() or (0,) + (None,) * 20
-            minute_to_write = m["minute"] if m["minute"] is not None else (prev[0] or 0)
-            period = 'half_time' if m["status"] == "HT" else ('first_half' if minute_to_write <= 45 else 'second_half')
-            cur.execute('''
-                INSERT INTO live_snapshots (
-                    match_id, minute, period, home_score, away_score,
-                    home_possession, away_possession, home_attacks, away_attacks,
-                    home_dangerous_attacks, away_dangerous_attacks, home_corners, away_corners,
-                    home_red_cards, away_red_cards, home_shots_on_target, away_shots_on_target,
-                    home_shots_off_target, away_shots_off_target, home_shots, away_shots,
-                    home_xg, away_xg, home_big_chances, away_big_chances
-                ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
-            ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"], *prev[1:]))
-            _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
+                INSERT INTO matches
+                (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
+                VALUES (?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(source_match_id) DO UPDATE SET
+                    minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
+                    status=excluded.status,
+                    home_score=excluded.home_score,
+                    away_score=excluded.away_score,
+                    league_name=excluded.league_name,
+                    home_team_logo=excluded.home_team_logo,
+                    away_team_logo=excluded.away_team_logo,
+                    last_seen_at=CURRENT_TIMESTAMP,
+                    last_progress_at=CASE
+                        WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
+                             OR excluded.home_score IS NOT matches.home_score
+                             OR excluded.away_score IS NOT matches.away_score
+                        THEN CURRENT_TIMESTAMP ELSE matches.last_progress_at
+                    END
+            ''', (m["event_id"], m["home"], m["away"], m["status"], m["league"],
+                  m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
+                  m["minute_ok"], m["minute_ok"]))
 
-    conn.commit()
-    conn.close()
+            cur.execute("SELECT id FROM matches WHERE source_match_id=?", (m["event_id"],))
+            row = cur.fetchone()
+            if not row:
+                continue
+            match_db_id = row[0]
+
+            if is_new:
+                yeni_sayisi += 1
+                minute_to_write = m["minute"] or 0
+                period = 'half_time' if m["status"] == "HT" else ('first_half' if minute_to_write <= 45 else 'second_half')
+                cur.execute('''
+                    INSERT INTO live_snapshots (match_id, minute, period, home_score, away_score)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"]))
+                _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
+                try:
+                    _iddaa_transfer_odds(cur, match_db_id, m["home"], m["away"])
+                except Exception as e:
+                    print(f"⚠️  Iddaa oran aktarimi basarisiz: {e}", flush=True)
+            else:
+                cur.execute('''
+                    SELECT minute, home_possession, away_possession, home_attacks, away_attacks,
+                           home_dangerous_attacks, away_dangerous_attacks, home_corners, away_corners,
+                           home_red_cards, away_red_cards, home_shots_on_target, away_shots_on_target,
+                           home_shots_off_target, away_shots_off_target, home_shots, away_shots,
+                           home_xg, away_xg, home_big_chances, away_big_chances
+                    FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1
+                ''', (match_db_id,))
+                prev = cur.fetchone() or (0,) + (None,) * 20
+                minute_to_write = m["minute"] if m["minute"] is not None else (prev[0] or 0)
+                period = 'half_time' if m["status"] == "HT" else ('first_half' if minute_to_write <= 45 else 'second_half')
+                cur.execute('''
+                    INSERT INTO live_snapshots (
+                        match_id, minute, period, home_score, away_score,
+                        home_possession, away_possession, home_attacks, away_attacks,
+                        home_dangerous_attacks, away_dangerous_attacks, home_corners, away_corners,
+                        home_red_cards, away_red_cards, home_shots_on_target, away_shots_on_target,
+                        home_shots_off_target, away_shots_off_target, home_shots, away_shots,
+                        home_xg, away_xg, home_big_chances, away_big_chances
+                    ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
+                ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"], *prev[1:]))
+                _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
+
+        conn.commit()
+    finally:
+        conn.close()
     # istemci detayli istatistik taramasi icin batch slotlarini SADECE burada
     # kabul edilen (is_known_match'ten gecen) maclara ayirsin diye - aksi
     # halde filtrelenmis (obscure) maclar icin bosuna sayfa ziyareti yapip

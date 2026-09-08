@@ -2186,32 +2186,34 @@ def live_stats_update(request: Request, payload: dict):
     if not set_parts:
         return JSONResponse({"error": "gecerli stat alani yok"}, status_code=400)
 
-    conn = connect()
+    # DUZELTME (2026-09-08, kullanici sorusu "flashscore'da hepsinde sut
+    # verisi var" ile ortaya cikti): bu yazici hep duz connect() kullaniyordu,
+    # olculmemisti - client loglarinda bu uc'a yazarken %0-66 arasi degisen
+    # basari orani ve 20-30sn "Read timed out" hatalari goruldu. Veri
+    # GERCEKTEN scrape ediliyor (client loglarinda dogru sut/xG degerleri
+    # var), sorun bu UPDATE'in yazici kilidini alamamasi olabilir - artik
+    # olculuyor ki tahmin degil rakamla konusalim.
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM matches WHERE source_match_id = ?", (f"{source}_{ext_id}",))
-        row = cur.fetchone()
-        if not row:
-            return JSONResponse({"error": "mac bulunamadi"}, status_code=404)
-        match_db_id = row[0]
-        sql = (f"UPDATE live_snapshots SET {', '.join(set_parts)} "
-               "WHERE id = (SELECT id FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1)")
-        params.append(match_db_id)
-        cur.execute(sql, params)
-        updated = cur.rowcount
-        conn.commit()
+        with measured_write("live_stats_update", source) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM matches WHERE source_match_id = ?", (f"{source}_{ext_id}",))
+            row = cur.fetchone()
+            if not row:
+                return JSONResponse({"error": "mac bulunamadi"}, status_code=404)
+            match_db_id = row[0]
+            sql = (f"UPDATE live_snapshots SET {', '.join(set_parts)} "
+                   "WHERE id = (SELECT id FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1)")
+            params.append(match_db_id)
+            cur.execute(sql, params)
+            updated = cur.rowcount
     except sqlite3.OperationalError as e:
         # Yogun yazma altinda bu UPDATE 30sn'lik busy_timeout'a takilabiliyor.
-        # Istisnayi disari birakmak iki sey yapiyordu: her hatada uzun bir
-        # traceback loglaniyor ve baglanti SADECE cop toplayici devreye
-        # girince kapaniyordu - o ana kadar tuttugu okuma anlik goruntusu
-        # WAL'in checkpoint edilmesini engelliyor, yani hata yavasligi
-        # BUYUTUYOR. Veri kaybi degil: istemci her dongude ayni istatistigi
-        # yeniden scrape edip gonderiyor, atlanan guncelleme bir sonraki
-        # turda zaten yaziliyor.
+        # Veri kaybi degil: istemci her dongude ayni istatistigi yeniden
+        # scrape edip gonderiyor, atlanan guncelleme bir sonraki turda
+        # zaten yaziliyor. measured_write kendi finally'sinde baglantiyi
+        # KAPATIYOR (eski koddaki "conn.close() cop toplayiciya kalir"
+        # riski artik yok).
         return JSONResponse({"success": False, "skipped": str(e)}, status_code=503)
-    finally:
-        conn.close()
     return {"success": True, "updated_rows": updated}
 
 

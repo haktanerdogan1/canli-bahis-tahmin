@@ -509,6 +509,47 @@ def admin_panel_db_teshis(request: Request):
     }
 
 
+@app.get("/api/admin/panel/kasa-bilgi-istatistik")
+def admin_panel_kasa_bilgi_istatistik(request: Request):
+    """Telegram'daki periyodik 'kasa yönetimi' bilgilendirme mesaji icin
+    GERCEK, KAYAN (rolling) son-30-gun rakamlarini doner - sabit/elle
+    yazilmis sayi KULLANILMAZ (CLAUDE.md kural 2: olcmeden iddia yok).
+
+    NEDEN "ay" (takvim ayi) DEGIL: /api/ozet-donem?donem=ay ayin BASINDAN
+    itibaren sayar - ayin ilk gunlerinde yaniltici dusuk bir sayi verir.
+    Burada dogru "son 30 gun" penceresi kullaniliyor."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT outcome, COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' AND outcome IN ('WON','LOST')
+          AND created_at >= datetime('now', '-30 days')
+        GROUP BY outcome
+    """)
+    tally = dict(cur.fetchall())
+    conn.close()
+
+    kazanan = tally.get("WON", 0)
+    kaybeden = tally.get("LOST", 0)
+    sonuclanan = kazanan + kaybeden
+    isabet_orani = round(kazanan / sonuclanan, 3) if sonuclanan else None
+    haftalik_ortalama = round(sonuclanan / (30 / 7), 1)
+
+    return {
+        "success": True,
+        "pencere": "son_30_gun",
+        "kazanan": kazanan,
+        "kaybeden": kaybeden,
+        "sonuclanan": sonuclanan,
+        "isabet_orani": isabet_orani,
+        "haftalik_ortalama_sinyal": haftalik_ortalama,
+    }
+
+
 @app.get("/api/admin/panel/tahmin-export")
 def admin_panel_tahmin_export(request: Request):
     """Tahmin-bazli (bot_predictions) tam kayit dokumu - CSV.

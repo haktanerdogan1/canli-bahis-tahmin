@@ -83,6 +83,13 @@ SERVICES = {
     "telegram_poster": {
         "cmd": [PYTHON, "-u", "telegram_poster.py"],
     },
+    # telegram_bilgilendirme: sinyal anonsundan AYRI, 30dk'da bir donusumlu
+    # iki sabit bilgilendirme mesaji atar ("bahis uygulamasi degiliz" +
+    # "kasa yonetimi", kullanici talebi 2026-09-08). AYNI TELEGRAM_BOT_TOKEN/
+    # CHAT_ID'yi kullanir, telegram_poster'a dokunmaz.
+    "telegram_bilgilendirme": {
+        "cmd": [PYTHON, "-u", "telegram_bilgilendirme.py"],
+    },
     # flashscore_xg_bot: GECICI OLARAK DEVRE DISI (bkz. git log). Ilk canli
     # denemede Chromium container'da tekrar tekrar "Page/Target crashed" verdi
     # ve servisin toplam bellek kullanimi 1GB limitine dayandi (0.999GB olculdu) -

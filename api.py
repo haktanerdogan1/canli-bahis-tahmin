@@ -51,19 +51,39 @@ def _ensure_prediction_schema():
     # uzerinden bulmasini saglar.
     try:
         conn = connect()
-        cur = conn.cursor()
-        cur.execute("CREATE INDEX IF NOT EXISTS ix_live_snapshots_match_minute ON live_snapshots(match_id, minute)")
-        cur.execute("CREATE INDEX IF NOT EXISTS ix_bot_predictions_match_snapshot_decision ON bot_predictions(match_id, snapshot_id, decision, probability)")
-        cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_created ON consensus_predictions(created_at DESC)")
-        cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_match ON consensus_predictions(match_id, snapshot_id)")
-        # 2026-08-29: live_sync()'teki capraz-kaynak duplikasyon kontrolu
-        # (bkz. _normalize_team_name) "matches WHERE status IN ('LIVE','HT')"
-        # sorguyor - indekssiz olunca matches tablosunun (148k+ satir) TAMAMINI
-        # her live-sync cagrisinda (15-20sn'de bir) taramaya basladi, genel
-        # yavaslamaya (tekrar) yol acti. Ayni idempotent CREATE INDEX deseni.
-        cur.execute("CREATE INDEX IF NOT EXISTS ix_matches_status ON matches(status)")
-        conn.commit()
-        conn.close()
+        try:
+            cur = conn.cursor()
+            cur.execute("CREATE INDEX IF NOT EXISTS ix_live_snapshots_match_minute ON live_snapshots(match_id, minute)")
+            cur.execute("CREATE INDEX IF NOT EXISTS ix_bot_predictions_match_snapshot_decision ON bot_predictions(match_id, snapshot_id, decision, probability)")
+            cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_created ON consensus_predictions(created_at DESC)")
+            cur.execute("CREATE INDEX IF NOT EXISTS ix_consensus_predictions_match ON consensus_predictions(match_id, snapshot_id)")
+            # 2026-08-29: live_sync()'teki capraz-kaynak duplikasyon kontrolu
+            # (bkz. _normalize_team_name) "matches WHERE status IN ('LIVE','HT')"
+            # sorguyor - indekssiz olunca matches tablosunun (148k+ satir) TAMAMINI
+            # her live-sync cagrisinda (15-20sn'de bir) taramaya basladi, genel
+            # yavaslamaya (tekrar) yol acti. Ayni idempotent CREATE INDEX deseni.
+            cur.execute("CREATE INDEX IF NOT EXISTS ix_matches_status ON matches(status)")
+            # 2026-09-08: GPT-6 Astra ikinci-gorus incelemesi + kullanici onayi.
+            # live_sync ASAMA 3'un HER "yeni olmayan" mac icin tekrarladigi "bu
+            # macin en son snapshot'i" sorgusu ("...WHERE match_id=? ORDER BY id
+            # DESC LIMIT 1") olcumle dogrulandi (EXPLAIN QUERY PLAN):
+            # match_id'yi ix_live_snapshots_match_minute uzerinden indeksli
+            # buluyordu AMA "id DESC" siralamasi icin GECICI B-TREE kuruyordu
+            # (mevcut indeks match_id+MINUTE'a gore sirali, id'ye gore DEGIL).
+            # Uzun suredir canli olan bir macin yuzlerce snapshot'i olabilir -
+            # bu gecici siralama HER TUR tekrarlandiginda transaction suresini
+            # (dolayisiyla DB'nin yazma kilidi tutma suresini) uzatiyordu, kronik
+            # "database is locked" zincirinin ana nedeni buydu. (match_id, id)
+            # bilesik indeksi hem eslesmeyi hem siralamayi TEK indeksten yapar,
+            # gecici B-tree'ye hic gerek kalmaz. NOT: 4M+ satirlik tabloda bu
+            # indeksin ILK KEZ olusturulmasi kendisi bir sure surebilir - deploy
+            # oncesi yerel veri istemcileri (flashscore/sofascore) BILEREK
+            # gecici durduruldu (kullanici onayi) ki bu tek seferlik insa
+            # sirasinda ekstra yazma yuku binmesin.
+            cur.execute("CREATE INDEX IF NOT EXISTS ix_live_snapshots_match_id_id ON live_snapshots(match_id, id)")
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as e:
         print(f"Performans indeksleri atlandi: {e}")
 

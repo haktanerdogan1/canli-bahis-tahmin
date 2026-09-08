@@ -30,7 +30,13 @@ import re
 import shutil
 import difflib
 
-BATCH_SIZE = 6
+BATCH_SIZE = 15  # 6 -> 15 (2026-09-08, kullanici "5gb yaptim ben onu siniri" -
+                 # eski 1GB Chromium bellek limiti asilmisti, artik daha genis
+                 # bir grup ayni dongude taranabilir. Hala SERI calisiyor -
+                 # paralel tarama BILEREK yapilmadi, ayni anda birden fazla
+                 # /api/admin/live-stats-update yazmasi mevcut DB yazici
+                 # cakismasini (bkz. 2026-09-08 loglari, 30sn SQLITE_BUSY)
+                 # buyutebilirdi. Yetersiz kalirsa sonraki adim paralel tarama.
 CYCLE_PAUSE_SECONDS = 15
 MIN_MINUTE = 8
 MAX_MINUTE = 88

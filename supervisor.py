@@ -70,14 +70,13 @@ SERVICES = {
     "iddaa_odds_client": {
         "cmd": [PYTHON, "-u", "iddaa_odds_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
     },
-    # x_poster: kazanan sinyalleri otomatik X'e (Twitter) paylasir (kullanici
-    # talebi, 2026-08-29). sevenm_client gibi Playwright GEREKTIRMEZ. X API
-    # anahtarlari (X_CONSUMER_KEY/SECRET, X_ACCESS_TOKEN/SECRET) tanimli
-    # degilse x_poster.py kendisi hatayla cikar - o durumda supervisor'in
-    # backoff'u devreye girer, sistemin geri kalanini etkilemez.
-    "x_poster": {
-        "cmd": [PYTHON, "-u", "x_poster.py"],
-    },
+    # x_poster: DEVRE DISI (kullanici talebi, 2026-09-08 - "x calismasin
+    # sadece telegram"). Kod silinmedi, gerekirse asagidaki iki satiri geri
+    # acip hizlica rollback yapilabilir. telegram_poster ETKILENMEDI, ayri
+    # bir servis, calismaya devam ediyor.
+    # "x_poster": {
+    #     "cmd": [PYTHON, "-u", "x_poster.py"],
+    # },
     # telegram_poster: x_poster ile ayni akis (acik sinyal -> sonuc yaniti)
     # ama Telegram Bot API ucretsiz oldugu icin tamamen otomatik calisir,
     # X'teki 402 Payment Required engeli yok (kullanici talebi, 2026-08-29).

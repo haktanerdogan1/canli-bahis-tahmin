@@ -564,6 +564,62 @@ def admin_panel_bot_katki_analizi(request: Request):
     return {"success": True, "aciklama": "lift = P(goal|WON) - P(goal|LOST); yuksek=ayirt edici, ~0=kalabaliga uyuyor", "botlar": sonuc}
 
 
+@app.get("/api/admin/panel/veri-kapsama")
+def admin_panel_veri_kapsama(request: Request):
+    """su an CANLI olan maclarin EN SON snapshot'inda hangi ozelliklerin
+    (sut, xG, korner, kirmizi kart, hakimiyet) GERCEKTEN dolu geldigini
+    olcer - bot_shot_accuracy gibi belirli ozel istatistiklere bagimli
+    botlarin ne siklikta 'insufficient_data' donmek ZORUNDA kaldigini
+    tahmin degil, DOGRUDAN gostermek icin (kullanici sorusu, 2026-09-08:
+    'bot_shot_accuracy calisiyor mu')."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ls.home_shots, ls.away_shots, ls.home_shots_on_target, ls.away_shots_on_target,
+               ls.home_xg, ls.away_xg, ls.home_corners, ls.away_corners
+        FROM live_snapshots ls
+        JOIN (
+            SELECT match_id, MAX(id) AS max_id FROM live_snapshots
+            WHERE match_id IN (SELECT id FROM matches WHERE status IN ('LIVE','HT'))
+            GROUP BY match_id
+        ) son ON son.match_id = ls.match_id AND son.max_id = ls.id
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    toplam = len(rows)
+
+    def _dolu(idx1, idx2, esik=4):
+        # bot_shot_accuracy NEEDS: sut_toplam >= 4 (bkz. specialists.py)
+        n = 0
+        for r in rows:
+            a, b = r[idx1], r[idx2]
+            if a is not None and b is not None and (a + b) >= esik:
+                n += 1
+        return n
+
+    def _herhangi_dolu(idx1, idx2):
+        n = 0
+        for r in rows:
+            if r[idx1] is not None or r[idx2] is not None:
+                n += 1
+        return n
+
+    return {
+        "success": True,
+        "aciklama": "Su an LIVE/HT olan maclarin en son snapshot'inda hangi ozellikler dolu",
+        "canli_mac_sayisi": toplam,
+        "sut_verisi_var_ve_yeterli(>=4)": _dolu(0, 1),
+        "sut_verisi_var_ve_yeterli_oran": round(_dolu(0, 1) / toplam, 3) if toplam else None,
+        "xg_verisi_var": _herhangi_dolu(4, 5),
+        "korner_verisi_var": _herhangi_dolu(6, 7),
+    }
+
+
 @app.get("/api/admin/panel/kasa-bilgi-istatistik")
 def admin_panel_kasa_bilgi_istatistik(request: Request):
     """Telegram'daki periyodik 'kasa yönetimi' bilgilendirme mesaji icin

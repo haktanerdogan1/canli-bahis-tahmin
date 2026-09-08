@@ -981,8 +981,8 @@ def _iddaa_ensure_schema():
         # zamanla kendi Iddaa-kaynakli veri setimizi olusturur (bkz. kullanici
         # talebi 2026-08-24). ISTATISTIKSEL KULLANIM icin (odds_profile.py'nin
         # arsivini YENILEMEK, yeni bantlar/marketler denemek) ileride buradan
-        # beslenebilir - su an SADECE _iddaa_transfer_odds canliya gecis aninda
-        # 1X2'yi live_odds'a tasimak icin okuyor.
+        # beslenebilir - su an SADECE _iddaa_find_odds_match/_iddaa_write_odds_rows
+        # canliya gecis aninda 1X2'yi live_odds'a tasimak icin okuyor.
         """CREATE TABLE IF NOT EXISTS iddaa_odds_archive (
             iddaa_event_id INTEGER PRIMARY KEY,
             home_raw TEXT, away_raw TEXT,
@@ -1007,7 +1007,7 @@ def _iddaa_ensure_schema():
         )""",
         # Migrasyon: tablo zaten VARSA yukaridaki CREATE hicbir sey yapmaz -
         # opening_* kolonlari ADD COLUMN ile eklenmeli (2026-09-03, CLV takibi
-        # icin - bkz. iddaa_odds_sync ve _iddaa_transfer_odds).
+        # icin - bkz. iddaa_odds_sync ve _iddaa_write_odds_rows).
         "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_odd_1 REAL",
         "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_odd_x REAL",
         "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_odd_2 REAL",
@@ -1026,10 +1026,51 @@ def _iddaa_ensure_schema():
     conn.close()
 
 
-def _iddaa_transfer_odds(cur, match_db_id, home_raw, away_raw):
+def _iddaa_find_odds_match(home_raw, away_raw):
+    """Iddaa arsivinde (iddaa_odds_archive) en yakin esan takim adiyla
+    eslesen kaydi arar - SADECE OKUMA, kendi baglantisini acar.
+
+    NEDEN AYRI (2026-09-08, GPT-6 Astra ikinci-gorus incelemesi + kullanici
+    onayi): bu fonksiyon HER YENI mac icin arsivin TAMAMINI (bugun itibariyla
+    ~4000 satir) cekip Python'da satir basina iki difflib.SequenceMatcher
+    hesabi yapiyordu - eskiden live_sync'in ASAMA 3'undeki ACIK YAZMA
+    TRANSACTION'I icinde, yani bu CPU-agir arama DB'nin yazma kilidini
+    tutarken calisiyordu. Artik bu fonksiyon transaction ACILMADAN ONCE
+    (live_sync ASAMA 2'de) cagriliyor - sonuc ayni, sadece NE ZAMAN
+    hesaplandigi degisti (bkz. _iddaa_write_odds_rows - sonucu transaction
+    icinde SADECE yazan taraf)."""
+    from flashscore_xg_bot import _normalize as _tnorm, MIN_MATCH_SCORE
+    import difflib
+    h_norm, a_norm = _tnorm(home_raw), _tnorm(away_raw)
+    conn = connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT home_norm, away_norm,
+                   odd_1, odd_x, odd_2, fh_over_odd, fh_under_odd, ms_over_odd, ms_under_odd,
+                   opening_odd_1, opening_odd_x, opening_odd_2,
+                   opening_fh_over_odd, opening_fh_under_odd, opening_ms_over_odd, opening_ms_under_odd
+            FROM iddaa_odds_archive
+        """)
+        best, best_score = None, 0.0
+        for row in cur.fetchall():
+            hn, an = row[0], row[1]
+            score = (difflib.SequenceMatcher(None, h_norm, hn or "").ratio()
+                     + difflib.SequenceMatcher(None, a_norm, an or "").ratio()) / 2
+            if score > best_score:
+                best_score, best = score, row[2:]
+    finally:
+        conn.close()
+    if not best or best_score < MIN_MATCH_SCORE:
+        return None
+    return best
+
+
+def _iddaa_write_odds_rows(cur, match_db_id, best):
     """Mac ilk kez CANLIYA gectiginde (live_sync'teki is_new dalindan
-    cagrilir) Iddaa arsivindeki en yakin esan takim adiyla eslesen kaydi
-    arar, bulursa TEK SEFERLIK live_odds'a yazar - bir daha guncellenmez.
+    cagrilir) _iddaa_find_odds_match'in ONCEDEN buldugu eslesmeyi
+    live_odds'a yazar - TEK SEFERLIK, bir daha guncellenmez. `best` None ise
+    (eslesme bulunamadi) hicbir sey yapmaz.
 
     DUZELTME (2026-09-03, CLV takibi icin - kullanici talebi "Deger/Bahis
     Analisti" ve "Evaluator" rolleri): eski yorum "acilis orani donduruldu"
@@ -1045,24 +1086,7 @@ def _iddaa_transfer_odds(cur, match_db_id, home_raw, away_raw):
       - market='ms_over_closing'/'ms_under_closing' + '..._opening'
     Eslesme bulunamazsa sessizce gecilir (bu mac icin bot_odds_profile
     insufficient_data doner)."""
-    from flashscore_xg_bot import _normalize as _tnorm, MIN_MATCH_SCORE
-    import difflib
-    h_norm, a_norm = _tnorm(home_raw), _tnorm(away_raw)
-    cur.execute("""
-        SELECT home_norm, away_norm,
-               odd_1, odd_x, odd_2, fh_over_odd, fh_under_odd, ms_over_odd, ms_under_odd,
-               opening_odd_1, opening_odd_x, opening_odd_2,
-               opening_fh_over_odd, opening_fh_under_odd, opening_ms_over_odd, opening_ms_under_odd
-        FROM iddaa_odds_archive
-    """)
-    best, best_score = None, 0.0
-    for row in cur.fetchall():
-        hn, an = row[0], row[1]
-        score = (difflib.SequenceMatcher(None, h_norm, hn or "").ratio()
-                 + difflib.SequenceMatcher(None, a_norm, an or "").ratio()) / 2
-        if score > best_score:
-            best_score, best = score, row[2:]
-    if not best or best_score < MIN_MATCH_SCORE:
+    if not best:
         return
     (o1, ox, o2, fh_over_c, fh_under_c, ms_over_c, ms_under_c,
      open_o1, open_ox, open_o2, fh_over_o, fh_under_o, ms_over_o, ms_under_o) = best
@@ -1653,6 +1677,7 @@ def live_sync(request: Request, payload: dict):
     # ASAMA 2: HICBIR DB baglantisi ACIK DEGIL - is_known_match guvenle kendi
     # baglantisini acabilir.
     to_write = []
+    iddaa_eslesmeleri = {}  # event_id -> _iddaa_find_odds_match sonucu (2026-09-08, bkz. asagidaki not)
     for m in prepared:
         is_new = m["event_id"] not in existing_ids
         if is_new and not is_known_match(m["league"], m["home"], m["away"]):
@@ -1663,6 +1688,13 @@ def live_sync(request: Request, payload: dict):
                 # Baska bir kaynaktan zaten canli takip edilen ayni mac -
                 # ikinci bir satir acmadan atla (bkz. _normalize_team_name).
                 continue
+            # Iddaa arsiv eslestirmesi (agir - satir basina difflib) BILEREK
+            # burada, ASAMA 3'un yazma transaction'i ACILMADAN ONCE yapiliyor
+            # (2026-09-08, GPT-6 Astra ikinci-gorus + kullanici onayi) - eskiden
+            # transaction icinde calisiyordu, DB'nin yazma kilidini CPU-agir
+            # bir Python dongusu boyunca gereksiz uzatiyordu. Sonuc ayni,
+            # sadece ASAMA 3'te SADECE yazmak icin kullaniliyor.
+            iddaa_eslesmeleri[m["event_id"]] = _iddaa_find_odds_match(m["home"], m["away"])
         to_write.append(m)
 
     # ASAMA 3: TEK KISA transaction'da hepsini yaz.
@@ -1713,7 +1745,7 @@ def live_sync(request: Request, payload: dict):
                 ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"]))
                 _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
                 try:
-                    _iddaa_transfer_odds(cur, match_db_id, m["home"], m["away"])
+                    _iddaa_write_odds_rows(cur, match_db_id, iddaa_eslesmeleri.get(m["event_id"]))
                 except Exception as e:
                     print(f"⚠️  Iddaa oran aktarimi basarisiz: {e}", flush=True)
             else:

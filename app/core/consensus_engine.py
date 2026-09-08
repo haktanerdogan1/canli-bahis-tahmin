@@ -79,17 +79,31 @@ class ConsensusEngine:
             if p.decision == "insufficient_data":
                 insufficient_count += 1
                 continue
-                
+
+            weight = self.bot_weights.get(p.bot_name, 0.05)
+
+            # Veri kalitesine göre ağırlığı cezalandır
+            effective_weight = weight * p.data_quality
+
+            # DUZELTME (2026-09-08, GPT-6 Astra ikinci-gorus incelemesi):
+            # agirligi 0.00 olan bir bot (ornegin bot_draw_breaker, olculmus
+            # %22.2 isabetle bilerek devre disi birakildi) eskiden BURADA
+            # hala pos_count/neg_count'a (dolayisiyla oy_veren VE mutabakat
+            # esigine) katiliyordu - sadece weighted_prob_sum'a katkisi 0
+            # oluyordu. Yani "agirlik 0 = bu botu dinleme" niyeti tam
+            # uygulanmiyordu: o bot yine de mutabakati 0.49'dan 0.51'e
+            # cekip bir sinyali TETIKLEYEBILIYORDU, olasiligina hic
+            # guvenilmemesine ragmen. Artik effective_weight<=0 olan bir
+            # oy hicbir sayaca (oy_veren, mutabakat, final_prob) girmiyor -
+            # agirligi sifirlanmis bir bot artik GERCEKTEN devre disi.
+            if effective_weight <= 0:
+                continue
+
             if p.decision == "goal":
                 pos_count += 1
             else:
                 neg_count += 1
-                
-            weight = self.bot_weights.get(p.bot_name, 0.05)
-            
-            # Veri kalitesine göre ağırlığı cezalandır
-            effective_weight = weight * p.data_quality
-            
+
             if p.probability is not None:
                 weighted_prob_sum += (p.probability * effective_weight)
                 total_weight += effective_weight

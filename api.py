@@ -157,7 +157,7 @@ async def no_cache_headers(request, call_next):
     response.headers["Pragma"] = "no-cache"
     return response
 
-from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
+from db_config import DB_PATH, connect, measured_write  # Railway kalici disk destegi (bkz. db_config.py)
 
 _ensure_prediction_schema()
 
@@ -1667,8 +1667,11 @@ def live_sync(request: Request, payload: dict):
     # sonraki HER yazmayi biraz daha kilitli hale getiren bir kartopu
     # baslatiyor (tam ayni gun orkestratorde de gorulen "database is locked"
     # ve API'nin kendi live_sync'inin coktugu olayin kok nedeni buydu).
-    conn = connect()
-    try:
+    # OLCUM (2026-09-08, GPT-6 Astra ikinci-gorus incelemesi + kullanici
+    # onayi): indeks eklemek kilitlenmeyi SADECE KISMEN cozdu - "hangi
+    # yazici writer slotunu ne kadar tutuyor" bilgisi olmadan kalan
+    # darbogazi tahmin etmek yerine olcuyoruz (bkz. db_config.measured_write).
+    with measured_write("live_sync.stage1", source, len(active_ids)) as conn:
         cur = conn.cursor()
         if active_ids:
             placeholders = ','.join('?' for _ in active_ids)
@@ -1690,9 +1693,6 @@ def live_sync(request: Request, payload: dict):
         live_norm_pairs = {
             (_normalize_team_name(h), _normalize_team_name(a)) for h, a in cur.fetchall()
         }
-        conn.commit()
-    finally:
-        conn.close()
 
     # ASAMA 2: HICBIR DB baglantisi ACIK DEGIL - is_known_match guvenle kendi
     # baglantisini acabilir.
@@ -1718,10 +1718,8 @@ def live_sync(request: Request, payload: dict):
         to_write.append(m)
 
     # ASAMA 3: TEK KISA transaction'da hepsini yaz.
-    # try/finally: conn.close() ZORUNLU - ayni gerekce ASAMA 1'deki gibi
-    # (bkz. yukaridaki yorum, proje notlari 6b/madde 4).
-    conn = connect()
-    try:
+    # OLCUM (2026-09-08) - ayni gerekce ASAMA 1'deki gibi, bkz. yukaridaki not.
+    with measured_write("live_sync.stage3", source, len(to_write)) as conn:
         cur = conn.cursor()
         yeni_sayisi = 0
         for m in to_write:
@@ -1791,10 +1789,6 @@ def live_sync(request: Request, payload: dict):
                     ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
                 ''', (match_db_id, minute_to_write, period, m["score_h"], m["score_a"], *prev[1:]))
                 _capture_fh_score(cur, match_db_id, m["status"], m["score_h"], m["score_a"])
-
-        conn.commit()
-    finally:
-        conn.close()
     # istemci detayli istatistik taramasi icin batch slotlarini SADECE burada
     # kabul edilen (is_known_match'ten gecen) maclara ayirsin diye - aksi
     # halde filtrelenmis (obscure) maclar icin bosuna sayfa ziyareti yapip

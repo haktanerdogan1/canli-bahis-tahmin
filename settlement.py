@@ -20,7 +20,7 @@ SONUCLANDIRMA KURALI (mevcut api.py mantiginin birebir tasinmis hali):
 import sqlite3
 import time
 
-from db_config import DB_PATH, connect
+from db_config import DB_PATH, connect, measured_write
 
 # Ilk yari icin dogrulanmis bir HT status_id yok (bkz. thesports_bot.py basi
 # aciklama - sadece LIVE=2 ve FINISHED=8 kanitli). Bu yuzden status'e dayanarak
@@ -438,17 +438,15 @@ def void_timed_out_signals(verbose=True):
     calisir: sadece consensus_predictions.created_at'e bakar, hicbir JOIN
     yapmaz - o yuzden matches tablosunda ne olursa olsun calismaya devam eder.
     """
-    conn = _connect()
-    cur = conn.cursor()
-    cur.execute(f'''
-        UPDATE consensus_predictions
-        SET outcome='VOID', settled_at=CURRENT_TIMESTAMP
-        WHERE decision='signal' AND outcome IS NULL
-          AND created_at <= datetime('now', '-{SIGNAL_TIMEOUT_HOURS} hours')
-    ''')
-    affected = cur.rowcount
-    conn.commit()
-    conn.close()
+    with measured_write("settlement.void_timed_out") as conn:
+        cur = conn.cursor()
+        cur.execute(f'''
+            UPDATE consensus_predictions
+            SET outcome='VOID', settled_at=CURRENT_TIMESTAMP
+            WHERE decision='signal' AND outcome IS NULL
+              AND created_at <= datetime('now', '-{SIGNAL_TIMEOUT_HOURS} hours')
+        ''')
+        affected = cur.rowcount
     if verbose and affected:
         print(f"[settlement] guvenlik agi: {affected} sinyal {SIGNAL_TIMEOUT_HOURS} saatten "
               "uzun PENDING kaldigi icin VOID yapildi", flush=True)
@@ -479,27 +477,25 @@ def void_stuck_signals(verbose=True):
     degil, o anki matches.minute degerine kiyasla farkli bir minute tasiyan
     bir snapshot son 30 dakikada var mi diye bakiyor - yoksa donuk demektir.
     """
-    conn = _connect()
-    cur = conn.cursor()
-    cur.execute(f'''
-        UPDATE consensus_predictions
-        SET outcome='VOID', settled_at=CURRENT_TIMESTAMP
-        WHERE id IN (
-            SELECT p.id FROM consensus_predictions p
-            JOIN matches m ON m.id = p.match_id
-            WHERE p.decision='signal' AND p.outcome IS NULL
-              AND p.created_at <= datetime('now', '-{STUCK_SIGNAL_MINUTES} minutes')
-              AND NOT EXISTS (
-                  SELECT 1 FROM live_snapshots ls
-                  WHERE ls.match_id = m.id
-                    AND ls.captured_at >= datetime('now', '-{STUCK_SIGNAL_MINUTES} minutes')
-                    AND COALESCE(ls.minute, -999) <> COALESCE(m.minute, -999)
-              )
-        )
-    ''')
-    affected = cur.rowcount
-    conn.commit()
-    conn.close()
+    with measured_write("settlement.void_stuck") as conn:
+        cur = conn.cursor()
+        cur.execute(f'''
+            UPDATE consensus_predictions
+            SET outcome='VOID', settled_at=CURRENT_TIMESTAMP
+            WHERE id IN (
+                SELECT p.id FROM consensus_predictions p
+                JOIN matches m ON m.id = p.match_id
+                WHERE p.decision='signal' AND p.outcome IS NULL
+                  AND p.created_at <= datetime('now', '-{STUCK_SIGNAL_MINUTES} minutes')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM live_snapshots ls
+                      WHERE ls.match_id = m.id
+                        AND ls.captured_at >= datetime('now', '-{STUCK_SIGNAL_MINUTES} minutes')
+                        AND COALESCE(ls.minute, -999) <> COALESCE(m.minute, -999)
+                  )
+            )
+        ''')
+        affected = cur.rowcount
     if verbose and affected:
         print(f"[settlement] guvenlik agi 2: {affected} sinyal {STUCK_SIGNAL_MINUTES}dk+ once "
               "olusturuldu ama son snapshot gecmisine gore macin dakikasi hic "
@@ -636,6 +632,7 @@ def settle_pending(verbose=True):
     rows = cur.fetchall()
 
     settled = won = lost = void = 0
+    guncellenecekler = []
     now_ts = time.time()
     for (pid, sig_min, snap_h, snap_a, cur_h, cur_a, status, minute,
          fh_h, fh_a, fh_minute, stored_initial, match_id_db, kickoff_ts) in rows:
@@ -662,12 +659,15 @@ def settle_pending(verbose=True):
         if outcome is None:
             continue
 
-        cur.execute(
-            "UPDATE consensus_predictions "
-            "SET outcome = ?, settled_at = CURRENT_TIMESTAMP, initial_goals = ? "
-            "WHERE id = ? AND outcome IS NULL",
-            (outcome, initial, pid),
-        )
+        # OLCUM (2026-09-08, GPT-6 Astra ikinci-gorus + kullanici onayi):
+        # UPDATE'ler artik BURADA calismiyor - sadece HANGI satirlarin
+        # guncellenecegi listeleniyor, gercek yazma dongunun DISINDA
+        # (asagida) tek bir olculen transaction'da yapiliyor. Astra'nin
+        # uyardigi hata TAM OLARAK buydu: "yazma gerektirmeyen uzun okuma/
+        # hesaplama isini olculen bloga sarmayin" - bu SELECT+Python
+        # dongusu okuma/hesaplama, measured_write'in BEGIN IMMEDIATE'i
+        # gereksiz yere bu sure boyunca writer kilidini tutardi.
+        guncellenecekler.append((outcome, initial, pid))
         settled += 1
         if outcome == "WON":
             won += 1
@@ -676,8 +676,18 @@ def settle_pending(verbose=True):
         else:
             void += 1
 
-    conn.commit()
     conn.close()
+
+    if guncellenecekler:
+        with measured_write("settlement.settle_pending", batch_size=len(guncellenecekler)) as wconn:
+            wcur = wconn.cursor()
+            for outcome, initial, pid in guncellenecekler:
+                wcur.execute(
+                    "UPDATE consensus_predictions "
+                    "SET outcome = ?, settled_at = CURRENT_TIMESTAMP, initial_goals = ? "
+                    "WHERE id = ? AND outcome IS NULL",
+                    (outcome, initial, pid),
+                )
 
     if verbose and settled:
         print(f"[settlement] {settled} sinyal sonuclandi "
@@ -729,6 +739,7 @@ def reconcile_void_signals(verbose=True):
     rows = cur.fetchall()
 
     fixed = won = lost = 0
+    guncellenecekler = []
     now_ts = time.time()
     for (pid, sig_min, cur_h, cur_a, status, minute, fh_h, fh_a, fh_minute,
          initial, match_id_db, kickoff_ts) in rows:
@@ -743,19 +754,28 @@ def reconcile_void_signals(verbose=True):
         if outcome not in ("WON", "LOST"):
             continue
 
-        cur.execute(
-            "UPDATE consensus_predictions SET outcome=?, settled_at=CURRENT_TIMESTAMP "
-            "WHERE id=? AND outcome='VOID'",
-            (outcome, pid),
-        )
-        fixed += cur.rowcount
+        # OLCUM (2026-09-08): settle_pending'deki AYNI ayrim - okuma/hesaplama
+        # ile yazmayi farkli transaction'lara boluyoruz (bkz. o fonksiyondaki
+        # aciklama).
+        guncellenecekler.append((outcome, pid))
         if outcome == "WON":
             won += 1
         else:
             lost += 1
 
-    conn.commit()
     conn.close()
+
+    if guncellenecekler:
+        with measured_write("settlement.reconcile_void", batch_size=len(guncellenecekler)) as wconn:
+            wcur = wconn.cursor()
+            for outcome, pid in guncellenecekler:
+                wcur.execute(
+                    "UPDATE consensus_predictions SET outcome=?, settled_at=CURRENT_TIMESTAMP "
+                    "WHERE id=? AND outcome='VOID'",
+                    (outcome, pid),
+                )
+                fixed += wcur.rowcount
+
     if verbose and fixed:
         print(f"[settlement] VOID yeniden kontrol: {fixed} kayit kesin sonuca "
               f"cevrildi (kazanan={won} kaybeden={lost})", flush=True)
@@ -778,19 +798,17 @@ def delete_unresolvable_void(verbose=True):
     VOID kayitlara DOKUNULMAZ - onlar reconcile_void_signals() ile mac
     (gercekten) bitince kesin sonuca ulasir, erken silinmemeli.
     """
-    conn = _connect()
-    cur = conn.cursor()
-    cur.execute('''
-        DELETE FROM consensus_predictions
-        WHERE decision='signal' AND outcome='VOID'
-          AND (
-              initial_goals IS NULL
-              OR match_id IN (SELECT id FROM matches WHERE status='ABANDONED')
-          )
-    ''')
-    silinen = cur.rowcount
-    conn.commit()
-    conn.close()
+    with measured_write("settlement.delete_unresolvable_void") as conn:
+        cur = conn.cursor()
+        cur.execute('''
+            DELETE FROM consensus_predictions
+            WHERE decision='signal' AND outcome='VOID'
+              AND (
+                  initial_goals IS NULL
+                  OR match_id IN (SELECT id FROM matches WHERE status='ABANDONED')
+              )
+        ''')
+        silinen = cur.rowcount
     if verbose and silinen:
         print(f"[settlement] {silinen} kalici cozulemeyen VOID sinyal silindi", flush=True)
     return silinen
@@ -842,18 +860,16 @@ def close_zombie_matches(hours=ZOMBIE_MATCH_HOURS, verbose=True):
     normal bitmistir (FINISHED), degilse yarida kalmistir (ABANDONED) -
     _fs_close_stale ile ayni ayrim.
     """
-    conn = _connect()
-    cur = conn.cursor()
-    cur.execute(f'''
-        UPDATE matches
-        SET status = CASE WHEN COALESCE(minute, 0) >= 85 THEN 'FINISHED' ELSE 'ABANDONED' END
-        WHERE status IN ('LIVE','HT')
-          AND last_seen_at IS NOT NULL
-          AND last_seen_at < datetime('now', '-{int(hours)} hours')
-    ''')
-    kapatilan = cur.rowcount
-    conn.commit()
-    conn.close()
+    with measured_write("settlement.close_zombie_matches") as conn:
+        cur = conn.cursor()
+        cur.execute(f'''
+            UPDATE matches
+            SET status = CASE WHEN COALESCE(minute, 0) >= 85 THEN 'FINISHED' ELSE 'ABANDONED' END
+            WHERE status IN ('LIVE','HT')
+              AND last_seen_at IS NOT NULL
+              AND last_seen_at < datetime('now', '-{int(hours)} hours')
+        ''')
+        kapatilan = cur.rowcount
     if verbose and kapatilan:
         print(f"[settlement] {kapatilan} zombi mac kapatildi ({hours}+ saattir "
               f"feed'de gorulmemis)", flush=True)
@@ -878,22 +894,25 @@ def prune_old_snapshots(batch=SNAPSHOT_PRUNE_BATCH, keep_days=SNAPSHOT_KEEP_DAYS
     Silme id sirasindan (en eski satirlar once) ilerler; captured_at icin ayri
     bir index gerekmez, LIMIT sayesinde tarama erken durur.
     """
-    conn = _connect()
-    cur = conn.cursor()
-    cur.execute(f'''
-        DELETE FROM live_snapshots
-        WHERE id IN (
-            SELECT ls.id FROM live_snapshots ls
-            JOIN matches m ON m.id = ls.match_id
-            WHERE m.status IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
-              AND ls.captured_at < datetime('now', '-{int(keep_days)} days')
-            ORDER BY ls.id ASC
-            LIMIT {int(batch)}
-        )
-    ''')
-    silinen = cur.rowcount
-    conn.commit()
-    conn.close()
+    # OLCUM (2026-09-08, GPT-6 Astra ikinci-gorus + kullanici onayi): bu
+    # fonksiyon 4M+ satirlik live_snapshots'ta periyodik BUYUK silme yapiyor
+    # (drain_old_snapshots ile art arda 10 partiye kadar) - EN GUCLU
+    # supheli adaylardan biri, "database is locked" hatalarinin cogu
+    # buradan mi geliyor olcerek gorecegiz.
+    with measured_write("settlement.prune_snapshots", batch_size=batch) as conn:
+        cur = conn.cursor()
+        cur.execute(f'''
+            DELETE FROM live_snapshots
+            WHERE id IN (
+                SELECT ls.id FROM live_snapshots ls
+                JOIN matches m ON m.id = ls.match_id
+                WHERE m.status IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+                  AND ls.captured_at < datetime('now', '-{int(keep_days)} days')
+                ORDER BY ls.id ASC
+                LIMIT {int(batch)}
+            )
+        ''')
+        silinen = cur.rowcount
     if verbose and silinen:
         print(f"[settlement] {silinen} eski snapshot silindi (bitmis maclar, "
               f"{keep_days}+ gun once)", flush=True)

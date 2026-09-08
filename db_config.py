@@ -16,6 +16,10 @@ COZUM:
 import os
 import shutil
 import sqlite3
+import threading
+import time
+import uuid
+from contextlib import contextmanager
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SEED_DB = os.path.join(PROJECT_DIR, 'database', 'fh_goal_predictor.db')
@@ -69,3 +73,91 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+@contextmanager
+def measured_write(job: str, source: str = "-", batch_size: int = 0):
+    """Bir yazma transaction'inin ACQUISITION (writer-slot bekleme), BODY
+    (gövde) ve COMMIT surelerini AYRI AYRI olcup loglar (2026-09-08, GPT-6
+    Astra ikinci-gorus incelemesi + kullanici onayi).
+
+    NEDEN GEREKLI: bugun yasanan kronik "database is locked" sorununda,
+    indeks eklemek gibi somut duzeltmeler bile sorunu SADECE KISMEN
+    cozdu - "hangi yazici writer slotunu ne kadar tutuyor" bilgisi
+    olmadan kalan darbogazi TAHMIN etmek yerine OLCMEK gerekiyordu
+    (CLAUDE.md kural 2: olcmeden iddia yok). Bu fonksiyon TUM yazma
+    noktalarina (live_sync, live-stats-update, VOID silme, zaman asimi/
+    zombi kapatma, settlement, snapshot temizligi, kalibrasyon) EKLENEREK
+    kullanilmasi amaclaniyor - sadece "hata var" degil, "hata ONCESINDE
+    writer slotunu edinmek ne kadar surdu, govde ne kadar surdu, commit
+    ne kadar surdu" bilgisini verir.
+
+    BEGIN IMMEDIATE kasitli: normal (deferred) transaction ilk yazma
+    komutuna kadar writer kilidini ALMAZ - "ne zaman gercekten kilit
+    alindi" belirsiz kalir. BEGIN IMMEDIATE writer slotunu EN BASTA
+    ister, boylece "acquired" ani NET bir olcum noktasi olur.
+
+    KULLANIM UYARISI (Astra'nin ozetledigi sinirlar): (1) yield edilen
+    `conn` uzerinde calisan yardimci fonksiyonlar KENDI baglantisini
+    ACMAMALI/commit ETMEMELI - ayni transaction'i paylasmali, (2) bu
+    fonksiyon YAZMA GEREKTIRMEYEN uzun okuma/hesaplama isini SARMAMALI -
+    once hazirlik disarida yapilip, sadece KISA yazma islemi bu blokla
+    sarilmali (aksi halde "acquired" ile "commit" arasindaki sure yanlis
+    yorumlanir - govde suresi degil, hazirlik suresi olculmus olur)."""
+    tx_id = uuid.uuid4().hex[:12]
+    conn = None
+    started = time.monotonic()
+    wait_started = acquired = commit_started = None
+    phase = "connect"
+
+    def _event(name, **fields):
+        parcalar = " ".join(f"{k}={v}" for k, v in fields.items())
+        print(f"[db_tx] {name} tx_id={tx_id} job={job} source={source} "
+              f"batch={batch_size} pid={os.getpid()} tid={threading.get_ident()} "
+              f"{parcalar}", flush=True)
+
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)
+        conn.execute("PRAGMA synchronous=NORMAL")
+        # DIKKAT: busy_timeout PER-CONNECTION bir ayar, connect()'teki
+        # gibi burada da ACIKCA ayarlanmali - Astra'nin verdigi ornek
+        # iskelette bu satir yoktu, eklemezsek bu yeni baglanti 0ms
+        # (SQLite varsayilani) ile acilir ve BEGIN IMMEDIATE kilit varsa
+        # HEMEN (beklemeden) hata verir - mevcut connect() davranisiyla
+        # TUTARSIZ olurdu.
+        conn.execute("PRAGMA busy_timeout=30000")
+
+        phase = "begin"
+        _event("begin_attempt", connect_ms=round((time.monotonic() - started) * 1000, 1))
+        wait_started = time.monotonic()
+        conn.execute("BEGIN IMMEDIATE")
+        acquired = time.monotonic()
+        phase = "body"
+        _event("acquired", wait_ms=round((acquired - wait_started) * 1000, 1))
+
+        yield conn
+
+        phase = "commit"
+        commit_started = time.monotonic()
+        conn.commit()
+        ended = time.monotonic()
+
+        _event("done",
+               wait_ms=round((acquired - wait_started) * 1000, 1),
+               body_ms=round((commit_started - acquired) * 1000, 1),
+               commit_ms=round((ended - commit_started) * 1000, 1))
+    except BaseException as exc:
+        _event("failed",
+               phase=phase,
+               elapsed_ms=round((time.monotonic() - started) * 1000, 1),
+               sqlite_code=getattr(exc, "sqlite_errorcode", None),
+               sqlite_name=getattr(exc, "sqlite_errorname", None))
+        if conn is not None and conn.in_transaction:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        raise
+    finally:
+        if conn is not None:
+            conn.close()

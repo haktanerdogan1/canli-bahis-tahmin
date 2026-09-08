@@ -580,13 +580,15 @@ def admin_panel_veri_kapsama(request: Request):
     cur = conn.cursor()
     cur.execute("""
         SELECT ls.home_shots, ls.away_shots, ls.home_shots_on_target, ls.away_shots_on_target,
-               ls.home_xg, ls.away_xg, ls.home_corners, ls.away_corners
+               ls.home_xg, ls.away_xg, ls.home_corners, ls.away_corners,
+               m.home_team_id, m.away_team_id, m.league_name, m.source_match_id
         FROM live_snapshots ls
         JOIN (
             SELECT match_id, MAX(id) AS max_id FROM live_snapshots
             WHERE match_id IN (SELECT id FROM matches WHERE status IN ('LIVE','HT'))
             GROUP BY match_id
         ) son ON son.match_id = ls.match_id AND son.max_id = ls.id
+        JOIN matches m ON m.id = ls.match_id
     """)
     rows = cur.fetchall()
     conn.close()
@@ -609,8 +611,22 @@ def admin_panel_veri_kapsama(request: Request):
                 n += 1
         return n
 
+    # Kullanici talebi (2026-09-08): "canli 5 mac soyle, sut istatistigi
+    # getireyim" - elle capraz dogrulama icin, sut verisi EKSIK olan
+    # birkac maci ismiyle listele (fs kaynagini oncelikli goster, asil
+    # sikayet o kaynak icindi).
+    eksik_ornekler = []
+    for r in rows:
+        sut_h, sut_a = r[0], r[1]
+        if sut_h is None and sut_a is None:
+            eksik_ornekler.append({
+                "ev": r[8], "deplasman": r[9], "lig": r[10], "kaynak_id": r[11],
+            })
+    eksik_ornekler = eksik_ornekler[:5]
+
     return {
         "success": True,
+        "sut_verisi_EKSIK_ornek_5_mac": eksik_ornekler,
         "aciklama": "Su an LIVE/HT olan maclarin en son snapshot'inda hangi ozellikler dolu",
         "canli_mac_sayisi": toplam,
         "sut_verisi_var_ve_yeterli(>=4)": _dolu(0, 1),

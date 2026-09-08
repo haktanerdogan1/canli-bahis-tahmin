@@ -279,7 +279,7 @@ def admin_panel_db_teshis(request: Request):
     cur = conn.cursor()
 
     satirlar = {}
-    for tablo in ("live_snapshots", "bot_predictions", "consensus_predictions", "matches"):
+    for tablo in ("live_snapshots", "bot_predictions", "consensus_predictions", "matches", "iddaa_odds_archive"):
         try:
             cur.execute(f"SELECT COUNT(*) FROM {tablo}")
             satirlar[tablo] = cur.fetchone()[0]
@@ -329,6 +329,22 @@ def admin_panel_db_teshis(request: Request):
     cur.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='matches'")
     matches_indexleri = [r[0] for r in cur.fetchall()]
 
+    # Astra (GPT-6, 2026-09-08) teshisi: live_sync ASAMA 3'un her mac icin
+    # tekrarladigi "en son snapshot" sorgusu supheli - 4.16M satirda kotu
+    # bir plan, HER mac icin tekrarlanirsa transaction'i domine edebilir.
+    # Temsili bir match_id ile GERCEK plani olc (tahmin degil).
+    en_son_snapshot_plan = []
+    try:
+        cur.execute("""
+            EXPLAIN QUERY PLAN
+            SELECT minute, home_possession FROM live_snapshots
+            WHERE match_id = (SELECT id FROM matches WHERE status='LIVE' LIMIT 1)
+            ORDER BY id DESC LIMIT 1
+        """)
+        en_son_snapshot_plan = [" ".join(str(x) for x in r) for r in cur.fetchall()]
+    except sqlite3.Error as e:
+        en_son_snapshot_plan = [f"hata: {e}"]
+
     conn.close()
     return {
         "success": True,
@@ -340,6 +356,7 @@ def admin_panel_db_teshis(request: Request):
         "ornek_plan": plan,
         "matches_indexleri": matches_indexleri,
         "matches_plan": matches_plan,
+        "en_son_snapshot_plan": en_son_snapshot_plan,
     }
 
 

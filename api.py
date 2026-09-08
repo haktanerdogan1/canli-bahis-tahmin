@@ -365,6 +365,44 @@ def admin_panel_db_teshis(request: Request):
     except sqlite3.Error as e:
         en_son_snapshot_plan = [f"hata: {e}"]
 
+    # 2026-09-08, GPT-6 Astra ikinci-gorus incelemesi (tahmin-export
+    # olayindan sonra): "indeks yok = kesin ic ice tarama" varsayimini
+    # OLCMEDEN iddia etmistik - gercek EXPLAIN QUERY PLAN'i, join
+    # anahtarinin (match_id, snapshot_id) consensus_predictions'ta
+    # GERCEKTEN tekil olup olmadigini (degilse join satir COGALTIYOR
+    # olabilir - hem performans hem egitim verisi dogrulugu sorunu) ve
+    # bot_predictions tarafinda ayni cift icin 18'den fazla satir olup
+    # olmadigini (yinelenen INSERT suphesi) OLCUYORUZ - tahmin degil.
+    tahmin_export_plan = []
+    try:
+        cur.execute("""
+            EXPLAIN QUERY PLAN
+            SELECT bp.match_id FROM bot_predictions bp
+            JOIN consensus_predictions cp
+                ON cp.match_id = bp.match_id AND cp.snapshot_id = bp.snapshot_id
+            JOIN matches m ON m.id = bp.match_id
+        """)
+        tahmin_export_plan = [" ".join(str(x) for x in r) for r in cur.fetchall()]
+    except sqlite3.Error as e:
+        tahmin_export_plan = [f"hata: {e}"]
+
+    cur.execute("SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index' AND tbl_name IN ('bot_predictions','consensus_predictions')")
+    tahmin_export_indeksleri = [{"name": r[0], "tablo": r[1], "sql": r[2]} for r in cur.fetchall()]
+
+    cur.execute("""
+        SELECT COUNT(*), COALESCE(SUM(c > 1), 0), COALESCE(MAX(c), 0)
+        FROM (SELECT match_id, snapshot_id, COUNT(*) c FROM consensus_predictions GROUP BY match_id, snapshot_id)
+    """)
+    _r = cur.fetchone()
+    consensus_cift_anahtar = {"toplam_cift": _r[0], "tekrarlanan_cift_sayisi": _r[1], "en_yuksek_tekrar": _r[2]}
+
+    cur.execute("""
+        SELECT COUNT(*), COALESCE(MAX(c), 0)
+        FROM (SELECT match_id, snapshot_id, COUNT(*) c FROM bot_predictions GROUP BY match_id, snapshot_id HAVING c > 18)
+    """)
+    _r2 = cur.fetchone()
+    bot_predictions_asiri_cift = {"18den_fazla_satirli_cift_sayisi": _r2[0], "en_yuksek_satir_sayisi": _r2[1]}
+
     conn.close()
     return {
         "success": True,
@@ -377,6 +415,10 @@ def admin_panel_db_teshis(request: Request):
         "matches_indexleri": matches_indexleri,
         "matches_plan": matches_plan,
         "en_son_snapshot_plan": en_son_snapshot_plan,
+        "tahmin_export_plan": tahmin_export_plan,
+        "tahmin_export_indeksleri": tahmin_export_indeksleri,
+        "consensus_cift_anahtar": consensus_cift_anahtar,
+        "bot_predictions_asiri_cift": bot_predictions_asiri_cift,
     }
 
 

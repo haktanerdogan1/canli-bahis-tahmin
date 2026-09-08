@@ -314,6 +314,21 @@ def admin_panel_db_teshis(request: Request):
     cur.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='live_snapshots'")
     snapshot_indexleri = [r[0] for r in cur.fetchall()]
 
+    # 2026-09-08 teshisi: live_sync() ayni "matches WHERE status IN
+    # ('LIVE','HT')" sorgusunu 20sn'de bir cagiriyor (bkz. ix_matches_status
+    # yorumu, ayni sorun 2026-08-28'de bir kez yasanip indeksle "cozulmustu").
+    # matches artik 154k+ satir - indeksin GERCEKTEN kullanilip
+    # kullanilmadigini (tahmin degil olcum) gormek icin.
+    matches_plan = []
+    try:
+        cur.execute("EXPLAIN QUERY PLAN SELECT home_team_id, away_team_id FROM matches WHERE status IN ('LIVE','HT')")
+        matches_plan = [" ".join(str(x) for x in r) for r in cur.fetchall()]
+    except sqlite3.Error as e:
+        matches_plan = [f"hata: {e}"]
+
+    cur.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='matches'")
+    matches_indexleri = [r[0] for r in cur.fetchall()]
+
     conn.close()
     return {
         "success": True,
@@ -323,6 +338,8 @@ def admin_panel_db_teshis(request: Request):
         "temizlik_kuyrugu": temizlik_kuyrugu,
         "snapshot_indexleri": snapshot_indexleri,
         "ornek_plan": plan,
+        "matches_indexleri": matches_indexleri,
+        "matches_plan": matches_plan,
     }
 
 

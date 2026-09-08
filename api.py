@@ -380,6 +380,77 @@ def admin_panel_db_teshis(request: Request):
     }
 
 
+@app.get("/api/admin/panel/tahmin-export")
+def admin_panel_tahmin_export(request: Request):
+    """Tahmin-bazli (bot_predictions) tam kayit dokumu - CSV.
+
+    NEDEN VAR (2026-09-08, GPT-6 Astra ikinci-gorus incelemesi): bot bazli
+    TOPLAM isabet tablosu (/api/admin/panel/botlar) "hangi degisiklik
+    sistemi iyilestirir" sorusunu cevaplamaya yetmiyor - ayni maçtan gelen
+    tahminler birbirinden bagimsiz degil, market/dakika/skor zorluk farki
+    farkli, ve botlar arasi bilgi ORTUSMESI toplam orandan gorulemiyor.
+    Bu uc HER bot-tahmininin satirini (olasilik, veri kalitesi, market,
+    dakika, skor, nihai sonuc) dokup dis analiz (kalibrasyon, market-bazli
+    degerlendirme, ogrenilmis agirlik denemesi) yapilabilmesini saglar.
+
+    BILINEN SINIRLAMA (Astra'nin da isaret ettigi): bot_predictions SADECE
+    fiilen ACILAN sinyaller icin yaziliyor (orchestrator.py, INSERT INTO
+    bot_predictions SADECE "if consensus_result.decision == 'signal':"
+    blogunun icinde) - esigin ALTINDA kalan adaylar hic kaydedilmiyor. Yani
+    bu dokum "baska adaylari secseydik daha mi iyi olurdu" sorusunu
+    CEVAPLAYAMAZ, sadece "paylasilanlar arasinda hangi bot/market/dakika
+    kombinasyonu daha isabetli" analizini destekler. Bu satir CSV'nin
+    basina da yaziliyor.
+
+    SADECE OKUMA - hicbir veri degistirilmiyor/silinmiyor."""
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+
+    if not _check_admin(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    conn = connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                bp.match_id, bp.snapshot_id, bp.bot_name, bp.bot_version,
+                bp.decision AS bot_decision, bp.probability AS bot_probability,
+                bp.confidence, bp.data_quality,
+                cp.id AS consensus_id, cp.signal_minute, cp.market,
+                cp.initial_goals, cp.positive_bot_count, cp.negative_bot_count,
+                cp.weighted_probability, cp.signal_level, cp.outcome,
+                cp.created_at, cp.settled_at,
+                m.league_name, m.home_team_id AS home_team, m.away_team_id AS away_team
+            FROM bot_predictions bp
+            JOIN consensus_predictions cp
+                ON cp.match_id = bp.match_id AND cp.snapshot_id = bp.snapshot_id
+            JOIN matches m ON m.id = bp.match_id
+            ORDER BY cp.id, bp.bot_name
+        """)
+        rows = cur.fetchall()
+        columns = [d[0] for d in cur.description]
+    finally:
+        conn.close()
+
+    buf = io.StringIO()
+    buf.write("# SINIRLAMA: bu dokum SADECE fiilen paylasilan (esigi gecmis) "
+               "sinyallerin bot oylarini icerir - esik altinda kalan adaylar "
+               "kaydedilmiyor, bkz. endpoint docstring'i.\n")
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+    writer.writerows(rows)
+    buf.seek(0)
+
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=tahmin_export.csv"},
+    )
+
+
 @app.get("/api/admin/panel/uyeler")
 def admin_panel_uyeler(request: Request):
     """Uye listesi. NOT: uyelik tipi (Free/Pro) henuz DB'de tutulmuyor -

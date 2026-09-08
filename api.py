@@ -615,14 +615,21 @@ def admin_panel_veri_kapsama(request: Request):
     # getireyim" - elle capraz dogrulama icin, sut verisi EKSIK olan
     # birkac maci ismiyle listele (fs kaynagini oncelikli goster, asil
     # sikayet o kaynak icindi).
-    eksik_ornekler = []
+    # DUZELTME: sadece "fs_" (flashscore) kaynakli maclari goster - flashscore
+    # client'i zaten SADECE kendi izledigi maclara veri gonderiyor, "7m_"
+    # (sevenm) kaynakli bir maci flashscore'da aramak adil bir kiyaslama
+    # olmaz (kullanicinin manuel dogrulamasi icin dogru orneklem sart).
+    eksik_ornekler_fs = []
+    eksik_ornekler_diger = []
     for r in rows:
         sut_h, sut_a = r[0], r[1]
         if sut_h is None and sut_a is None:
-            eksik_ornekler.append({
-                "ev": r[8], "deplasman": r[9], "lig": r[10], "kaynak_id": r[11],
-            })
-    eksik_ornekler = eksik_ornekler[:5]
+            kayit = {"ev": r[8], "deplasman": r[9], "lig": r[10], "kaynak_id": r[11]}
+            if (r[11] or "").startswith("fs_"):
+                eksik_ornekler_fs.append(kayit)
+            else:
+                eksik_ornekler_diger.append(kayit)
+    eksik_ornekler = eksik_ornekler_fs[:5] if eksik_ornekler_fs else eksik_ornekler_diger[:5]
 
     return {
         "success": True,

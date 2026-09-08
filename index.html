@@ -1247,7 +1247,7 @@
                 </p>
                 <div style="position:relative; display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap;">
                     <span style="background: rgba(255,255,255,0.05); padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; border: 1px solid var(--border-light);"><i class="fa-solid fa-database" style="color:var(--accent-brand);"></i> <span id="heroLeagueCount">+500</span> <span data-i18n="hero_data_sources">Veri Kaynağı</span></span>
-                    <span style="background: rgba(0,229,255,0.1); padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> <span data-i18n="hero_monthly_rate_label">Aylık Başarı Oranı:</span> <span id="heroMonthlyRate">—</span></span>
+                    <span style="background: rgba(0,229,255,0.1); padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; border: 1px solid rgba(0,229,255,0.3); color: var(--accent-brand);"><i class="fa-solid fa-chart-line"></i> <span data-i18n="hero_monthly_rate_label">Tüm Zamanlar Başarı Oranı:</span> <span id="heroMonthlyRate">—</span></span>
                 </div>
             </div>
 
@@ -1407,7 +1407,7 @@
                     yüksek olasılıklı gol fırsatlarını tespit eder. Botlar 7/24 arka planda çalışır, sana sadece
                     hazır analizleri incelemek kalır.`,
                 hero_data_sources: 'Veri Kaynağı',
-                hero_monthly_rate_label: 'Aylık Başarı Oranı:',
+                hero_monthly_rate_label: 'Tüm Zamanlar Başarı Oranı:',
                 period_today: 'Bugün',
                 period_week: 'Bu Hafta',
                 period_month: 'Bu Ay',
@@ -1575,7 +1575,7 @@
                     high-probability goal opportunities. The bots run in the background 24/7 — all that's
                     left for you is to review the ready-made analysis.`,
                 hero_data_sources: 'Data Sources',
-                hero_monthly_rate_label: 'Monthly Hit Rate:',
+                hero_monthly_rate_label: 'All-Time Hit Rate:',
                 period_today: 'Today',
                 period_week: 'This Week',
                 period_month: 'This Month',
@@ -3037,12 +3037,15 @@
             } catch(e) {}
         }
 
-        // Hero banner'daki "Aylik Basari Orani" sabit/eski (%74) yaziliydi,
-        // asagidaki Bu Ay sekmesiyle tutarsizdi (kullanici talebi, 2026-08-28) -
-        // ayni gercek veriyi (/api/ozet-donem?donem=ay) kullanarak dolduruluyor.
+        // Hero banner'daki oran ONCEDEN "Bu Ay" (donem=ay) gosteriyordu -
+        // takvim ayi basinda az veriyle yaniltici dusuk cikabiliyordu (bkz.
+        // db-teshis olculumu, 2026-09-08). Kullanici talebiyle Tum Zamanlar
+        // oranina (/api/ozet-donem?donem=tum) cevrildi - fonksiyon/degisken
+        // adlari (heroMonthlyRate) tarihsel, degistirilmedi (riskli refactor
+        // yerine sadece veri kaynagi ve etiket metni guncellendi).
         async function loadHeroMonthlyRate(){
             try {
-                const res = await fetch('/api/ozet-donem?donem=ay');
+                const res = await fetch('/api/ozet-donem?donem=tum');
                 const d = await res.json();
                 const el = document.getElementById('heroMonthlyRate');
                 if (!el) return;

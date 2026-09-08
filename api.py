@@ -366,21 +366,33 @@ def admin_panel_db_teshis(request: Request):
         en_son_snapshot_plan = [f"hata: {e}"]
 
     # 2026-09-08, GPT-6 Astra ikinci-gorus incelemesi (tahmin-export
-    # olayindan sonra): "indeks yok = kesin ic ice tarama" varsayimini
-    # OLCMEDEN iddia etmistik - gercek EXPLAIN QUERY PLAN'i, join
-    # anahtarinin (match_id, snapshot_id) consensus_predictions'ta
-    # GERCEKTEN tekil olup olmadigini (degilse join satir COGALTIYOR
-    # olabilir - hem performans hem egitim verisi dogrulugu sorunu) ve
-    # bot_predictions tarafinda ayni cift icin 18'den fazla satir olup
-    # olmadigini (yinelenen INSERT suphesi) OLCUYORUZ - tahmin degil.
+    # olayindan sonra, IKINCI tur - Astra ilk turdeki teshisimizin
+    # kendisini de elestirdi): "indeks yok = kesin ic ice tarama"
+    # varsayimini OLCMEDEN iddia etmistik - gercek EXPLAIN QUERY PLAN'i
+    # olcuyoruz. Astra'nin duzeltmesiyle bu sefer TAHMIN-EXPORT
+    # endpoint'indeki SELECT ve ORDER BY ile BIREBIR AYNI sorgu kullanildi
+    # (ilk turde sadece bp.match_id secen sadelestirilmis bir sorguyla
+    # plan cikarilmisti - Astra'nin dedigi gibi "covering index" etiketi
+    # o sadelestirilmis sorgu icin gecerliydi, gercek 21 kolonlu SELECT
+    # icin ayni garantiyi vermiyordu).
     tahmin_export_plan = []
     try:
         cur.execute("""
             EXPLAIN QUERY PLAN
-            SELECT bp.match_id FROM bot_predictions bp
+            SELECT
+                bp.match_id, bp.snapshot_id, bp.bot_name, bp.bot_version,
+                bp.decision AS bot_decision, bp.probability AS bot_probability,
+                bp.confidence, bp.data_quality,
+                cp.id AS consensus_id, cp.signal_minute, cp.market,
+                cp.initial_goals, cp.positive_bot_count, cp.negative_bot_count,
+                cp.weighted_probability, cp.signal_level, cp.outcome,
+                cp.created_at, cp.settled_at,
+                m.league_name, m.home_team_id AS home_team, m.away_team_id AS away_team
+            FROM bot_predictions bp
             JOIN consensus_predictions cp
                 ON cp.match_id = bp.match_id AND cp.snapshot_id = bp.snapshot_id
             JOIN matches m ON m.id = bp.match_id
+            ORDER BY cp.id, bp.bot_name
         """)
         tahmin_export_plan = [" ".join(str(x) for x in r) for r in cur.fetchall()]
     except sqlite3.Error as e:
@@ -396,12 +408,86 @@ def admin_panel_db_teshis(request: Request):
     _r = cur.fetchone()
     consensus_cift_anahtar = {"toplam_cift": _r[0], "tekrarlanan_cift_sayisi": _r[1], "en_yuksek_tekrar": _r[2]}
 
+    # DUZELTME (Astra): "cift basina <=18 satir" tek basina yinelenen kaydi
+    # elemez - bir bot iki kez, baska biri hic yazilmamis olabilir ve toplam
+    # yine <=18 cikar. Gercek kontrol: (match_id, snapshot_id, bot_name)
+    # UCLUSU tekil mi? Degilse GERCEKTEN yinelenen bot-oyu var demektir.
     cur.execute("""
         SELECT COUNT(*), COALESCE(MAX(c), 0)
-        FROM (SELECT match_id, snapshot_id, COUNT(*) c FROM bot_predictions GROUP BY match_id, snapshot_id HAVING c > 18)
+        FROM (SELECT match_id, snapshot_id, bot_name, COUNT(*) c
+              FROM bot_predictions GROUP BY match_id, snapshot_id, bot_name HAVING c > 1)
     """)
     _r2 = cur.fetchone()
-    bot_predictions_asiri_cift = {"18den_fazla_satirli_cift_sayisi": _r2[0], "en_yuksek_satir_sayisi": _r2[1]}
+    bot_predictions_asiri_cift = {"yinelenen_bot_oyu_ucluleri": _r2[0], "en_yuksek_tekrar": _r2[1]}
+
+    # Astra'nin sordugu: production'daki GERCEK Python/SQLite surumu ve
+    # DDL'in (CREATE INDEX) varsayilan isolation_level altinda GERCEKTEN
+    # ayri ayri commit olup olmadigi - yerelde (Python 3.9.6/sqlite 3.43.2)
+    # test ettik ve DDL'in implicit BEGIN acmadigini gorduk, ama production
+    # container'i Python 3.13 kullaniyor (bkz. traceback'teki .venv yolu) -
+    # FARKLI bir surum, VARSAYMIYORUZ, aynen production'da olcuyoruz.
+    # Bellek-ici (:memory:) bir baglantiyla, GERCEK DB'ye HIC DOKUNMADAN.
+    import sqlite3 as _sqlite3_mod
+    import sys as _sys_mod
+    _tx_probe = {}
+    try:
+        _mc = _sqlite3_mod.connect(":memory:")
+        _tx_probe["python_version"] = _sys_mod.version
+        _tx_probe["sqlite3_module_version"] = _sqlite3_mod.version
+        _tx_probe["sqlite_lib_version"] = _sqlite3_mod.sqlite_version
+        _tx_probe["default_isolation_level"] = repr(_mc.isolation_level)
+        _tx_probe["in_transaction_before_ddl"] = _mc.in_transaction
+        _mc.execute("CREATE TABLE t1(x)")
+        _tx_probe["in_transaction_after_first_create"] = _mc.in_transaction
+        # Astra'nin senaryosu: ikinci komut BASARISIZ olsun (tablo zaten var),
+        # ilk komut zaten calisti - baglanti commit() COGRILMEDEN kapatilirsa
+        # ilk tablo KALIR MI (autocommit) yoksa KAYBOLUR MU (implicit BEGIN)?
+        try:
+            _mc.execute("CREATE TABLE t1(x)")  # kasitli hata: ayni isim
+        except _sqlite3_mod.Error:
+            pass
+        _mc.close()
+        _mc2 = _sqlite3_mod.connect(":memory:")
+        # NOT: farkli bir :memory: baglantisi oldugu icin t1'in kalici olup
+        # olmadigini BURADAN goremeyiz (:memory: baglanti-ozel) - bu sadece
+        # surum/ayar bilgisini raporlar, gercek kaliciligi DOSYA tabanli
+        # ayri bir gecici DB ile asagida ayrica dogruluyoruz.
+        _mc2.close()
+    except Exception as e:
+        _tx_probe["hata"] = str(e)
+
+    # Ayni testi GECICI DOSYA tabanli bir DB'de tekrarla (gercek DB'ye
+    # DOKUNMADAN) - :memory: baglanti-ozel oldugu icin "ilk komut kalici mi"
+    # sorusunu asil yanitlayan bu.
+    import os as _os_mod
+    import tempfile as _tempfile_mod
+    _fd, _tmp_path = _tempfile_mod.mkstemp(suffix=".db")
+    _os_mod.close(_fd)
+    try:
+        _tc = _sqlite3_mod.connect(_tmp_path, timeout=30)
+        _tc.execute("PRAGMA journal_mode=WAL")
+        _tc.execute("CREATE TABLE probe1(x)")
+        try:
+            _tc.execute("CREATE TABLE probe1(x)")  # kasitli hata
+        except _sqlite3_mod.Error:
+            pass
+        _tc.close()  # commit() COGRILMEDI - Astra'nin sordugu tam senaryo
+        _vc = _sqlite3_mod.connect(_tmp_path)
+        _vc.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='probe1'")
+        _tx_probe["ilk_komut_commitsiz_kapatmada_kalici_mi"] = _vc.fetchone() is not None
+        _vc.close()
+    except Exception as e:
+        _tx_probe["dosya_testi_hata"] = str(e)
+    finally:
+        try:
+            _os_mod.remove(_tmp_path)
+            _os_mod.remove(_tmp_path + "-wal")
+        except OSError:
+            pass
+        try:
+            _os_mod.remove(_tmp_path + "-shm")
+        except OSError:
+            pass
 
     conn.close()
     return {
@@ -419,6 +505,7 @@ def admin_panel_db_teshis(request: Request):
         "tahmin_export_indeksleri": tahmin_export_indeksleri,
         "consensus_cift_anahtar": consensus_cift_anahtar,
         "bot_predictions_asiri_cift": bot_predictions_asiri_cift,
+        "sqlite_tx_probe": _tx_probe,
     }
 
 
@@ -777,14 +864,18 @@ def x_poster_mark_announced(request: Request, id: int, tweet_id: str):
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _x_poster_ensure_schema()
-    conn = connect()
-    conn.execute(
-        "INSERT OR IGNORE INTO x_posted_signals (prediction_id, announce_tweet_id, announced_at) "
-        "VALUES (?, ?, CURRENT_TIMESTAMP)",
-        (id, tweet_id),
-    )
-    conn.commit()
-    conn.close()
+    # DUZELTME (2026-09-08, Astra ikinci-gorus, tahmin-export olayi sonrasi):
+    # (1) bu yazici hicbir zaman olculmemisti ("hangi yazici kilidi tutuyor"
+    # sorusuna kor noktaydi - traceback'te GORULEN yazici, kilidi TUTAN
+    # yazici ile ayni olmak zorunda degil, Astra'nin uyarisi), (2) try/finally
+    # YOKTU - istisna conn.close()'u atlayip baglanti sizdirabiliyordu (ayni
+    # CLAUDE.md 6b/4 deseni, live_sync'te daha once bulunmustu).
+    with measured_write("x_poster.mark_announced") as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO x_posted_signals (prediction_id, announce_tweet_id, announced_at) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (id, tweet_id),
+        )
     return {"success": True}
 
 
@@ -831,14 +922,12 @@ def x_poster_mark_resulted(request: Request, id: int, tweet_id: str):
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _x_poster_ensure_schema()
-    conn = connect()
-    conn.execute(
-        "UPDATE x_posted_signals SET result_tweet_id = ?, resulted_at = CURRENT_TIMESTAMP "
-        "WHERE prediction_id = ?",
-        (tweet_id, id),
-    )
-    conn.commit()
-    conn.close()
+    with measured_write("x_poster.mark_resulted") as conn:
+        conn.execute(
+            "UPDATE x_posted_signals SET result_tweet_id = ?, resulted_at = CURRENT_TIMESTAMP "
+            "WHERE prediction_id = ?",
+            (tweet_id, id),
+        )
     return {"success": True}
 
 
@@ -899,16 +988,16 @@ def telegram_poster_mark_announced(request: Request, id: int, message_id: str):
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _telegram_poster_ensure_schema()
-    conn = connect()
-    try:
+    # Astra ikinci-gorus (tahmin-export olayi sonrasi): bu yazici hicbir zaman
+    # olculmemisti - olay anindaki traceback tam BURADAN geliyordu ama
+    # kilidi TUTAN yazici bu olmak zorunda degil (Astra'nin uyarisi). Artik
+    # olculuyor ki bir sonraki olayda tahmin degil, veriyle konusabilelim.
+    with measured_write("telegram_poster.mark_announced") as conn:
         conn.execute(
             "INSERT OR IGNORE INTO telegram_posted_signals (prediction_id, announce_message_id, announced_at) "
             "VALUES (?, ?, CURRENT_TIMESTAMP)",
             (id, message_id),
         )
-        conn.commit()
-    finally:
-        conn.close()
     return {"success": True}
 
 
@@ -951,16 +1040,12 @@ def telegram_poster_mark_resulted(request: Request, id: int, message_id: str):
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
     _telegram_poster_ensure_schema()
-    conn = connect()
-    try:
+    with measured_write("telegram_poster.mark_resulted") as conn:
         conn.execute(
             "UPDATE telegram_posted_signals SET result_message_id = ?, resulted_at = CURRENT_TIMESTAMP "
             "WHERE prediction_id = ?",
             (message_id, id),
         )
-        conn.commit()
-    finally:
-        conn.close()
     return {"success": True}
 
 

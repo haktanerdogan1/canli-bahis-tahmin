@@ -631,9 +631,18 @@ def admin_panel_veri_kapsama(request: Request):
                 eksik_ornekler_diger.append(kayit)
     eksik_ornekler = eksik_ornekler_fs[:5] if eksik_ornekler_fs else eksik_ornekler_diger[:5]
 
+    # Kaynak bazinda kirilim - "eksik ornekte fs_ yok" cikmasi "fs_ hep
+    # dolu" mu yoksa "fs_ zaten cok az mac izliyor" mu belirsiz birakiyordu.
+    fs_toplam = sum(1 for r in rows if (r[11] or "").startswith("fs_"))
+    fs_dolu = sum(1 for r in rows if (r[11] or "").startswith("fs_") and r[0] is not None and r[1] is not None and (r[0] + r[1]) >= 4)
+
     return {
         "success": True,
         "sut_verisi_EKSIK_ornek_5_mac": eksik_ornekler,
+        "kaynak_kirilimi": {
+            "fs_toplam_canli_mac": fs_toplam,
+            "fs_sut_verisi_dolu": fs_dolu,
+        },
         "aciklama": "Su an LIVE/HT olan maclarin en son snapshot'inda hangi ozellikler dolu",
         "canli_mac_sayisi": toplam,
         "sut_verisi_var_ve_yeterli(>=4)": _dolu(0, 1),

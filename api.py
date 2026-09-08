@@ -509,6 +509,61 @@ def admin_panel_db_teshis(request: Request):
     }
 
 
+@app.get("/api/admin/panel/bot-katki-analizi")
+def admin_panel_bot_katki_analizi(request: Request):
+    """Bot bazli TOPLAM isabet orani "bu botu daha cok dinlemeli miyiz"
+    sorusuna cevap vermez (bkz. GPT-6 Astra ikinci-gorus, 2026-09-08) -
+    ayni maçtan gelen tahminler bagimsiz degil, bir botun "goal" demesi
+    zaten diger botlarin da "goal" demesiyle ortusuyor olabilir.
+
+    Burada olculen: her botun "goal" dedigi ORANIN, sinyal SONUCUNA
+    (WON/LOST) gore FARKLILASIP FARKLILASMADIGI - yani botun oyu GERCEKTEN
+    sonucla ayirt edici mi, yoksa kalabalige mi uyuyor. P(goal|WON) ile
+    P(goal|LOST) arasindaki fark ("lift") buyukse bot ayirt edici bilgi
+    katiyor demektir; fark ~0 ise bu botun oyu kendi basina sonucla
+    iliskili degildir (baska botlarin zaten yakaladigi seyi tekrarliyor
+    olabilir).
+
+    SADECE OKUMA, mevcut indeksli join'i kullanir (tahmin-export olayindan
+    sonra dogrulanan plan, guvenli)."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT bp.bot_name,
+            SUM(CASE WHEN cp.outcome='WON' THEN 1 ELSE 0 END) AS n_won,
+            SUM(CASE WHEN cp.outcome='LOST' THEN 1 ELSE 0 END) AS n_lost,
+            SUM(CASE WHEN cp.outcome='WON' AND bp.decision='goal' THEN 1 ELSE 0 END) AS goal_when_won,
+            SUM(CASE WHEN cp.outcome='LOST' AND bp.decision='goal' THEN 1 ELSE 0 END) AS goal_when_lost
+        FROM bot_predictions bp
+        JOIN consensus_predictions cp
+            ON cp.match_id = bp.match_id AND cp.snapshot_id = bp.snapshot_id
+        WHERE cp.outcome IN ('WON','LOST') AND bp.decision != 'insufficient_data'
+        GROUP BY bp.bot_name
+        ORDER BY bp.bot_name
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    sonuc = []
+    for bot_name, n_won, n_lost, goal_won, goal_lost in rows:
+        p_goal_won = round(goal_won / n_won, 3) if n_won else None
+        p_goal_lost = round(goal_lost / n_lost, 3) if n_lost else None
+        lift = round(p_goal_won - p_goal_lost, 3) if (p_goal_won is not None and p_goal_lost is not None) else None
+        sonuc.append({
+            "bot": bot_name,
+            "n_won": n_won, "n_lost": n_lost,
+            "p_goal_verdi_WON_iken": p_goal_won,
+            "p_goal_verdi_LOST_iken": p_goal_lost,
+            "ayirt_edicilik_lift": lift,
+        })
+    sonuc.sort(key=lambda r: (r["ayirt_edicilik_lift"] is None, -(r["ayirt_edicilik_lift"] or 0)))
+    return {"success": True, "aciklama": "lift = P(goal|WON) - P(goal|LOST); yuksek=ayirt edici, ~0=kalabaliga uyuyor", "botlar": sonuc}
+
+
 @app.get("/api/admin/panel/kasa-bilgi-istatistik")
 def admin_panel_kasa_bilgi_istatistik(request: Request):
     """Telegram'daki periyodik 'kasa yönetimi' bilgilendirme mesaji icin

@@ -692,12 +692,14 @@ async def process_api_matches(session):
     # kalanlar DB'den ve ekrandan DUSMEZ - sadece bu dongude detayli
     # istatistik cekilmez, temel skor/dakika guncellemesi yine olur.
     #
-    # KOTA HESABI (kullanicinin RapidAPI plani: aylik 2.5M istek): dongu
-    # basina (1 temel + MAX_STATS_PER_CYCLE) istek, NORMAL_CYCLE_SECONDS'te
-    # bir. 30sn + 20 ile en kotu ihtimalde ayda ~1.8M istek (~%72) - guvenli
-    # pay birakiyor. Onceki 15sn+40 ayarı en kotu ihtimalde ~7M/ay cekiyordu -
-    # kotanin gercek nedeni buydu (bkz. git log).
-    MAX_STATS_PER_CYCLE = 20
+    # KOTA HESABI (2026-09-09 GUNCELLEMESI - kullanicinin yeni plani: aylik
+    # 500.000 istek, eskiden varsayilan 2.5M'den COK daha dusuk). Ayni hesap
+    # yontemi: dongu basina (1 temel + MAX_STATS_PER_CYCLE) istek,
+    # NORMAL_CYCLE_SECONDS'te bir. 60sn + 7 ile en kotu ihtimalde:
+    # (86400/60)*(1+7) = 11.520 istek/gun * 30 = 345.600/ay (~%69) - eski
+    # koddaki ~%72 guvenlik payi felsefesiyle tutarli. Onceki ayar (30sn+20)
+    # bu planda ayda ~1.8M cekerdi - 500K kotayi ILK GUNDE tuketirdi.
+    MAX_STATS_PER_CYCLE = 7
     prioritized = sorted(to_process, key=lambda m: not m["already_tracked"])
     stats_targets = set(id(m) for m in prioritized[:MAX_STATS_PER_CYCLE])
 
@@ -823,7 +825,7 @@ def _table_exists(conn, name):
     return row is not None
 
 
-NORMAL_CYCLE_SECONDS = 30
+NORMAL_CYCLE_SECONDS = 60  # 2026-09-09: 500K/ay kotasi icin dusuruldu, bkz. KOTA HESABI notu yukarida
 # RapidAPI 429 (kota/hiz siniri) dondugunde HER 15 saniyede tekrar denemek
 # hem kotayi (eger basarisiz istekler de sayiliyorsa) bosa harciyor hem de
 # kota gercekten tukenmisse iyilesmeyi geciktirebiliyor. Ardisik 429'larda
@@ -841,7 +843,22 @@ async def main():
         while True:
             start_time = time.time()
             print("📡 Fetching RapidAPI Live matches...", flush=True)
-            status = await process_api_matches(session)
+            # DUZELTME (2026-09-09): process_api_matches() icinde BIRDEN FAZLA
+            # ciplak connect()/execute() var (bu dosya bugunku DB-kilit
+            # sertlestirmelerinden ONCE yazildi, kota tukenip devre disi
+            # birakildigi icin dokunulmamisti). Bugun canli olcum: kronik
+            # yazma-kilidi altinda bunlardan HERHANGI biri sqlite3.
+            # OperationalError firlatinca (busy_timeout 30sn dolunca) tum
+            # process CRASH ediyordu - hicbir try/except olmadigi icin
+            # buraya kadar yukseliyordu (bkz. git log, "database is locked"
+            # crash-loop). Turler arasi try/except: bir turun basarisiz DB
+            # yazmasi, sonraki turu engellemesin - "bos donus" gibi ele
+            # alinip bir sonraki dongude tekrar denenir.
+            try:
+                status = await process_api_matches(session)
+            except Exception as e:
+                print(f"⚠️  V4 cycle basarisiz (crash etmeden atlaniyor): {e}", flush=True)
+                status = None
             elapsed = time.time() - start_time
 
             if status == 429:

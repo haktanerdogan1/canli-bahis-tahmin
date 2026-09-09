@@ -253,10 +253,26 @@ def run_orchestrator():
     print("🧠 Başlatılıyor: Sinyal Avcısı (Konsensüs Orkestratörü)", flush=True)
     _ensure_schema()
 
-    _referans_bekleyen = _referans_verileri_kur()
-    if _referans_bekleyen:
-        print(f"⚠️  {len(_referans_bekleyen)} referans isi acilista kurulamadi - "
-              f"bakim turunda tekrar denenecek.", flush=True)
+    # DUZELTME (2026-09-09): referans verisi kurulumu ESKIDEN burada,
+    # ana dongu BASLAMADAN ONCE senkron calisiyordu. baserates.build()
+    # gibi fonksiyonlar birden fazla ardisik yazma yapiyor - agir DB
+    # yazici cakismasi altinda HER BIRI ayri ayri 30sn'ye kadar
+    # bekleyebiliyor, bu da toplamda dakikalarca (olculen: en az 4-5 dk,
+    # ust siniri yok) surebiliyordu. O sure boyunca ana dongu HIC
+    # baslamiyordu - yani sinyal uretimi TAMAMEN durmus oluyordu, sadece
+    # referans-disi botlar degil HICBIR mac islenmiyordu (kullanici
+    # bildirimi: "3 saattir paylasim yok" - kok neden buydu).
+    #
+    # Artik acilista SENKRON DENEME YAPILMIYOR - REFERANS_ISLERI dogrudan
+    # "bekleyen" listesine yazilip ana dongu HEMEN basliyor (Specialist
+    # ailesi botlar zaten referans verisine ihtiyac duymuyor, calismaya
+    # devam eder). Ilk deneme asagidaki bakim_turu meknizmasiyla en gec
+    # 5 dakika icinde (BAKIM_HER_N_TUR=20 x 15sn) yapilir - AYNI, halihazirda
+    # calisan retry fonksiyonu (_referans_verileri_kur), sadece cagirilma
+    # zamani degisti (engelleyici degil, arka planda).
+    _referans_bekleyen = list(REFERANS_ISLERI)
+    print(f"ℹ️  Referans verisi kurulumu arka planda (bakim turunda) yapilacak - "
+          f"ana dongu hemen basliyor.", flush=True)
 
 
     # BOT KADROSU

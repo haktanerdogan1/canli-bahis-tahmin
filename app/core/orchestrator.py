@@ -309,6 +309,11 @@ def run_orchestrator():
             cursor.execute("SELECT id, source_match_id, home_team_id, away_team_id, minute, status, home_score, away_score, aggregate_score, league_name FROM matches WHERE status='LIVE'")
             live_matches = cursor.fetchall()
 
+            # GECICI TESHIS (2026-09-09) - "izleme" seviyesine bile hic ulasan
+            # yok, gercekten kac mac isleniyor olcuyoruz. Bulununca SILINECEK.
+            if tur_sayaci % 5 == 0:
+                print(f"🔎 TESHIS-TUR tur={tur_sayaci} live_matches={len(live_matches)}", flush=True)
+
             # Yayin gecici duraklatildiysa (SIGNAL_PAUSE_UNTIL) yeni sinyal
             # uretme - ama asagidaki settlement guvenlik aglari YINE calissin
             # (acik sinyaller sonuclanmaya devam etsin).
@@ -322,7 +327,11 @@ def run_orchestrator():
                 live_matches = []
 
             current_time = time.time()
-            
+
+            # GECICI TESHIS (2026-09-09) - hangi filtrede kac mac elendigini
+            # olcuyoruz. Bulununca SILINECEK.
+            _t_minute_none = _t_minute_zero = _t_window = _t_cooldown = _t_half = _t_evaluated = 0
+
             for match in live_matches:
                 match_id = match['id']
                 minute = match['minute']
@@ -333,6 +342,7 @@ def run_orchestrator():
                 # api.py: _fs_parse_stage) asagidaki karsilastirmalar cokerdi -
                 # gercek dakika gelene kadar bu maci atla.
                 if minute is None:
+                    _t_minute_none += 1
                     continue
 
                 # Dakika 0 ama skor 0 degil: API'nin dakika alani guvenilmez demektir
@@ -343,6 +353,7 @@ def run_orchestrator():
                 home_score = match['home_score'] or 0
                 away_score = match['away_score'] or 0
                 if minute == 0 and (home_score > 0 or away_score > 0):
+                    _t_minute_zero += 1
                     continue
 
                 # Sinyal kuralı: İlk yarı SADECE 25. dakikaya kadar, maç sonu 80'e
@@ -355,19 +366,24 @@ def run_orchestrator():
                 # İlk yarı bitmeye yakın "bir gol daha" kovalamak coin-flip'in
                 # altında. (36-45 zaten bloktaydı; alt sınır 35 -> 25'e çekildi.)
                 if (25 < minute < 46) or (minute >= 80):
+                    _t_window += 1
                     continue
-                    
+
                 # Eğer maç cooldown içerisindeyse atla
                 if match_id in signal_cooldowns:
                     if (current_time - signal_cooldowns[match_id]) < COOLDOWN_SECONDS:
+                        _t_cooldown += 1
                         continue
-                        
+
                 # Bir mac icin her yarida EN FAZLA bir sinyal. Gol geldikten sonra
                 # ayni yarida daha yuksek bir esik acmak (0.5 -> 1.5 gibi) hem ilk
                 # sinyali ekranda gizliyor hem de gol sonrasi gereksiz risk yaratiyor.
                 if _has_signal_for_half(cursor, match_id, minute):
+                    _t_half += 1
                     continue
-                
+
+                _t_evaluated += 1
+
                 # Get snapshots for momentum (delta) analysis
                 cursor.execute("SELECT * FROM live_snapshots WHERE match_id = ? ORDER BY id DESC LIMIT 1", (match_id,))
                 latest = cursor.fetchone()
@@ -565,7 +581,12 @@ def run_orchestrator():
                     signal_cooldowns[match_id] = current_time
                     
                     print(f"🚨 SİNYAL BULUNDU! Maç: {match['home_team_id']} vs {match['away_team_id']} | Dakika: {minute} | Seviye: {consensus_result.signal_level} | Olasılık: %{int(consensus_result.weighted_probability * 100)}")
-            
+
+            if tur_sayaci % 5 == 0:
+                print(f"🔎 TESHIS-ELEME tur={tur_sayaci} toplam={len(live_matches)} "
+                      f"dk_yok={_t_minute_none} dk_sifir={_t_minute_zero} pencere_disi={_t_window} "
+                      f"cooldown={_t_cooldown} yari_dolu={_t_half} DEGERLENDIRILEN={_t_evaluated}", flush=True)
+
             conn.close()
 
             # Kesinlesen sinyalleri KALICI olarak sonuclandir.

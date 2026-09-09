@@ -245,7 +245,20 @@ def main():
 
         sleep_seconds = 5 if did_something else CYCLE_PAUSE_SECONDS
         _log(f"cycle={cycle_id} sleep:start seconds={sleep_seconds}")
-        time.sleep(sleep_seconds)
+        # DUZELTME (2026-09-09): tek parca time.sleep(120) sonrasi surec
+        # canli (subprocess.poll() None donuyor, cökmüyor) ama bir daha HIC
+        # log basmiyordu - iki ayri restart'ta da AYNI noktada (sleep:start
+        # sonrasi) tekrarlandi, GPT-6 Astra'nin "dusuk ihtimal" dedigi
+        # senaryo canli olcumle DOGRULANDI. Kod seviyesinde nedeni
+        # bulamadik (butun HTTP cagrilar zaten timeout'lu ve try/except'li).
+        # Gecici/pratik onlem: TEK uzun sleep yerine 1'er saniyelik kucuk
+        # parcalar halinde uyu - hem "tam nerede kaldi" sorusuna (10sn'de
+        # bir log) somut cevap verir, hem de sorunun spesifik olarak UZUN
+        # TEK sleep() cagrisiyla ilgili olup olmadigini test eder.
+        for _elapsed in range(sleep_seconds):
+            time.sleep(1)
+            if _elapsed > 0 and _elapsed % 10 == 0:
+                _log(f"cycle={cycle_id} sleep:progress {_elapsed}/{sleep_seconds}s")
         _log(f"cycle={cycle_id} sleep:end")
 
 

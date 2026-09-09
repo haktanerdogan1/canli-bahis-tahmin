@@ -982,6 +982,38 @@ def admin_void_pending_signals(request: Request, league_name: str = "", match_id
     return {"success": True, "silinen_sinyal_sayisi": deleted}
 
 
+@app.post("/api/admin/manual-settle-signal")
+def admin_manual_settle_signal(request: Request, match_id: int, outcome: str):
+    """El ile sonuclandirma - kullanici talebi (2026-09-09): sevenm_client
+    kapatildiktan sonra (bkz. supervisor.py notu) o kaynaktan gelen acik
+    maclar artik otomatik KAPANMIYOR (_fs_close_stale sadece o kaynak
+    senkron olurken calisir) - 3 saatlik zombi-kapatici (settlement.
+    close_zombie_matches) devreye girene kadar bazi sinyaller gereksiz
+    yere 'bekleyen' kalabilir. Kullanicinin gercek dunyada dogruladigi
+    bir sonucu HEMEN yazabilmesi icin.
+
+    CLAUDE.md kural 4 KORUNUYOR: SADECE outcome IS NULL olan (henuz hic
+    sonuclanmamis) satirlar guncellenir - zaten WON/LOST/VOID yazilmis
+    bir kayit bu ucla ASLA degistirilemez, WHERE kosulu bunu yapisal
+    olarak engelliyor."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    if outcome not in ("WON", "LOST"):
+        return {"success": False, "error": "outcome sadece WON veya LOST olabilir."}
+    with measured_write("admin.manual_settle_signal") as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE consensus_predictions SET outcome=?, settled_at=CURRENT_TIMESTAMP "
+            "WHERE match_id=? AND decision='signal' AND outcome IS NULL",
+            (outcome, match_id),
+        )
+        updated = cur.rowcount
+    print(f"[admin] manual-settle-signal: match_id={match_id} outcome={outcome} "
+          f"guncellenen={updated}", flush=True)
+    return {"success": True, "guncellenen_sinyal_sayisi": updated}
+
+
 # --- X (Twitter) otomatik paylasim ------------------------------------------
 # x_poster.py (Railway'de supervisor.py uzerinden calisir, Playwright
 # GEREKTIRMEZ) IKI ASAMALI akis kullanir (kullanici talebi, 2026-08-29):

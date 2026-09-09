@@ -110,3 +110,47 @@ uygulamak mı öncelikli, yoksa (b) paralel bir kaynak daha (örn.
 flashscore/sofascore'u tekrar açmak, ya da RapidAPI'de daha geniş
 kapsamlı bir plan) mı gerekiyor. Bugün karar verilmedi, hiçbir
 değişiklik yapılmadı.
+
+## Ek bulgu 2 (2026-09-09 gece yarısı): sinyal hacmi neden neredeyse sıfır
+
+Aynı gece, oy_veren=4 + MIN_SIGNAL_MINUTE=10 deploy edildikten sonra
+15+ dakika boyunca TEK BİR maç bile `eksik_veri`/`izleme`/`guclu_aday`
+seviyesine ulaşmadı (hepsi `"none"` kaldı) - `DEGERLENDIRILEN=20-25`
+olmasına rağmen. Astra'ya soruldu, cevap:
+
+1. **Loglama kör noktası doğrulandı:** `"none"` sonucu, mutabakat VE
+   final_prob'un ikisinin de düşük olduğu anlamına gelmiyor - biri
+   düşük yeterli (ör. mutabakat=0.75 ama final_prob=0.54 → yine
+   "none"). Yarınki teşhis: her turda seviye dağılımı (none/eksik_veri/
+   izleme/guclu_aday) + "none" nedeni kırılımı (sadece mutabakat düşük
+   / sadece final_prob düşük / ikisi de düşük) + 5 örnek maçın bot
+   bazlı kararları loglanmalı. `oy_veren>=1` filtresi YETERSİZ - sıfır
+   oylu maçlar da örneğe dahil edilmeli, aksi halde yeni bir kör nokta
+   açılır.
+
+2. **EN OLASI KOK NEDEN (kodda doğrulandı, teorik değil):**
+   `v4_api_bot.py`'de istatistik çekilmeyen maçlar için `_no_stats()`
+   boş liste döner, `_parse_stats([])` bunu SIFIR istatistik olarak
+   üretir (bkz. P0 madde, yukarıda). Tempo/momentum botları bu sahte
+   sıfırı GERÇEK veri sanıp (`insufficient_data` yerine) bir olasılık
+   üretiyor - katılımcı sayısını (oy_veren) artırırken pozitif oy
+   oranını/ağırlıklı olasılığı aşağı çekebilir. "En az 4 bot oy
+   veriyor" ifadesi bu 4 botun SAĞLIKLI veriye dayandığını KANITLAMIYOR.
+   Yarın ilk araştırılacak hipotez bu olmalı.
+
+3. Gece yarısı etkisi (az maç, egzotik ligler) mümkün ama KANITLANMADI
+   - 15 dakikalık aynı 20-25 maçın tekrar tekrar değerlendirilmesi
+   yeterli/bağımsız örneklem değil.
+
+4. **Önemli mantık düzeltmesi:** `MIN_SIGNAL_MINUTE=10`, "veri
+   yetersizken sinyal üretme" sorununu ÇÖZMÜYOR - sadece 10 dakika
+   ERTELİYOR. Aynı 4 hazır bot 11. dakikada da tek başına karar
+   verebilir. Bugün oy_veren'i 5→4 indirirken bu ikisinin "aynı
+   sorunu iki kez çözdüğü" gerekçesi YANLIŞTI. Yarın ölçülecek şey
+   "kaç bot oy verdi" değil, "hangi bot HANGİ GERÇEK veriyle oy
+   verdi" olmalı.
+
+**Bu gece hiçbir kod değişikliği yapılmadı** (kullanıcı kararı, saat
+gece yarısını geçti). Yarınki öncelik: P0 (sıfır/eksik veri ayrımı)
++ bu teşhis loglaması birlikte ele alınabilir, ikisi de aynı kök
+soruna bakıyor.

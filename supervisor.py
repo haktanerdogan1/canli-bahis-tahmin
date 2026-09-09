@@ -53,17 +53,24 @@ SERVICES = {
     "orchestrator": {
         "cmd": [PYTHON, "-u", "-m", "app.core.orchestrator"],
     },
-    # sevenm_client: 7msport.com canli veri kaynagi (bkz. sevenm_bot.py/
-    # sevenm_client.py docstring'leri - hic bot korumasi yok, Playwright
-    # GEREKTIRMIYOR, sadece `requests` ile iki duz JS dizi dosyasi cekiyor).
-    # Bu yuzden flashscore_xg_bot'un aksine Railway'in bellek limitine
-    # takilma riski yok - guvenle burada, ana 'web' servisinde calisabilir.
-    # 2026-08-24: kullanicinin "PC kapansa da calissin" talebiyle eklendi -
-    # oncesinde SADECE yerel makinede (launchd ile) calisiyordu, canli veri
-    # akisi kullanicinin bilgisayarina bagimliydi.
-    "sevenm_client": {
-        "cmd": [PYTHON, "-u", "sevenm_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
-    },
+    # sevenm_client: DEVRE DISI (kullanici talebi, 2026-09-09 - "sadece
+    # flashscore'a donelim"). Ayni gun sirayla: isstart=17 (henuz baslamamis
+    # maclar) yanlislikla LIVE sayiliyordu (bkz. sevenm_bot.py duzeltmesi,
+    # commit 36e3eeb), sonra bir mac (Roltek Dob) gercekte bitmis olmasina
+    # ragmen sonuclanmadan takili kaldi (kok nedeni bulunamadan kullanici
+    # kararla kaynagi degistirdi) - kullanici 7msport'a guvenini kaybetti.
+    # BILINCLI TRADEOFF (kullaniciya acikca soylendi, onay alindi): bu
+    # servis, Railway'de 7/24 calisan TEK canli veri kaynagiydi ("PC kapansa
+    # da calissin" - 2026-08-24 talebiyle eklenmisti). Flashscore/SofaScore
+    # SADECE kullanicinin kendi bilgisayarinda (launchd) calisiyor (bkz.
+    # CLAUDE.md kural 6, Chromium bellek limiti). Sonuc: sistem artik
+    # SADECE kullanicinin bilgisayari acikken (flashscore/sofascore launchd
+    # calisirken) canli veri aliyor - PC kapali/uykudayken SIFIR sinyal
+    # uretilir. Kod SILINMEDI, geri alinmak istenirse asagidaki iki satiri
+    # ac (ve "cmd" satirini geri getir).
+    # "sevenm_client": {
+    #     "cmd": [PYTHON, "-u", "sevenm_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
+    # },
     # iddaa_odds_client: bot_odds_profile.py icin acilis oranlarini besler
     # (bkz. iddaa_odds_client.py docstring'i). sevenm_client gibi Playwright
     # GEREKTIRMEZ, bellek riski yok.

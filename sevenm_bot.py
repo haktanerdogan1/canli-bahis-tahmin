@@ -149,6 +149,16 @@ def fetch_matches(session):
         bc = v2[6]
         difftime = v2[5]
         score_h, score_a = _parse_score(bc)
+        # GECICI TESHIS (2026-09-09) devami: isstart=17 (unknown_isstart'in
+        # ezici cogunlugu) mac oncesi/planlanmis mac mi yoksa baska bir
+        # canli durum mu ayirt etmek icin - skor 0-0 ise VE difftime BOS/
+        # gelecekteki bir zamana isaret ediyorsa "henuz baslamadi" guclu
+        # kanit olur.
+        if isstart not in (1, 2, 3, 8) and isstart not in _FINISHED_CODES:
+            _tally["unknown_score_00"] += (1 if (score_h == 0 and score_a == 0) else 0)
+            _tally.setdefault("unknown_difftime_samples", [])
+            if len(_tally["unknown_difftime_samples"]) < 5:
+                _tally["unknown_difftime_samples"].append(difftime)
         out.append({
             "mid": str(mid), "home": home, "away": away,
             "league": league or "Unknown League",
@@ -164,6 +174,8 @@ def fetch_matches(session):
           f"parse_error={_tally['parse_error']} negative_elapsed={_tally['negative_elapsed']} "
           f"unknown_isstart={_tally['unknown_isstart']} "
           f"unknown_codes={dict(_tally.get('unknown_isstart_codes', {}))} "
+          f"unknown_score_00={_tally['unknown_score_00']} "
+          f"unknown_difftime_ornek={_tally.get('unknown_difftime_samples', [])} "
           f"neg_sample={_tally.get('negative_elapsed_sample', [])[:5]}", flush=True)
 
     return out

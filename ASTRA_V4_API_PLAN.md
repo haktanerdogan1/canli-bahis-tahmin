@@ -94,3 +94,19 @@ Mevcut 60sn+7 ayarı ~345.600/ay (~%69) - Astra bunu YETERLİ buluyor,
 
 Tam detay için Astra'nın orijinal yanıtı: kullanıcının ChatGPT projesi
 "Matchrix Astra API Analizi" (2026-09-09 tarihli).
+
+## Ek bulgu (2026-09-09, aynı gün): kapsam boşluğu
+
+Kullanıcı AiScore ile karşılaştırdı: o anda AiScore **75 canlı maç**
+gösterirken, v4_api_bot'un (RapidAPI ücretsiz/mevcut plan) feed'i sadece
+**~20 maç** döndürüyordu (~%27 kapsam). Bu kod hatası değil - kaynağın
+kendi kapsam sınırı (alt ligler, az bilinen turnuvalar muhtemelen hiç
+gelmiyor).
+
+Sonuç: tek kaynağa (v4_api_bot) geçmek sinyal HACMİNİ de kısıtlıyor
+olabilir - kapsam darsa botlar değerlendirecek maç bulamaz. Yarınki
+oturumda değerlendirilecek: (a) bu planın kota/alan önerilerini
+uygulamak mı öncelikli, yoksa (b) paralel bir kaynak daha (örn.
+flashscore/sofascore'u tekrar açmak, ya da RapidAPI'de daha geniş
+kapsamlı bir plan) mı gerekiyor. Bugün karar verilmedi, hiçbir
+değişiklik yapılmadı.

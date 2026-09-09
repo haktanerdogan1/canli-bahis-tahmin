@@ -482,121 +482,140 @@ def run_orchestrator():
                 if is_first_half_market and total_goals_initial >= 1 and consensus_result.decision == "signal":
                     continue
 
-                if consensus_result.decision == "signal" and _saatlik_kota_doldu_mu(cursor):
-                    # Son 60dk'da SAATLIK_SINYAL_KOTASI kadar sinyal uretilmis -
-                    # kalite ne olursa olsun bu saat icin yeni sinyal acilmiyor.
-                    continue
+                # DUZELTME (2026-09-09): asagidaki blok (kota/kapasite kontrolu +
+                # sinyal INSERT'i) daha once try/except'siz calisiyordu - "database
+                # is locked" gibi bir hata buraya kadar hic yakalanmadan disariya,
+                # TUM per-mac dongusunu saran DIS try/except'e (satir ~707,
+                # "Orkestratör Hatası") kadar firliyordu. Bu, tek bir macin yazma
+                # hatasinin o turdaki TUM KALAN maclarin (potansiyel olarak
+                # onlarca) hic degerlendirilmemesine yol aciyordu - canli
+                # olculdu (bkz. 2026-09-09 [db_tx]/TESHIS loglari, "guclu_aday"
+                # bulunan bir sinyalin hemen ardindan "database is locked" ve
+                # turun geri kalaninin atlanmasi). Artik SADECE bu macin
+                # sinyal-yazma denemesi basarisiz olursa sonraki maca geciliyor,
+                # kalan mac listesi kaybolmuyor.
+                try:
+                    if consensus_result.decision == "signal" and _saatlik_kota_doldu_mu(cursor):
+                        # Son 60dk'da SAATLIK_SINYAL_KOTASI kadar sinyal uretilmis -
+                        # kalite ne olursa olsun bu saat icin yeni sinyal acilmiyor.
+                        continue
 
-                if consensus_result.decision == "signal" and not _kapasite_kontrolu(cursor, consensus_result.weighted_probability):
-                    # Kapasite (10) dolu ve bu aday acik olanlarin en zayifindan
-                    # daha guvenilir degil - sinyal hic acilmiyor.
-                    continue
+                    if consensus_result.decision == "signal" and not _kapasite_kontrolu(cursor, consensus_result.weighted_probability):
+                        # Kapasite (10) dolu ve bu aday acik olanlarin en zayifindan
+                        # daha guvenilir degil - sinyal hic acilmiyor.
+                        continue
 
-                if consensus_result.decision == "signal":
-                    signal_market = (
-                        f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market
-                        else f"Maç Sonu {total_goals_initial + 0.5} Üst"
-                    )
-
-                    # Kullanici talebi (2026-08-30): "İlk Yarı 2.5 Üst" (ilk yarida
-                    # zaten 2 gol varken 3. golu beklemek) genel olarak kaybediyor
-                    # (olculen: 8G/10K, %44 - coin-flip ve diger IY marketlerinin
-                    # altinda). Bu marketi SADECE acik/dengeli ve erken mac icin birak:
-                    #   - skor 1-1 (2-0/0-2 degil: tek tarafli maclar kapaniyor), VE
-                    #   - dakika <= 20 (3. gol icin hala yeterli sure var).
-                    # 21+ dakika veya 1-1 disi bir 2 gollu skorda sinyali hic acma.
-                    # İlk yarıda zaten 2+ gol varken üste oynamak:
-                    #  - total == 2 ("İY 2.5 Üst"): SADECE 1-1 VE dakika ≤ 20 (açık,
-                    #    dengeli, erken maç); 2-0/0-2 veya dk > 20 ise sinyal yok.
-                    #  - total >= 3 ("İY 3.5 / 4.5 Üst"): HER ZAMAN blok. İlk yarıda
-                    #    3 gol varken 4./5. golü kovalamanın istatistiksel temeli yok
-                    #    (kullanıcı talebi 2026-08-30; gözlenen kötü örnekler:
-                    #    30 Ağu Dep. A Coruña–Valencia dk30 "İY 3.5 Üst",
-                    #    26 Ağu Frydlant–Brno dk35 "İY 4.5 Üst").
-                    if is_first_half_market and total_goals_initial >= 2:
-                        if total_goals_initial >= 3:
-                            continue
-                        if not (home_score == 1 and away_score == 1 and minute <= 20):
-                            continue
-
-                    # DB'ye kaydet
-                    cursor.execute('''
-                        INSERT INTO consensus_predictions 
-                        (match_id, snapshot_id, consensus_version, positive_bot_count, negative_bot_count, 
-                         insufficient_data_count, weighted_probability, signal_level, decision,
-                         signal_minute, market, initial_goals)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        match_id,
-                        latest['id'] if latest else None,
-                        consensus_result.consensus_version,
-                        consensus_result.positive_bot_count,
-                        consensus_result.negative_bot_count,
-                        consensus_result.insufficient_data_count,
-                        consensus_result.weighted_probability,
-                        consensus_result.signal_level,
-                        consensus_result.decision,
-                        minute,
-                        signal_market,
-                        total_goals_initial
-                    ))
-                    prediction_id = cursor.lastrowid
-
-                    # "Kirmizi Takim" (Critic) - bkz. _critic_review docstring.
-                    try:
-                        flags = _critic_review(
-                            cursor, match["league_name"], consensus_result,
-                            total_goals_initial, minute, snap_5, snap_10, snap_15,
+                    if consensus_result.decision == "signal":
+                        signal_market = (
+                            f"İlk Yarı {total_goals_initial + 0.5} Üst" if is_first_half_market
+                            else f"Maç Sonu {total_goals_initial + 0.5} Üst"
                         )
+
+                        # Kullanici talebi (2026-08-30): "İlk Yarı 2.5 Üst" (ilk yarida
+                        # zaten 2 gol varken 3. golu beklemek) genel olarak kaybediyor
+                        # (olculen: 8G/10K, %44 - coin-flip ve diger IY marketlerinin
+                        # altinda). Bu marketi SADECE acik/dengeli ve erken mac icin birak:
+                        #   - skor 1-1 (2-0/0-2 degil: tek tarafli maclar kapaniyor), VE
+                        #   - dakika <= 20 (3. gol icin hala yeterli sure var).
+                        # 21+ dakika veya 1-1 disi bir 2 gollu skorda sinyali hic acma.
+                        # İlk yarıda zaten 2+ gol varken üste oynamak:
+                        #  - total == 2 ("İY 2.5 Üst"): SADECE 1-1 VE dakika ≤ 20 (açık,
+                        #    dengeli, erken maç); 2-0/0-2 veya dk > 20 ise sinyal yok.
+                        #  - total >= 3 ("İY 3.5 / 4.5 Üst"): HER ZAMAN blok. İlk yarıda
+                        #    3 gol varken 4./5. golü kovalamanın istatistiksel temeli yok
+                        #    (kullanıcı talebi 2026-08-30; gözlenen kötü örnekler:
+                        #    30 Ağu Dep. A Coruña–Valencia dk30 "İY 3.5 Üst",
+                        #    26 Ağu Frydlant–Brno dk35 "İY 4.5 Üst").
+                        if is_first_half_market and total_goals_initial >= 2:
+                            if total_goals_initial >= 3:
+                                continue
+                            if not (home_score == 1 and away_score == 1 and minute <= 20):
+                                continue
+
+                        # DB'ye kaydet
                         cursor.execute('''
-                            INSERT INTO signal_critiques (prediction_id, flags_json, risk_score)
-                            VALUES (?, ?, ?)
-                        ''', (prediction_id, json.dumps(flags, ensure_ascii=False), len(flags)))
-                    except Exception as e:
-                        print(f"⚠️  Critic degerlendirmesi basarisiz: {e}")
+                            INSERT INTO consensus_predictions 
+                            (match_id, snapshot_id, consensus_version, positive_bot_count, negative_bot_count, 
+                             insufficient_data_count, weighted_probability, signal_level, decision,
+                             signal_minute, market, initial_goals)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            match_id,
+                            latest['id'] if latest else None,
+                            consensus_result.consensus_version,
+                            consensus_result.positive_bot_count,
+                            consensus_result.negative_bot_count,
+                            consensus_result.insufficient_data_count,
+                            consensus_result.weighted_probability,
+                            consensus_result.signal_level,
+                            consensus_result.decision,
+                            minute,
+                            signal_market,
+                            total_goals_initial
+                        ))
+                        prediction_id = cursor.lastrowid
 
-                    # HER BOTUN KARARINI AYRI AYRI KAYDET.
-                    # Bu tablo onceden hic doldurulmuyordu (0 kayit), bu yuzden hangi botun
-                    # ne kadar isabetli oldugu OLCULEMIYORDU. Artik her sinyalde 18 botun
-                    # karari saklaniyor; sonuc kesinlestiginde bot bazli basari orani
-                    # hesaplanabiliyor.
-                    for bp in predictions:
+                        # "Kirmizi Takim" (Critic) - bkz. _critic_review docstring.
                         try:
+                            flags = _critic_review(
+                                cursor, match["league_name"], consensus_result,
+                                total_goals_initial, minute, snap_5, snap_10, snap_15,
+                            )
                             cursor.execute('''
-                                INSERT INTO bot_predictions
-                                (match_id, snapshot_id, bot_name, bot_version, decision,
-                                 probability, confidence, data_quality, reasons_json, warnings_json)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (
-                                match_id,
-                                latest['id'] if latest else None,
-                                bp.bot_name,
-                                bp.bot_version,
-                                bp.decision,
-                                bp.probability,
-                                bp.confidence,
-                                bp.data_quality,
-                                json.dumps(bp.reasons, ensure_ascii=False),
-                                json.dumps(bp.warnings, ensure_ascii=False),
-                            ))
-                        except Exception as be:
-                            print(f"⚠️  Bot kaydi yazilamadi ({bp.bot_name}): {be}")
+                                INSERT INTO signal_critiques (prediction_id, flags_json, risk_score)
+                                VALUES (?, ?, ?)
+                            ''', (prediction_id, json.dumps(flags, ensure_ascii=False), len(flags)))
+                        except Exception as e:
+                            print(f"⚠️  Critic degerlendirmesi basarisiz: {e}")
 
-                    conn.commit()
-                    
-                    # SINYAL ANINDAKI PIYASA FIYATINI KAYDET.
-                    # Bu, "kac tuttu" degil "oranin ustunde mi tuttu" sorusunu
-                    # cevaplayabilmemiz icin sart. Sadece sinyal uretildiginde
-                    # cagriliyor (her mac icin degil) - kota israfi olmasin diye.
-                    try:
-                        odds_mod.kaydet(match_id, match["source_match_id"], minute)
-                    except Exception as oe:
-                        print(f"⚠️  Oran kaydedilemedi: {oe}")
+                        # HER BOTUN KARARINI AYRI AYRI KAYDET.
+                        # Bu tablo onceden hic doldurulmuyordu (0 kayit), bu yuzden hangi botun
+                        # ne kadar isabetli oldugu OLCULEMIYORDU. Artik her sinyalde 18 botun
+                        # karari saklaniyor; sonuc kesinlestiginde bot bazli basari orani
+                        # hesaplanabiliyor.
+                        for bp in predictions:
+                            try:
+                                cursor.execute('''
+                                    INSERT INTO bot_predictions
+                                    (match_id, snapshot_id, bot_name, bot_version, decision,
+                                     probability, confidence, data_quality, reasons_json, warnings_json)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ''', (
+                                    match_id,
+                                    latest['id'] if latest else None,
+                                    bp.bot_name,
+                                    bp.bot_version,
+                                    bp.decision,
+                                    bp.probability,
+                                    bp.confidence,
+                                    bp.data_quality,
+                                    json.dumps(bp.reasons, ensure_ascii=False),
+                                    json.dumps(bp.warnings, ensure_ascii=False),
+                                ))
+                            except Exception as be:
+                                print(f"⚠️  Bot kaydi yazilamadi ({bp.bot_name}): {be}")
 
-                    # Cooldown ekle
-                    signal_cooldowns[match_id] = current_time
+                        conn.commit()
                     
-                    print(f"🚨 SİNYAL BULUNDU! Maç: {match['home_team_id']} vs {match['away_team_id']} | Dakika: {minute} | Seviye: {consensus_result.signal_level} | Olasılık: %{int(consensus_result.weighted_probability * 100)}")
+                        # SINYAL ANINDAKI PIYASA FIYATINI KAYDET.
+                        # Bu, "kac tuttu" degil "oranin ustunde mi tuttu" sorusunu
+                        # cevaplayabilmemiz icin sart. Sadece sinyal uretildiginde
+                        # cagriliyor (her mac icin degil) - kota israfi olmasin diye.
+                        try:
+                            odds_mod.kaydet(match_id, match["source_match_id"], minute)
+                        except Exception as oe:
+                            print(f"⚠️  Oran kaydedilemedi: {oe}")
+
+                        # Cooldown ekle
+                        signal_cooldowns[match_id] = current_time
+                    
+                        print(f"🚨 SİNYAL BULUNDU! Maç: {match['home_team_id']} vs {match['away_team_id']} | Dakika: {minute} | Seviye: {consensus_result.signal_level} | Olasılık: %{int(consensus_result.weighted_probability * 100)}")
+                except Exception as _sinyal_err:
+                    # Bu macin sinyal-yazma denemesi basarisiz oldu (ornegin
+                    # "database is locked") - SADECE bu maci atla, kalan
+                    # mac listesi (ve bu turun settlement cagrilari) etkilenmesin.
+                    print(f"⚠️  Sinyal islemi basarisiz (mac_id={match_id}): {_sinyal_err}", flush=True)
+                    continue
 
             if tur_sayaci % 5 == 0:
                 print(f"🔎 TESHIS-ELEME tur={tur_sayaci} toplam={len(live_matches)} "

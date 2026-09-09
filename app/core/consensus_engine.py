@@ -141,7 +141,18 @@ class ConsensusEngine:
         # (mutabakat, final_prob) kombinasyonu bazinda ham veri yok - yeni sayilar
         # uydurmak yerine (bkz. proje kurali: olcmeden iddia yok) kanitlanmamis
         # ek katiligi kaldirdik. guclu_aday zaten tek sinyal esigi.
-        if oy_veren < 5:
+        # GECICI/OLCULMUS AYAR (2026-09-09): canli istatistik kapsami (sut/
+        # korner/xG - flashscore kaynakli) su an OLCULEN sadece ~%5 - bu
+        # yuzden Specialist ailesindeki 14 bot COGU macta insufficient_data
+        # donuyor, oy_veren neredeyse HICBIR ZAMAN 5'e ulasmiyordu (canli
+        # olculen: 2 veya 4'te tikaniyordu - hatta mutabakat=1.0, final_prob
+        # =0.70 gibi GUCLU anlasmalarda bile). Sonuc: orchestrator saatlerce
+        # SIFIR sinyal uretti (kullanici bildirimi + [db_tx]/TESHIS loglariyla
+        # dogrulandi). 4 "her zaman veri bulunan" bot (base_rate, game_state,
+        # 19_prematch_prophet, odds_profile) zaten anlamli bir konsensus icin
+        # yeterli - esik 5'ten 4'e indirildi. Flashscore kapsami duzelince
+        # (bkz. BATCH_SIZE artisi, 2026-09-08) 5'e geri cekmeyi degerlendir.
+        if oy_veren < 4:
             signal_level = "eksik_veri"
         elif mutabakat >= 0.50 and final_prob >= 0.63:
             signal_level = "guclu_aday"

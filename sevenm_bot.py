@@ -24,6 +24,12 @@ isstart KODLARI (sDt2[mid][0]):
   8 = uzatma (dakika hesaplanmiyor - "extra time" olarak gecilir, sunucu
       tarafi zaten bu durumu dakikasiz LIVE olarak isliyor)
   4,6,10,12,13,14,15 = bitmis (cesitli bitis nedenleri, hepsi "Finished")
+  17 = HENUZ BASLAMAMIS/PLANLANMIS mac (2026-09-09 olcumu: TESHIS-STAGE
+       tanisi ile dogrulandi - orchestrator'in canli maclarinin %82'si bu
+       kodu tasiyordu, HEPSI skor 0-0 VE difftime alani BOS - "henuz
+       baslamadi" disinda baska bir yorumla tutarsiz. fetch_matches() bu
+       kodu artik en basta ELER, csxl.js her nedense gunun TUM fikstur
+       listesini (baslamamislar dahil) donduruyor gibi gorunuyor.)
   TANIMADIGIMIZ baska bir kod gorulurse TAHMIN EDILMIYOR - oldugu gibi
   gonderiliyor, sunucu (api.py:_fs_parse_stage) bunu "bilinmeyen stage"
   olarak loglar (Flashscore/SofaScore ile ayni kesif ilkesi).
@@ -41,6 +47,7 @@ CSXL_URL = "https://js-live.7mdt.com/livedts/csxl.js"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
 
 _FINISHED_CODES = {4, 6, 10, 12, 13, 14, 15}
+_NOT_STARTED_CODES = {17}
 
 
 def _parse_js_array(text, varname):
@@ -149,11 +156,19 @@ def fetch_matches(session):
         bc = v2[6]
         difftime = v2[5]
         score_h, score_a = _parse_score(bc)
-        # GECICI TESHIS (2026-09-09) devami: isstart=17 (unknown_isstart'in
-        # ezici cogunlugu) mac oncesi/planlanmis mac mi yoksa baska bir
-        # canli durum mu ayirt etmek icin - skor 0-0 ise VE difftime BOS/
-        # gelecekteki bir zamana isaret ediyorsa "henuz baslamadi" guclu
-        # kanit olur.
+        # DUZELTME (2026-09-09): isstart=17 = henuz baslamamis/planlanmis mac
+        # (bkz. dosya basindaki isstart KODLARI notu + TESHIS-STAGE olcumu:
+        # canli sanilan maclarin %82'si bu kodu tasiyordu, HEPSI 0-0 skor VE
+        # BOS difftime - orchestrator bunlari "LIVE ama dakikasiz" diye
+        # gereksiz yere degerlendirip eliyordu). csxl.js gunun tum fikstur
+        # listesini donduruyor gibi gorunuyor - bu maclari en basta atla,
+        # matches tablosuna hic girmesinler.
+        if isstart in _NOT_STARTED_CODES:
+            _tally["not_started"] += 1
+            continue
+        # GECICI TESHIS (2026-09-09) devami: 17 disinda baska tanimadigimiz
+        # bir kod cikarsa (gercekten "bilinmeyen" kalan durumlar) ayni
+        # skor/difftime ornekleme mantigi burada devam ediyor.
         if isstart not in (1, 2, 3, 8) and isstart not in _FINISHED_CODES:
             _tally["unknown_score_00"] += (1 if (score_h == 0 and score_a == 0) else 0)
             _tally.setdefault("unknown_difftime_samples", [])
@@ -169,6 +184,7 @@ def fetch_matches(session):
 
     print(f"[sevenm_bot] 🔎 TESHIS-STAGE sdt2={len(sdt2)} sdt={len(sdt)} "
           f"eslesen={len(out)} atlanan_v1={skipped_no_v1} atlanan_isim={skipped_no_names} "
+          f"not_started={_tally['not_started']} "
           f"| ok={_tally['ok']} half_time={_tally['half_time']} extra_time={_tally['extra_time']} "
           f"finished={_tally['finished']} no_difftime={_tally['no_difftime']} "
           f"parse_error={_tally['parse_error']} negative_elapsed={_tally['negative_elapsed']} "

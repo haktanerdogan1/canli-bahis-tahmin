@@ -413,9 +413,24 @@ def run_orchestrator():
                 
                 # Tüm Botları çalıştır
                 predictions = [bot.predict(context) for bot in bots]
-                
+
                 # Konsensüs
                 consensus_result = consensus_engine.evaluate(predictions)
+
+                # GECICI TESHIS (2026-09-09, kullanici sorusu: "SINYAL BULUNDU"
+                # 17+ saattir loglarda hic yok - 2026-09-08'deki oy_veren/
+                # mutabakat duzeltmesinin beklenmedik bir yan etkisi olabilir mi
+                # olcuyoruz, tahmin etmiyoruz). SADECE PRINT - hicbir davranis
+                # DEGISTIRILMIYOR. "izleme" seviyesine yaklasan (mutabakat>=0.35)
+                # maclarin GERCEK oy_veren/mutabakat/final_prob degerlerini
+                # gorup darbogazi tam olarak bulmak icin. Bulununca SILINECEK.
+                if consensus_result.signal_level != "none":
+                    _ov = consensus_result.positive_bot_count + consensus_result.negative_bot_count
+                    _mb = round(consensus_result.positive_bot_count / _ov, 3) if _ov else 0
+                    print(f"🔎 TESHIS mac={match_id} dk={minute} seviye={consensus_result.signal_level} "
+                          f"oy_veren={_ov} pos={consensus_result.positive_bot_count} "
+                          f"neg={consensus_result.negative_bot_count} eksik={consensus_result.insufficient_data_count} "
+                          f"mutabakat={_mb} final_prob={consensus_result.weighted_probability}", flush=True)
 
                 # Sinyalin uretildigi dakika ve hedeflenen market SABIT olarak hesaplanip
                 # kaydedilir. Boylece maç ilerledikce (ör. 2. yariya gecince) bu sinyal

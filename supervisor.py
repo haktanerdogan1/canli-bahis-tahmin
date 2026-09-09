@@ -71,6 +71,20 @@ SERVICES = {
     # "sevenm_client": {
     #     "cmd": [PYTHON, "-u", "sevenm_client.py", "--api-base", f"http://127.0.0.1:{PORT}"],
     # },
+    # v4_api_bot: YENIDEN AKTIF (kullanici talebi, 2026-09-09 - sevenm'in
+    # yerine denenmek uzere). Bu RapidAPI saglayicisi (free-api-live-football-
+    # data) projenin ILK donemde kullandigi kaynakti - kota tukendigi icin
+    # (asiri sik/genis sorgu, bkz. dosya ici NORMAL_CYCLE_SECONDS/
+    # MAX_STATS_PER_CYCLE notlari) TheSports'a gecilmisti. Kullanici RAPIDAPI_
+    # KEY'in planini yukselttigini soyluyor - Railway'deki RAPIDAPI_KEY
+    # degiskeni ZATEN mevcut (degismedi), sadece bu servis yeniden acildi.
+    # DIKKAT: sevenm ile AYNI "matches" tablosuna, "v4_" onekiyle yazar - fs_/
+    # ss_ ile CAKISMAZ. Flashscore/SofaScore'a DOKUNULMADI, bu ucu PARALEL
+    # calisiyor - kota gercekten tutuyor mu (429 var mi) once GOZLENECEK,
+    # sonra flashscore hakkinda karar verilecek.
+    "v4_api_bot": {
+        "cmd": [PYTHON, "-u", "v4_api_bot.py"],
+    },
     # iddaa_odds_client: bot_odds_profile.py icin acilis oranlarini besler
     # (bkz. iddaa_odds_client.py docstring'i). sevenm_client gibi Playwright
     # GEREKTIRMEZ, bellek riski yok.

@@ -16,11 +16,25 @@ KULLANIM:
 import os
 import sys
 import time
+import traceback
+import faulthandler
 
 import requests
 
 DEFAULT_API_BASE = "https://web-production-f1dba.up.railway.app"
 CYCLE_PAUSE_SECONDS = 120
+
+
+def _log(message):
+    """2026-09-09, GPT-6 Astra ikinci-gorus: onceki kod SADECE baslangicta
+    veya bir istisna oldugunda logluyordu - iki uc basariyla "found: false"
+    donup sessizce devam ederse (COK OLASI, Astra'nin tahmini: %80) surec
+    saglikli calisirken loglarda TAMAMEN SESSIZ gorunuyordu. Bu, dunku ve
+    bugunku "donmus" degerlendirmemizin GERCEK bir kanit degil, VARSAYIM
+    oldugunu gosterdi. Artik HER asama (baslangic/bitis, sure, sleep)
+    monotonic saatle loglaniyor - bir dahaki "sessizlik" oldugunda son
+    ":start" satiri TAM OLARAK nerede kaldigini gosterecek (tahmin degil)."""
+    print(f"[telegram_poster] pid={os.getpid()} mono={time.monotonic():.3f} {message}", flush=True)
 
 _ANNOUNCE_TAGS = "#canlibahis #iddaatahminleri #bankokupon #futbol #GününKuponu"
 _RESULT_TAGS = "#canlibahis #iddaatahminleri #bankokupon"
@@ -162,16 +176,32 @@ def _handle_settled(api_base, admin_secret, bot_token, chat_id):
     return True
 
 
-def run_cycle(api_base, admin_secret, bot_token, chat_id):
+def run_cycle(api_base, admin_secret, bot_token, chat_id, cycle_id):
+    started = time.monotonic()
     did_something = False
+
+    _log(f"cycle={cycle_id} pending:start")
     try:
-        did_something |= _handle_pending(api_base, admin_secret, bot_token, chat_id)
-    except Exception as e:
-        print(f"⚠️  Anons döngüsü hatası: {e}", flush=True)
+        pending_started = time.monotonic()
+        pending_result = _handle_pending(api_base, admin_secret, bot_token, chat_id)
+        did_something |= pending_result
+        _log(f"cycle={cycle_id} pending:end result={pending_result} "
+             f"elapsed={time.monotonic() - pending_started:.3f}s")
+    except Exception:
+        _log(f"cycle={cycle_id} pending:error\n{traceback.format_exc()}")
+
+    _log(f"cycle={cycle_id} settled:start")
     try:
-        did_something |= _handle_settled(api_base, admin_secret, bot_token, chat_id)
-    except Exception as e:
-        print(f"⚠️  Sonuç döngüsü hatası: {e}", flush=True)
+        settled_started = time.monotonic()
+        settled_result = _handle_settled(api_base, admin_secret, bot_token, chat_id)
+        did_something |= settled_result
+        _log(f"cycle={cycle_id} settled:end result={settled_result} "
+             f"elapsed={time.monotonic() - settled_started:.3f}s")
+    except Exception:
+        _log(f"cycle={cycle_id} settled:error\n{traceback.format_exc()}")
+
+    _log(f"cycle={cycle_id} end did_something={did_something} "
+         f"elapsed={time.monotonic() - started:.3f}s")
     return did_something
 
 
@@ -189,14 +219,34 @@ def main():
         print(f"HATA: eksik ortam değişkeni: {', '.join(missing)}", flush=True)
         sys.exit(1)
 
-    print(f"🚀 Telegram paylaşım botu başlatılıyor -> {api_base}", flush=True)
+    faulthandler.enable()
+    _log(f"started api_base={api_base}")
+    cycle_id = 0
     while True:
+        cycle_id += 1
+        # Astra'nin onerdigi watchdog: run_cycle beklenenden COK uzun surerse
+        # (180sn - iki HTTP el sikismasi + retry'larin normal en kotu durumu
+        # olan ~70sn'nin bolca ustunde) GERCEK bir Python stack dump'i
+        # loglara yazilir - "nerede takili" sorusuna tahmin degil, KANIT.
+        # Sadece bu blok etrafinda kurulu, main() basinda DEGIL - aksi halde
+        # saglikli 120sn'lik sleep() bile yanlis alarm uretirdi.
+        faulthandler.dump_traceback_later(180, repeat=False, exit=False)
         try:
-            did_something = run_cycle(api_base, admin_secret, bot_token, chat_id)
-        except Exception as e:
-            print(f"⚠️  Döngü hatası: {e}", flush=True)
-            did_something = False
-        time.sleep(5 if did_something else CYCLE_PAUSE_SECONDS)
+            did_something = run_cycle(api_base, admin_secret, bot_token, chat_id, cycle_id)
+        except BaseException:
+            # Teshis icin BaseException'i da (KeyboardInterrupt/SystemExit
+            # DAHIL) logluyoruz, sonra ayni sekilde tekrar yukseltiyoruz -
+            # davranis DEGISMIYOR, sadece "sessizce cikti mi" sorusuna
+            # cevap ekleniyor.
+            _log(f"cycle={cycle_id} unexpected-base-exception\n{traceback.format_exc()}")
+            raise
+        finally:
+            faulthandler.cancel_dump_traceback_later()
+
+        sleep_seconds = 5 if did_something else CYCLE_PAUSE_SECONDS
+        _log(f"cycle={cycle_id} sleep:start seconds={sleep_seconds}")
+        time.sleep(sleep_seconds)
+        _log(f"cycle={cycle_id} sleep:end")
 
 
 if __name__ == "__main__":

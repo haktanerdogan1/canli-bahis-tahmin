@@ -141,18 +141,26 @@ class ConsensusEngine:
         # (mutabakat, final_prob) kombinasyonu bazinda ham veri yok - yeni sayilar
         # uydurmak yerine (bkz. proje kurali: olcmeden iddia yok) kanitlanmamis
         # ek katiligi kaldirdik. guclu_aday zaten tek sinyal esigi.
-        # GECICI/OLCULMUS AYAR (2026-09-09): canli istatistik kapsami (sut/
-        # korner/xG - flashscore kaynakli) su an OLCULEN sadece ~%5 - bu
+        # GECICI/OLCULMUS AYAR (2026-09-08): canli istatistik kapsami (sut/
+        # korner/xG - flashscore kaynakli) o an OLCULEN sadece ~%5 - bu
         # yuzden Specialist ailesindeki 14 bot COGU macta insufficient_data
-        # donuyor, oy_veren neredeyse HICBIR ZAMAN 5'e ulasmiyordu (canli
-        # olculen: 2 veya 4'te tikaniyordu - hatta mutabakat=1.0, final_prob
-        # =0.70 gibi GUCLU anlasmalarda bile). Sonuc: orchestrator saatlerce
-        # SIFIR sinyal uretti (kullanici bildirimi + [db_tx]/TESHIS loglariyla
-        # dogrulandi). 4 "her zaman veri bulunan" bot (base_rate, game_state,
-        # 19_prematch_prophet, odds_profile) zaten anlamli bir konsensus icin
-        # yeterli - esik 5'ten 4'e indirildi. Flashscore kapsami duzelince
-        # (bkz. BATCH_SIZE artisi, 2026-09-08) 5'e geri cekmeyi degerlendir.
-        if oy_veren < 4:
+        # donuyor, oy_veren neredeyse HICBIR ZAMAN 5'e ulasmiyordu. Esik
+        # gecici olarak 4'e indirildi - AMA bu, 4 "her zaman veri bulunan"
+        # bot (base_rate, game_state, 19_prematch_prophet, odds_profile)
+        # TEK BASINA esigi karsilayabilmesi demekti: canli loglarda macin
+        # 1-4. dakikasinda, HICBIR canli istatistik toplanmamisken, sadece
+        # bu 4 botla "guclu_aday" sinyalleri atildigi GORULDU (2026-09-09,
+        # kullanici tarafindan fark edildi - "CANLI SİNYAL" diye paylasilan
+        # ama fiilen mac-oncesi tahminden farksiz sinyaller). KULLANICI
+        # KARARI (2026-09-09): esik tekrar 5'e cikarildi - bir sinyalin
+        # en az BIR Specialist-aile (canli veri gerektiren) botun oyunu
+        # icermesi sart kosuluyor, yalnizca "her zaman hazir" 4 bot artik
+        # YETMIYOR. Bu, dun 5->4 indirilme gerekcesini (dusuk kapsam) geri
+        # getiriyor - sinyal sayisi yine azalacak, kullanici bunu bilerek
+        # veri kalitesini sinyal miktarina tercih etti. (Ayrica bkz.
+        # orchestrator.py MIN_SIGNAL_MINUTE=10 - ayni sorunun ikinci,
+        # bagimsiz bir onlemi.)
+        if oy_veren < 5:
             signal_level = "eksik_veri"
         elif mutabakat >= 0.50 and final_prob >= 0.63:
             signal_level = "guclu_aday"

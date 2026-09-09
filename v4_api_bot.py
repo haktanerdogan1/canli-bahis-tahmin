@@ -252,34 +252,65 @@ def _parse_stats(stats_groups):
             h_red, a_red, h_big, a_big)
 
 
-def _ensure_match_tracking_schema():
-    """Feed dalgalanmasinda maci tek turda kaybetmemek icin son gorulme alani."""
-    conn = connect()
-    try:
-        conn.execute("ALTER TABLE matches ADD COLUMN last_seen_at TIMESTAMP")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute("ALTER TABLE matches ADD COLUMN last_progress_at TIMESTAMP")
-    except sqlite3.OperationalError:
-        pass
-    conn.execute("""
-        UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
-        WHERE last_seen_at IS NULL
-          AND status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
-    """)
-    # last_progress_at'i simdi (deploy ani) ile baslatiyoruz - gecmise donuk
-    # tahmin yapmiyoruz (hangi macin gercekten donuk oldugunu bilemeyiz, yanlis
-    # damgalarsak duzgun ilerleyen bir maci da yanlislikla kapatiriz). Bu yuzden
-    # halihazirda donmus maclar bu deploy'dan itibaren STALE_PROGRESS_MINUTES
-    # sonra temizlenir - geriye degil, ileriye donuk bir koruma.
-    conn.execute("""
-        UPDATE matches SET last_progress_at=CURRENT_TIMESTAMP
-        WHERE last_progress_at IS NULL
-          AND status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
-    """)
-    conn.commit()
-    conn.close()
+def _ensure_match_tracking_schema(tries=5, pause=8):
+    """Feed dalgalanmasinda maci tek turda kaybetmemek icin son gorulme alani.
+
+    DUZELTME (2026-09-09): bu fonksiyon SADECE process baslarken bir kez
+    calisir ama bugunku kronik yazma-kilidi altinda (bkz. CLAUDE.md kural 6b)
+    ciplak UPDATE'leri hicbir koruma olmadan atiyordu - connect()'in 30sn'lik
+    busy_timeout'u dahi dolunca sqlite3.OperationalError process'i CRASH
+    ETTIRIYORDU (canli olcum: v4_api_bot her ~35sn'de bir crash-loop'a
+    girdi, 3 ayri restart'ta da AYNI satirda). Baska her seyi (flashscore/
+    sofascore) kapatip TEK yazici birakildiktan SONRA bile ayni sekilde
+    coktu - yani sorun rakip yazici sayisindan degil, bu fonksiyonun hicbir
+    tekrar deneme mantigi olmamasindan kaynaklaniyordu. Bugunku diger tum
+    yazma noktalarinda (telegram_poster _mark_with_retry, vb.) zaten var
+    olan "birkac kez dene, aralarda bekle" desenini burada da uyguluyoruz -
+    tek seferlik bir acilis islemi oldugu icin birkac saniyelik ek bekleme
+    zararsiz."""
+    last_err = None
+    for attempt in range(tries):
+        try:
+            conn = connect()
+            try:
+                conn.execute("ALTER TABLE matches ADD COLUMN last_seen_at TIMESTAMP")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE matches ADD COLUMN last_progress_at TIMESTAMP")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute("""
+                UPDATE matches SET last_seen_at=CURRENT_TIMESTAMP
+                WHERE last_seen_at IS NULL
+                  AND status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+            """)
+            # last_progress_at'i simdi (deploy ani) ile baslatiyoruz - gecmise donuk
+            # tahmin yapmiyoruz (hangi macin gercekten donuk oldugunu bilemeyiz, yanlis
+            # damgalarsak duzgun ilerleyen bir maci da yanlislikla kapatiriz). Bu yuzden
+            # halihazirda donmus maclar bu deploy'dan itibaren STALE_PROGRESS_MINUTES
+            # sonra temizlenir - geriye degil, ileriye donuk bir koruma.
+            conn.execute("""
+                UPDATE matches SET last_progress_at=CURRENT_TIMESTAMP
+                WHERE last_progress_at IS NULL
+                  AND status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')
+            """)
+            conn.commit()
+            conn.close()
+            return
+        except sqlite3.OperationalError as e:
+            last_err = e
+            try:
+                conn.close()
+            except Exception:
+                pass
+            print(f"⚠️  _ensure_match_tracking_schema deneme {attempt + 1}/{tries} "
+                  f"basarisiz ({e}), {pause}sn sonra tekrar...", flush=True)
+            if attempt < tries - 1:
+                time.sleep(pause)
+    print(f"❌ _ensure_match_tracking_schema {tries} denemede de basarisiz oldu, "
+          f"bu turu atlıyorum (son hata: {last_err}). Process CRASH ETMEDEN "
+          f"devam ediyor - bir sonraki dongude tekrar denenecek.", flush=True)
 
 
 def _close_stale_missing(cursor, active_ids):

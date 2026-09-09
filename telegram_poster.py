@@ -219,8 +219,12 @@ def main():
         print(f"HATA: eksik ortam değişkeni: {', '.join(missing)}", flush=True)
         sys.exit(1)
 
-    faulthandler.enable()
+    faulthandler.enable(all_threads=True)
     _log(f"started api_base={api_base}")
+    # GPT-6 Astra ek kontrolu (2026-09-09): time.sleep/time modulunun
+    # monkey-patch edilmedigini (dusuk ihtimal ama ucretsiz kontrol)
+    # baslangicta bir kez dogrula.
+    _log(f"time.sleep={time.sleep!r} time_module={getattr(time, '__file__', 'builtin')}")
     cycle_id = 0
     while True:
         cycle_id += 1
@@ -254,12 +258,28 @@ def main():
         # Gecici/pratik onlem: TEK uzun sleep yerine 1'er saniyelik kucuk
         # parcalar halinde uyu - hem "tam nerede kaldi" sorusuna (10sn'de
         # bir log) somut cevap verir, hem de sorunun spesifik olarak UZUN
-        # TEK sleep() cagrisiyla ilgili olup olmadigini test eder.
-        for _elapsed in range(sleep_seconds):
-            time.sleep(1)
-            if _elapsed > 0 and _elapsed % 10 == 0:
-                _log(f"cycle={cycle_id} sleep:progress {_elapsed}/{sleep_seconds}s")
-        _log(f"cycle={cycle_id} sleep:end")
+        # TEK sleep() cagrisiyla ilgili olup olmadigini test eder. (Ilk iki
+        # canli dongude bu yaklasim gercekten sleep:end'e ulasti - onceki
+        # tek-parca sleep() hicbir zaman ulasamamisti.)
+        #
+        # EK GUVENLIK AGI (2026-09-09, Astra ikinci-gorus): yukaridaki
+        # parcali sleep bile bir noktada takilirsa (supervisor sadece
+        # process CIKINCA yeniden baslatiyor, "canli ama tepkisiz" durumu
+        # goremiyor) - bu watchdog beklenenin 60sn uzerine cikinca TUM
+        # thread'lerin stack'ini stderr'e dokup exit=True ile sureci
+        # SONLANDIRIYOR, boylece supervisor kendiliginden yeniden baslatiyor.
+        # sleep:end logu tamamlanmadan iptal edilmiyor (finally) - log yazma
+        # kendisi bloke olursa bile watchdog hala devrede kalsin diye.
+        sleep_watchdog_seconds = sleep_seconds + 60
+        faulthandler.dump_traceback_later(sleep_watchdog_seconds, repeat=False, exit=True)
+        try:
+            for _elapsed in range(sleep_seconds):
+                time.sleep(1)
+                if _elapsed > 0 and _elapsed % 10 == 0:
+                    _log(f"cycle={cycle_id} sleep:progress {_elapsed}/{sleep_seconds}s")
+            _log(f"cycle={cycle_id} sleep:end")
+        finally:
+            faulthandler.cancel_dump_traceback_later()
 
 
 if __name__ == "__main__":

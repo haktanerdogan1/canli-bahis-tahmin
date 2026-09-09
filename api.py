@@ -1954,7 +1954,7 @@ def _fs_close_stale(cursor, active_ids, prefix="fs"):
 
 
 _TEAM_SUFFIX_WORDS = re.compile(
-    r'\b(fc|cf|sc|ac|cd|afc|sk|fk|club|sporting club|sports club)\b'
+    r'\b(fc|cf|sc|ac|cd|afc|sk|fk|nk|hnk|club|sporting club|sports club)\b'
 )
 
 
@@ -1966,7 +1966,13 @@ def _normalize_team_name(name):
     panelinde ayni skorlu iki "farkli" mac gorunuyordu). Aksan/case/yaygin
     kulup eki farklarini eleyip karsilastirilabilir bir anahtar uretir -
     canli/tam eslesme icin kullanilir, bulanik/kismi eslesme YAPILMAZ (yanlis
-    pozitif riski - iki farkli gercek mac yanlislikla birlestirilmesin diye)."""
+    pozitif riski - iki farkli gercek mac yanlislikla birlestirilmesin diye).
+
+    2026-09-09: "nk"/"hnk" (Nogometni/Hrvatski Nogometni Klub - Slovence/
+    Hirvatca "Futbol Kulubu", fc/sc'nin bolgesel karsiligi) bu listeye
+    eklendi - canli olcumde "HNK Vukovar 91" / "HNK Vukovar 1991" gibi
+    isimlerdeki HNK farki dedup'i etkilemiyordu ama asagidaki
+    _normalize_team_name_loose ile birlikte calisiyor, bkz. orada."""
     if not name:
         return ""
     s = unicodedata.normalize('NFKD', name)
@@ -1975,6 +1981,47 @@ def _normalize_team_name(name):
     s = _TEAM_SUFFIX_WORDS.sub(' ', s)
     s = re.sub(r'[^a-z0-9]+', ' ', s).strip()
     return s
+
+
+def _normalize_team_name_loose(name):
+    """GECICI/OLCULMUS GENISLETME (2026-09-09): ayni gun canli sinyal
+    loglarinda IKI GERCEK mukerrer bulundu, _normalize_team_name (tam
+    esleme) bunlari YAKALAYAMADI:
+      "HNK Vukovar 91" / "HNK Cibalia"        vs
+      "HNK Vukovar 1991" / "HNK Cibalia Vinkovci"
+      "Rudar Trbovlje" / "NK Radomlje"        vs
+      "Rudar Trbovlje" / "Kalcer Radomlje"
+    Iki farkli desen: (1) yil kisaltmasi (91 vs 1991), (2) bir kaynagin
+    ekledigi ekstra/farkli kelime (Vinkovci, Kalcer). Bu fonksiyon SADECE
+    _dedup_gevsek_eslesme() icin kullanilir - saf rakam token'lari (yil)
+    atilir, kalan kelimeler bir KUME olarak donulur. Tam esitlik yerine
+    kume-alt-kume (subset) karsilastirmasi yapilacagi icin bu, tek basina
+    _normalize_team_name'in yerini TUTMAZ - cagiran taraf ayrica AYNI LIG
+    sartini da kontrol etmeli (bkz. _dedup_gevsek_eslesme), aksi halde
+    farkli ulkelerdeki ayni jenerik isimli (Racing, Independiente, Union
+    gibi) IKI FARKLI gercek kulup yanlislikla birlestirilebilir."""
+    s = _normalize_team_name(name)
+    if not s:
+        return frozenset()
+    return frozenset(tok for tok in s.split() if not tok.isdigit())
+
+
+def _dedup_gevsek_eslesme(league_a, home_a, away_a, league_b, home_b, away_b):
+    """Iki (lig, ev, deplasman) ucglusu AYNI gercek maci mi anlatiyor -
+    gevsek (subset) kural. Bkz. _normalize_team_name_loose docstring'i.
+    Guvenlik: sadece lig adi da normalize edilmis haliyle TAM esitse VE
+    her iki taraf icin bir kume digerinin ALT KUMESIYSE (bos kume asla
+    eslesmez) True doner - iki farkli ulkedeki ayni jenerik-isimli
+    kulupler farkli lig adi tasiyacagi icin bu riski buyuk olcude eler."""
+    if _normalize_team_name(league_a) != _normalize_team_name(league_b):
+        return False
+    for x, y in ((home_a, home_b), (away_a, away_b)):
+        sx, sy = _normalize_team_name_loose(x), _normalize_team_name_loose(y)
+        if not sx or not sy:
+            return False
+        if not (sx <= sy or sy <= sx):
+            return False
+    return True
 
 
 @app.post("/api/admin/live-sync")
@@ -2071,10 +2118,15 @@ def live_sync(request: Request, payload: dict):
         # "Leganés B-Guadalajara" gibi IKI satir olarak gorunuyordu). Zaten canli
         # olan tum maclarin normalize edilmis isim ciftini topla - bir kaynak
         # AYNI maci farkli yaziliskla ilk kez bildirdiginde yeni satir ACILMASIN.
-        cur.execute("SELECT home_team_id, away_team_id FROM matches WHERE status IN ('LIVE','HT')")
+        cur.execute("SELECT home_team_id, away_team_id, league_name FROM matches WHERE status IN ('LIVE','HT')")
+        _live_rows_for_dedup = cur.fetchall()
         live_norm_pairs = {
-            (_normalize_team_name(h), _normalize_team_name(a)) for h, a in cur.fetchall()
+            (_normalize_team_name(h), _normalize_team_name(a)) for h, a, _lg in _live_rows_for_dedup
         }
+        # GECICI/OLCULMUS (2026-09-09) - bkz. _dedup_gevsek_eslesme docstring'i:
+        # tam esleme yakalayamadigi GERCEK mukerrer ciftler icin (ayni gun
+        # canli sinyal loglarinda bulundu) fallback listesi.
+        live_triples_for_loose_dedup = [(lg, h, a) for h, a, lg in _live_rows_for_dedup]
 
     # ASAMA 2: HICBIR DB baglantisi ACIK DEGIL - is_known_match guvenle kendi
     # baglantisini acabilir.
@@ -2089,6 +2141,12 @@ def live_sync(request: Request, payload: dict):
             if norm_pair in live_norm_pairs:
                 # Baska bir kaynaktan zaten canli takip edilen ayni mac -
                 # ikinci bir satir acmadan atla (bkz. _normalize_team_name).
+                continue
+            if any(_dedup_gevsek_eslesme(m["league"], m["home"], m["away"], lg, h, a)
+                   for lg, h, a in live_triples_for_loose_dedup):
+                # Tam esleme yakalayamadi ama gevsek (ayni lig + kume-alt-
+                # kume) kural aynen ayni maci gosteriyor - bkz.
+                # _dedup_gevsek_eslesme docstring'i (2026-09-09).
                 continue
             # Iddaa arsiv eslestirmesi (agir - satir basina difflib) BILEREK
             # burada, ASAMA 3'un yazma transaction'i ACILMADAN ONCE yapiliyor

@@ -297,6 +297,20 @@ def run_orchestrator():
     signal_cooldowns = {}
     COOLDOWN_SECONDS = 300 # Aynı maça 5 dakikada bir sinyal at
 
+    # OLCULMUS DUZELTME (2026-09-09): oy_veren esigi dun 5'ten 4'e indirilince
+    # (bkz. consensus_engine.py notu - canli veri kapsami dususu icin) BEKLENMEYEN
+    # bir yan etki ortaya cikti: 4 esigini SADECE "her zaman hazir" 4 bot (base_
+    # rate/odds_profile/prematch_prophet/game_state) - HICBIRI canli istatistik
+    # gerektirmiyor - tek basina karsiliyor. Sonuc: canli loglarda mac dk=1-4
+    # iken (hicbir sut/xG verisi toplanamamisken) "guclu_aday" sinyalleri
+    # goruldu - "CANLI SİNYAL" diye paylasilan ama fiilen mac-oncesi tahminden
+    # farksiz sinyaller (kullanici tarafindan fark edildi, ayni gun). Esigi
+    # tekrar 5'e cikarmak yerine (kullanici tercihi: "minimum dakika siniri
+    # ekle") - oy_veren=4'u koru ama sinyalin kendisini macin ilk birkac
+    # dakikasinda ACMA - Specialist ailesinin canli veri toplamasina biraz
+    # zaman tani.
+    MIN_SIGNAL_MINUTE = 10
+
     # Bakim fonksiyonlarinin kadansi (2026-09-05). ONCEKI DAVRANIS: asagidaki
     # BES bakim fonksiyonunun HEPSI her turda (15sn) calisiyordu; her biri
     # KENDI yazma transaction'ini aciyor. Ayni container'da api (flashscore'un
@@ -347,6 +361,7 @@ def run_orchestrator():
             # GECICI TESHIS (2026-09-09) - hangi filtrede kac mac elendigini
             # olcuyoruz. Bulununca SILINECEK.
             _t_minute_none = _t_minute_zero = _t_window = _t_cooldown = _t_half = _t_evaluated = 0
+            _t_erken = 0  # bkz. MIN_SIGNAL_MINUTE notu
 
             for match in live_matches:
                 match_id = match['id']
@@ -383,6 +398,15 @@ def run_orchestrator():
                 # altında. (36-45 zaten bloktaydı; alt sınır 35 -> 25'e çekildi.)
                 if (25 < minute < 46) or (minute >= 80):
                     _t_window += 1
+                    continue
+
+                # bkz. MIN_SIGNAL_MINUTE notu (2026-09-09): mac cok yeniyken
+                # (canli istatistik hic toplanamamisken) sinyal acilmasin -
+                # ikinci yaridaki taze maclar (minute 46-55) icin de ayni
+                # mantik gecerli, o yuzden "minute % 45" degil dogrudan
+                # "ilk yariya/ikinci yariya YENI giren mac" kontrolu:
+                if minute < MIN_SIGNAL_MINUTE or (46 <= minute < 46 + MIN_SIGNAL_MINUTE):
+                    _t_erken += 1
                     continue
 
                 # Eğer maç cooldown içerisindeyse atla
@@ -620,7 +644,8 @@ def run_orchestrator():
             if tur_sayaci % 5 == 0:
                 print(f"🔎 TESHIS-ELEME tur={tur_sayaci} toplam={len(live_matches)} "
                       f"dk_yok={_t_minute_none} dk_sifir={_t_minute_zero} pencere_disi={_t_window} "
-                      f"cooldown={_t_cooldown} yari_dolu={_t_half} DEGERLENDIRILEN={_t_evaluated}", flush=True)
+                      f"erken={_t_erken} cooldown={_t_cooldown} yari_dolu={_t_half} "
+                      f"DEGERLENDIRILEN={_t_evaluated}", flush=True)
 
             conn.close()
 

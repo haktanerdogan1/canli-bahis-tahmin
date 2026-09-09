@@ -33,6 +33,7 @@ Cin saatiyle (+0800/CST) ifade ediliyor gibi gorunuyor - dogrulama sirasinda
 UTC+8 varsayimiyla hesaplanan dakika Flashscore'la tutarliydi."""
 import re
 import ast
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 FEN_URL = "https://js-live.7mdt.com/datafile/fen.js"
@@ -57,34 +58,57 @@ def _parse_js_array(text, varname):
     return out
 
 
-def _minute_from_difftime(difftime_str, offset_min, lo, hi):
+def _minute_from_difftime(difftime_str, offset_min, lo, hi, _tally=None):
+    # GECICI TESHIS (2026-09-09): orchestrator tarafinda canli maclarin
+    # %91'i "dakika bilinmiyor" diye elendigi olculdu - _tally, bu fonksiyonun
+    # None dondugu her yolu (difftime yok / parse hatasi / negatif fark)
+    # sayar, fetch_matches() tek bir ozet satirinda basar. Bulununca SILINECEK.
     if not difftime_str:
+        if _tally is not None:
+            _tally["no_difftime"] += 1
         return None
     try:
         y, mo, d, h, mi, se = (int(x) for x in difftime_str.split(","))
         period_start = datetime(y, mo, d, h, mi, se)
     except Exception:
+        if _tally is not None:
+            _tally["parse_error"] += 1
         return None
     now_cst = datetime.utcnow() + timedelta(hours=8)
     elapsed_min = (now_cst - period_start).total_seconds() / 60
     if elapsed_min < 0:
+        if _tally is not None:
+            _tally["negative_elapsed"] += 1
+            _tally.setdefault("negative_elapsed_sample", []).append(round(elapsed_min, 1))
         return None
+    if _tally is not None:
+        _tally["ok"] += 1
     return max(lo, min(hi, int(elapsed_min) + offset_min))
 
 
-def _stage_text(isstart, difftime):
+def _stage_text(isstart, difftime, _tally=None):
     if isstart == 1:
-        m = _minute_from_difftime(difftime, 0, 1, 45)
+        m = _minute_from_difftime(difftime, 0, 1, 45, _tally)
         return str(m) if m is not None else ""
     if isstart == 2:
+        if _tally is not None:
+            _tally["half_time"] += 1
         return "Half Time"
     if isstart == 3:
-        m = _minute_from_difftime(difftime, 45, 46, 90)
+        m = _minute_from_difftime(difftime, 45, 46, 90, _tally)
         return str(m) if m is not None else ""
     if isstart == 8:
+        if _tally is not None:
+            _tally["extra_time"] += 1
         return "Extra Time"
     if isstart in _FINISHED_CODES:
+        if _tally is not None:
+            _tally["finished"] += 1
         return "Finished"
+    if _tally is not None:
+        _tally["unknown_isstart"] += 1
+        _tally.setdefault("unknown_isstart_codes", {})
+        _tally["unknown_isstart_codes"][isstart] = _tally["unknown_isstart_codes"].get(isstart, 0) + 1
     return f"7m_unknown_isstart_{isstart}"
 
 
@@ -107,13 +131,19 @@ def fetch_matches(session):
     sdt = _parse_js_array(fen_text, "sDt")
     sdt2 = _parse_js_array(csxl_text, "sDt2")
 
+    # GECICI TESHIS (2026-09-09) - bkz. _minute_from_difftime/_stage_text.
+    _tally = defaultdict(int)
+
     out = []
+    skipped_no_v1 = skipped_no_names = 0
     for mid, v2 in sdt2.items():
         v1 = sdt.get(mid)
         if not v1 or len(v1) < 4 or len(v2) < 7:
+            skipped_no_v1 += 1
             continue
         home, away, league = v1[2], v1[3], v1[0]
         if not home or not away:
+            skipped_no_names += 1
             continue
         isstart = v2[0]
         bc = v2[6]
@@ -124,6 +154,16 @@ def fetch_matches(session):
             "league": league or "Unknown League",
             "home_logo": "", "away_logo": "",
             "score_h": score_h, "score_a": score_a,
-            "stage": _stage_text(isstart, difftime),
+            "stage": _stage_text(isstart, difftime, _tally),
         })
+
+    print(f"[sevenm_bot] 🔎 TESHIS-STAGE sdt2={len(sdt2)} sdt={len(sdt)} "
+          f"eslesen={len(out)} atlanan_v1={skipped_no_v1} atlanan_isim={skipped_no_names} "
+          f"| ok={_tally['ok']} half_time={_tally['half_time']} extra_time={_tally['extra_time']} "
+          f"finished={_tally['finished']} no_difftime={_tally['no_difftime']} "
+          f"parse_error={_tally['parse_error']} negative_elapsed={_tally['negative_elapsed']} "
+          f"unknown_isstart={_tally['unknown_isstart']} "
+          f"unknown_codes={dict(_tally.get('unknown_isstart_codes', {}))} "
+          f"neg_sample={_tally.get('negative_elapsed_sample', [])[:5]}", flush=True)
+
     return out

@@ -1166,6 +1166,65 @@ def telegram_poster_next_pending(request: Request):
     }
 
 
+@app.post("/api/admin/telegram-poster/claim-pending")
+def telegram_poster_claim_pending(request: Request, id: int):
+    """DUZELTME (2026-09-09): ayni gun canli bir mukerrer-Telegram-mesaji
+    olayindan sonra eklendi. Onceki akis "once Telegram'a gonder, SONRA
+    DB'ye 'gonderildi' yaz" seklindeydi - mark-announced yazma istegi
+    (kronik SQLITE_BUSY yuzunden) basarisiz olup process TAM O SIRADA
+    yeniden baslarsa (bkz. telegram_poster.py _ANNOUNCED_LOCALLY - sadece
+    process-ici hafiza, restart'ta sifirlanir), bir sonraki next-pending
+    AYNI sinyali "hala gonderilmemis" sanip TEKRAR dondurur - sonuc:
+    Telegram'a ayni mesaj IKINCI kez gider (canli olculdu: "NK Roltek Dob
+    - Slovan Ljubljana" iki kez, msg 930 ve 932).
+
+    Yeni akis: ONCE bu ucla DB'de "ben bu sinyali isliyorum" diye ISARETLE
+    (claim - announce_message_id NULL), SONRA Telegram'a gonder, SONRA
+    mark-announced ile gercek message_id'yi yaz. Claim basarisiz olursa
+    (PRIMARY KEY cakismasi - baskasi zaten claim etmis/gondermis) hic
+    gonderme. Bu, restart-sonrasi guvenligi DB'ye tasir (process hafizasina
+    degil) - next-pending zaten "telegram_posted_signals'te olan HER SEY"i
+    (NULL message_id dahil) dislar, bkz. o sorgunun WHERE kosulu."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _telegram_poster_ensure_schema()
+    try:
+        with measured_write("telegram_poster.claim_pending") as conn:
+            conn.execute(
+                "INSERT INTO telegram_posted_signals (prediction_id, announced_at) "
+                "VALUES (?, CURRENT_TIMESTAMP)",
+                (id,),
+            )
+        return {"success": True, "claimed": True}
+    except sqlite3.IntegrityError:
+        # Beklenen durum: baska bir dongu/onceki bir deneme zaten claim
+        # etmis (belki de zaten gonderilmis) - hata DEGIL, sadece "bu
+        # turda gonderme" sinyali.
+        return {"success": True, "claimed": False, "reason": "already_claimed"}
+
+
+@app.post("/api/admin/telegram-poster/unclaim")
+def telegram_poster_unclaim(request: Request, id: int):
+    """claim-pending'in eslesi: Telegram'a gonderim FIILEN basarisiz
+    olduysa (ag hatasi vb, mesaj GERCEKTEN gitmedi) claim'i geri al ki
+    sinyal sonsuza kadar 'claimed ama hic gonderilmedi' durumunda takili
+    kalmasin - bir sonraki next-pending tekrar donsun. SADECE henuz
+    gercek bir mesaj id'si yazilmamis (hala NULL) claim'leri siler -
+    zaten basariyla gonderilmis bir kaydi asla silmez."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _telegram_poster_ensure_schema()
+    with measured_write("telegram_poster.unclaim") as conn:
+        conn.execute(
+            "DELETE FROM telegram_posted_signals "
+            "WHERE prediction_id = ? AND (announce_message_id IS NULL OR announce_message_id = '')",
+            (id,),
+        )
+    return {"success": True}
+
+
 @app.post("/api/admin/telegram-poster/mark-announced")
 def telegram_poster_mark_announced(request: Request, id: int, message_id: str):
     from fastapi.responses import JSONResponse
@@ -1176,10 +1235,19 @@ def telegram_poster_mark_announced(request: Request, id: int, message_id: str):
     # olculmemisti - olay anindaki traceback tam BURADAN geliyordu ama
     # kilidi TUTAN yazici bu olmak zorunda degil (Astra'nin uyarisi). Artik
     # olculuyor ki bir sonraki olayda tahmin degil, veriyle konusabilelim.
+    #
+    # DUZELTME (2026-09-09): INSERT OR IGNORE -> upsert. claim-pending
+    # artik satiri ONCEDEN (message_id=NULL ile) olusturuyor - bu cagri
+    # artik cogunlukla bir UPDATE. Eski "INSERT OR IGNORE" davranisi bir
+    # claim varken message_id'yi HICBIR ZAMAN yazmazdi (satir zaten
+    # vardi, IGNORE devreye girerdi) - upsert bu sorunu da onlemis olur,
+    # ayrica claim'siz (eski istemci/gecis donemi) durumla da uyumlu kalir.
     with measured_write("telegram_poster.mark_announced") as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO telegram_posted_signals (prediction_id, announce_message_id, announced_at) "
-            "VALUES (?, ?, CURRENT_TIMESTAMP)",
+            "INSERT INTO telegram_posted_signals (prediction_id, announce_message_id, announced_at) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(prediction_id) DO UPDATE SET "
+            "announce_message_id = excluded.announce_message_id, announced_at = excluded.announced_at",
             (id, message_id),
         )
     return {"success": True}

@@ -108,6 +108,50 @@ def _mark_with_retry(url, admin_secret, params, tries=4, pause=3):
     return False
 
 
+def _claim_pending(api_base, admin_secret, pred_id):
+    """DUZELTME (2026-09-09): canli bir mukerrer-mesaj olayindan sonra
+    eklendi ("NK Roltek Dob - Slovan Ljubljana" Telegram'a IKI KEZ gitti -
+    mark-announced yazmasi SQLITE_BUSY yuzunden basarisiz oldu, TAM O
+    SIRADA process yeniden basladi, _ANNOUNCED_LOCALLY sifirlandi, bir
+    sonraki next-pending ayni sinyali "hala gonderilmemis" sanip TEKRAR
+    dondurdu). Artik Telegram'a gondermeden ONCE DB'de "bu sinyali
+    isliyorum" diye ISARETLENIYOR (bkz. api.py claim-pending) - restart
+    olsa bile bu kayit DB'de kalicidir, process hafizasina bagli degildir.
+    Donus: True=claim BENIM, gonderebilirim. False=ya baskasi zaten
+    claim etmis ya da istek basarisiz oldu - HER IKI durumda da GUVENLI
+    VARSAYILAN "bu turda gonderme"dir (yanlislikla ikinci mesaj atmaktan
+    cok daha az kotu bir sonuc)."""
+    try:
+        r = requests.post(
+            f"{api_base}/api/admin/telegram-poster/claim-pending",
+            headers={"x-admin-secret": admin_secret},
+            params={"id": pred_id}, timeout=15,
+        )
+        r.raise_for_status()
+        return bool(r.json().get("claimed"))
+    except Exception as e:
+        print(f"⚠️  Claim isteği başarısız (id={pred_id}): {e}", flush=True)
+        return False
+
+
+def _unclaim_best_effort(api_base, admin_secret, pred_id):
+    """claim_pending'in eslesi: Telegram'a gonderim FIILEN basarisiz
+    olduysa (mesaj GERCEKTEN gitmedi) claim'i geri al - aksi halde sinyal
+    sonsuza kadar 'claimed ama hic gonderilmedi' durumunda takili kalir.
+    Best-effort: bu da basarisiz olursa elle mudahale gerekebilir ama
+    Telegram'a IKINCI mesaj gitme riski hicbir zaman yoktur (bilincli
+    tercih, bkz. _claim_pending docstring'i)."""
+    try:
+        requests.post(
+            f"{api_base}/api/admin/telegram-poster/unclaim",
+            headers={"x-admin-secret": admin_secret},
+            params={"id": pred_id}, timeout=15,
+        ).raise_for_status()
+    except Exception as e:
+        print(f"⚠️  Unclaim isteği başarısız (id={pred_id}) - sinyal "
+              f"claimed-ama-gönderilmedi durumunda kalmış olabilir: {e}", flush=True)
+
+
 def _handle_pending(api_base, admin_secret, bot_token, chat_id):
     r = requests.get(
         f"{api_base}/api/admin/telegram-poster/next-pending",
@@ -122,7 +166,9 @@ def _handle_pending(api_base, admin_secret, bot_token, chat_id):
     if pred_id in _ANNOUNCED_LOCALLY:
         # Mesaj bu process icinde ZATEN gonderildi, sadece DB kaydi eksik
         # kalmis (onceki denemede basarisiz oldu) - TEKRAR GONDERMEDEN
-        # sadece isaretlemeyi yeniden dene.
+        # sadece isaretlemeyi yeniden dene. (Bu sinyal daha once claim
+        # edilmisti - claim kaydi DB'de zaten var, tekrar claim etmeye
+        # gerek yok.)
         message_id = _ANNOUNCED_LOCALLY[pred_id]
         print(f"ℹ️  {pred_id} bu oturumda zaten gönderilmişti, sadece DB kaydı yeniden deneniyor...", flush=True)
         _mark_with_retry(
@@ -131,7 +177,20 @@ def _handle_pending(api_base, admin_secret, bot_token, chat_id):
         )
         return False
 
-    message_id = _send_message(bot_token, chat_id, _format_announce(data))
+    if not _claim_pending(api_base, admin_secret, pred_id):
+        # Baskasi zaten claim etmis (ya da claim istegi basarisiz oldu) -
+        # bkz. _claim_pending docstring'i. Gonderme, bir sonraki pollde
+        # tekrar denenir (claim gercekten DB'ye hic yazilmadiysa).
+        return False
+
+    try:
+        message_id = _send_message(bot_token, chat_id, _format_announce(data))
+    except Exception:
+        # Gonderim FIILEN basarisiz oldu - claim'i geri al ki sinyal
+        # sonsuza kadar takili kalmasin, bir sonraki pollde tekrar denensin.
+        _unclaim_best_effort(api_base, admin_secret, pred_id)
+        raise
+
     print(f"📢 Anons edildi: {data['home']} - {data['away']} (msg {message_id})", flush=True)
     _ANNOUNCED_LOCALLY[pred_id] = message_id
 

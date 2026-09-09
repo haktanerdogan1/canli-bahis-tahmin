@@ -160,7 +160,19 @@ class ConsensusEngine:
         # veri kalitesini sinyal miktarina tercih etti. (Ayrica bkz.
         # orchestrator.py MIN_SIGNAL_MINUTE=10 - ayni sorunun ikinci,
         # bagimsiz bir onlemi.)
-        if oy_veren < 5:
+        #
+        # TEKRAR 4'E INDIRILDI (2026-09-09, ayni gun, birkac saat sonra):
+        # 5 esigi ile canli TESHIS loglarinda saatlerce NEREDEYSE HICBIR
+        # mac "izleme"/"guclu_aday" seviyesine ulasamadi (v4_api_bot'un
+        # istatistik kapsami MAX_STATS_PER_CYCLE=7 ile hala dar) - sinyal
+        # sayisi neredeyse sifira dustu. Esigi 5'e cikarmanin GERCEK
+        # amaci (yukaridaki not) "4 hazir bot TEK BASINA sinyal actirmasin"
+        # idi - o spesifik sorun artik BAGIMSIZ olarak MIN_SIGNAL_MINUTE=10
+        # tarafindan cozuluyor (mac baslar baslamaz sinyal acilamiyor,
+        # dk>=10 sart). Ayni korumayi iki kez (esik + dakika kapisi)
+        # uygulamak gereksiz sikilik - dakika kapisi tek basina yeterli,
+        # esik tekrar 4'e cekildi.
+        if oy_veren < 4:
             signal_level = "eksik_veri"
         elif mutabakat >= 0.50 and final_prob >= 0.63:
             signal_level = "guclu_aday"

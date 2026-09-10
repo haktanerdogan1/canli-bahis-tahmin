@@ -148,8 +148,6 @@ def _kesif_ozeti_yaz():
 
 # Hafıza havuzu
 V4_HISTORY = {}
-_STATS_SHAPE_LOGGED = False  # gecici teshis (bkz. fetch_stats)
-_DATE_ENDPOINT_PROBED = False  # gecici teshis (bkz. process_api_matches)
 
 # ─────────────────────────────────────────────────────────────────────────
 # KOTA BUTCESI (2026-09-10, kullanici karari: "%60'ini kullanabiliriz,
@@ -252,16 +250,7 @@ async def fetch_stats(session, match_id):
             if resp.status == 200:
                 data = await resp.json()
                 if data.get("status") == "success":
-                    resp_obj = data.get("response", {}) or {}
-                    # GECICI TESHIS (2026-09-10): stats ucu skor/durum tasiyor mu?
-                    # (donmus maclarin gercek sonucunu buradan cekebilir miyiz.)
-                    global _STATS_SHAPE_LOGGED
-                    if not _STATS_SHAPE_LOGGED and isinstance(resp_obj, dict):
-                        _STATS_SHAPE_LOGGED = True
-                        _dump = {k: (type(v).__name__ if not isinstance(v, (str, int, float, bool))
-                                     else v) for k, v in resp_obj.items()}
-                        print(f"🩺 STATS-HAM eventid={match_id} response_keys={_dump}", flush=True)
-                    return resp_obj.get("stats", [])
+                    return (data.get("response", {}) or {}).get("stats", [])
     except Exception as e:
         print(f"Stats fetch error for {match_id}: {e}")
     return None
@@ -498,6 +487,156 @@ def _close_stale_progress(cursor):
     return stale_ids
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# GEC SONUC KURTARMA (2026-09-10, kullanici hedefi: "paylastigimizi
+# gorenler neden sildiniz diye soruyor")
+# ─────────────────────────────────────────────────────────────────────────
+# RapidAPI canli feed'i bir maci ortada dondurup/dusurunce, o maca atilmis
+# YAYINLANMIS sinyal VOID'e dusuyordu - ama gercek mac oynanip bitiyor.
+# football-get-matches-by-date, bir tarihteki TUM maclari FINAL skoruyla
+# donuyor (yari skoru YOK - stats/detail uclarinda da yok, olculdu). Bu
+# fonksiyon: takip edemedigimiz ama sinyali olan maclarin gercek final
+# skorunu buradan cekip 'matches'e yaziyor; settle_pending / reconcile_
+# void_signals (orchestrator) sonra WON/LOST'a ceviriyor.
+#
+# YARI SKORU OLMADIGI ICIN ilk-yari marketlerinde SADECE kesin olan
+# durumlar finalize edilir:
+#   - final toplam == sinyal anindaki gol  -> tum macta gol yok -> LOST kesin
+#   - elimizdeki <=45. dk snapshot'i zaten hedef golu gosteriyor -> WON kesin
+#   - ikisi de degilse (golu ilk yaride mi 2. yaride mi bilemiyoruz) DOKUNMA,
+#     "SONUC DOGRULANAMADI" olarak kalir (uydurma yok).
+_GEC_SONUC_MIN_YAS_DK = 140  # sinyalden bu kadar sonra mac kesin bitmistir
+
+
+async def _bydate_skorlar(session, yyyymmdd):
+    """{fotmob_id(str): {'finished':bool,'h':int,'a':int}} - o tarihin maclari."""
+    try:
+        async with session.get(f"https://{HOST}/football-get-matches-by-date",
+                               params={"date": yyyymmdd}, headers=HEADERS,
+                               timeout=15) as r:
+            if r.status != 200:
+                return {}
+            d = await r.json()
+    except Exception as e:
+        print(f"⚠️  by-date ({yyyymmdd}) cekilemedi: {e}", flush=True)
+        return {}
+    out = {}
+    for m in ((d.get("response") or {}).get("matches") or []):
+        mid = m.get("id")
+        if mid is None:
+            continue
+        st = m.get("status") or {}
+        h = (m.get("home") or {}).get("score")
+        a = (m.get("away") or {}).get("score")
+        out[str(mid)] = {
+            "finished": bool(st.get("finished")),
+            "h": h if isinstance(h, int) else None,
+            "a": a if isinstance(a, int) else None,
+        }
+    return out
+
+
+async def fetch_missing_results(session):
+    """Feed'den dusmus/donmus, uzerinde acik VEYA VOID sinyal olan maclarin
+    gercek final skorunu football-get-matches-by-date'den cekip 'matches'e
+    yazar. Bkz. yukaridaki blok yorumu."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT m.id, m.source_match_id, m.kickoff_time, m.created_at,
+               SUM(CASE WHEN p.signal_minute IS NOT NULL AND p.signal_minute <= 45
+                        THEN 1 ELSE 0 END) AS iy_market_sayisi,
+               MAX(CASE WHEN p.signal_minute IS NOT NULL AND p.signal_minute <= 45
+                        THEN p.initial_goals END) AS iy_max_referans
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        WHERE p.decision = 'signal'
+          AND (p.outcome IS NULL OR p.outcome = 'VOID')
+          AND m.source_match_id LIKE 'v4\\_%' ESCAPE '\\'
+          AND m.status NOT IN ('FINISHED','Ended','FT','Canceled')
+          AND m.created_at > datetime('now', '-3 days')
+          AND m.created_at < datetime('now', '-{_GEC_SONUC_MIN_YAS_DK} minutes')
+        GROUP BY m.id
+    """)
+    rows = cur.fetchall()
+    if not rows:
+        conn.close()
+        return
+
+    # her mac icin <=45. dk elimizdeki en son snapshot toplami (ilk-yari kaniti)
+    fh_gozlem = {}
+    for_ids = [r[0] for r in rows]
+    ph = ",".join("?" for _ in for_ids)
+    cur.execute(f"""
+        SELECT s.match_id, s.home_score, s.away_score FROM live_snapshots s
+        JOIN (SELECT match_id, MAX(id) mx FROM live_snapshots
+              WHERE match_id IN ({ph}) AND minute <= 45 GROUP BY match_id) t
+          ON t.match_id = s.match_id AND t.mx = s.id
+    """, for_ids)
+    for mid_db, hs, as_ in cur.fetchall():
+        if hs is not None and as_ is not None:
+            fh_gozlem[mid_db] = hs + as_
+    conn.close()
+
+    # tarihe gore grupla (created_at UTC); onceki VE sonraki gunu de dene
+    # (endpoint'in tarih penceresi/TZ'si belirsiz).
+    gerekli_tarihler = set()
+    for r in rows:
+        ham = (r[2] or r[3] or "")[:10].replace("-", "")
+        if len(ham) != 8:
+            continue
+        try:
+            _t = time.mktime(time.strptime(ham, "%Y%m%d"))
+        except ValueError:
+            continue
+        for _off in (-86400, 0, 86400):
+            gerekli_tarihler.add(time.strftime("%Y%m%d", time.localtime(_t + _off)))
+
+    skor_tablosu = {}
+    for t in gerekli_tarihler:
+        skor_tablosu.update(await _bydate_skorlar(session, t))
+
+    duzeltmeler = []  # (match_id_db, home, away)
+    for (mid_db, src, kt, ca, iy_sayisi, iy_max_ref) in rows:
+        rid = src[3:] if src.startswith("v4_") else src
+        info = skor_tablosu.get(rid)
+        if not info or not info["finished"] or info["h"] is None or info["a"] is None:
+            continue
+        ft_total = info["h"] + info["a"]
+
+        if not iy_sayisi:
+            # Sadece mac-sonu marketleri var: final skor tek basina yeter.
+            duzeltmeler.append((mid_db, info["h"], info["a"]))
+            continue
+
+        # En az bir ILK-YARI marketi var, yari skoru YOK. Sadece bu macin
+        # TUM ilk-yari sinyalleri icin sonucun KESIN oldugu durumlarda yaz:
+        #   - ft_total == 0  -> macta hic gol yok -> hepsi LOST (kesin)
+        #   - elimizdeki <=45. dk snapshot'i referansi zaten asmis -> hepsi WON
+        # Aksi halde (gol ilk yaride mi 2. yaride mi bilinmiyor) DOKUNMA.
+        if ft_total == 0:
+            duzeltmeler.append((mid_db, info["h"], info["a"]))
+        elif (iy_max_ref is not None
+              and fh_gozlem.get(mid_db) is not None
+              and fh_gozlem[mid_db] > iy_max_ref):
+            duzeltmeler.append((mid_db, info["h"], info["a"]))
+
+    if not duzeltmeler:
+        return
+
+    with measured_write("v4_api_bot.gec_sonuc", batch_size=len(duzeltmeler)) as wconn:
+        wc = wconn.cursor()
+        for mid_db, h, a in duzeltmeler:
+            wc.execute("""
+                UPDATE matches
+                SET home_score = ?, away_score = ?, minute = 90, status = 'FINISHED'
+                WHERE id = ? AND status NOT IN ('FINISHED','Ended','FT','Canceled')
+            """, (h, a, mid_db))
+    print(f"🔧 Gec sonuc kurtarma: {len(duzeltmeler)} donmus/dusmus macin gercek "
+          f"final skoru cekildi (matches-by-date) - settlement WON/LOST'a cevirecek.",
+          flush=True)
+
+
 async def process_api_matches(session):
     """Doner: HTTP durum kodu (basarili=200), yoksa None (ag hatasi)."""
     url_live = f"https://{HOST}/football-current-live"
@@ -512,8 +651,7 @@ async def process_api_matches(session):
         print(f"Error fetching live matches: {e}")
         return None
 
-    _resp_raw = data.get("response", {})
-    matches = _resp_raw
+    matches = data.get("response", {})
     if isinstance(matches, dict) and "live" in matches:
         matches = matches["live"]
     elif isinstance(matches, dict) and "matches" in matches:
@@ -521,71 +659,6 @@ async def process_api_matches(session):
 
     if not matches:
         matches = []
-
-    # GECICI TESHIS (2026-09-10): donmus/dusmus maclarin GERCEK final skorunu
-    # cekebilecegimiz bir "tarihe gore maclar" ucu var mi? Aday isimleri
-    # denenir, calisan + sekli loglanir. Bir kez.
-    global _DATE_ENDPOINT_PROBED
-    if not _DATE_ENDPOINT_PROBED:
-        _DATE_ENDPOINT_PROBED = True
-        _bugun = time.strftime("%Y%m%d")
-        try:
-            async with session.get(f"https://{HOST}/football-get-matches-by-date",
-                                   params={"date": _bugun}, headers=HEADERS,
-                                   timeout=12) as _r:
-                _d = await _r.json()
-                _ms = ((_d.get("response") or {}).get("matches")) or []
-                print(f"🩺 DATE-PROBE by-date -> {_r.status} toplam={len(_ms)}", flush=True)
-                # bitmis bir mac ornegi bul (skoru olan)
-                _fin = next((x for x in _ms if str(x.get("status", {})).strip()
-                             not in ("", "{}")), _ms[0] if _ms else None)
-                if _fin is not None:
-                    import json as _json
-                    print(f"🩺 DATE-PROBE ornek mac: "
-                          f"{_json.dumps(_fin, ensure_ascii=False)[:700]}", flush=True)
-        except Exception as _e:
-            print(f"🩺 DATE-PROBE HATA: {_e}", flush=True)
-        try:
-            async with session.get(f"https://{HOST}/football-get-match-detail",
-                                   params={"eventid": "6106246"},
-                                   headers=HEADERS, timeout=10) as _r2:
-                _dd = await _r2.json()
-                _resp2 = _dd.get("response") or {}
-                _det = _resp2.get("detail") if isinstance(_resp2, dict) else None
-                import json as _json
-                print(f"🩺 DETAIL-PROBE resp_keys={list(_resp2.keys()) if isinstance(_resp2, dict) else type(_resp2).__name__}",
-                      flush=True)
-                _dump2 = _json.dumps(_resp2, ensure_ascii=False)
-                # skor/gol/dakika iceren kisimlari ara
-                for _needle in ('"minute"', '"goal"', '"htScore"', '"halftime"',
-                                '"firstHalf"', '"score"', '"events"'):
-                    _i = _dump2.find(_needle)
-                    if _i >= 0:
-                        print(f"🩺 DETAIL-PROBE {_needle} @ {_i}: ...{_dump2[max(0,_i-40):_i+220]}...",
-                              flush=True)
-        except Exception as _e:
-            print(f"🩺 DETAIL-PROBE HATA: {_e}", flush=True)
-
-    # GECICI TESHIS (2026-09-10): kullanici "eskiden bu API gunde 150+ mac
-    # donuyordu, simdi 7" diyor - kod Agustos'tan beri ayni. API'nin HAM
-    # yanitini gormeden teshis edemiyoruz. Her turda ham yapiyi bas.
-    try:
-        _ust = (list(data.keys()) if isinstance(data, dict) else type(data).__name__)
-        _resp_tip = (f"dict:{list(_resp_raw.keys())}" if isinstance(_resp_raw, dict)
-                     else f"list:{len(_resp_raw)}" if isinstance(_resp_raw, list)
-                     else type(_resp_raw).__name__)
-        _ornek = ""
-        if isinstance(matches, list) and matches and isinstance(matches[0], dict):
-            _m0 = matches[0]
-            _st = _m0.get("status", {}) or {}
-            _ornek = (f" ornek: id={_m0.get('id')} lig={_m0.get('leagueId')} "
-                      f"status_keys={list(_st.keys())} "
-                      f"halfs={_st.get('halfs')} liveTime={_st.get('liveTime')}")
-        print(f"🩺 API-HAM: data_keys={_ust} response={_resp_tip} "
-              f"cikarilan_mac={len(matches) if hasattr(matches, '__len__') else '?'}"
-              f"{_ornek}", flush=True)
-    except Exception as _e:
-        print(f"🩺 API-HAM teshis hatasi: {_e}", flush=True)
 
     # HAM feed'de gorunen TUM mac id'leri - onay/guven durumundan BAGIMSIZ.
     # Asagidaki plausibilite filtresi bir maci "henuz onaylanmadi" diye bir
@@ -1059,10 +1132,21 @@ async def main():
     _ensure_match_tracking_schema()
     _ensure_team_profiles()
     consecutive_429s = 0
+    dongu = 0
     async with aiohttp.ClientSession() as session:
         while True:
             start_time = time.time()
+            dongu += 1
             print("📡 Fetching RapidAPI Live matches...", flush=True)
+
+            # Gec sonuc kurtarma: ~10 dakikada bir (feed'den dusen/donan ama
+            # sinyali olan maclarin gercek final skorunu cek). Ana akisi
+            # bloklamasin diye AYRI try/except.
+            if dongu % 10 == 2:
+                try:
+                    await fetch_missing_results(session)
+                except Exception as e:
+                    print(f"⚠️  Gec sonuc kurtarma hatasi (atlaniyor): {e}", flush=True)
             # DUZELTME (2026-09-09): process_api_matches() icinde BIRDEN FAZLA
             # ciplak connect()/execute() var (bu dosya bugunku DB-kilit
             # sertlestirmelerinden ONCE yazildi, kota tukenip devre disi

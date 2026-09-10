@@ -992,10 +992,13 @@ def admin_manual_settle_signal(request: Request, match_id: int, outcome: str):
     yere 'bekleyen' kalabilir. Kullanicinin gercek dunyada dogruladigi
     bir sonucu HEMEN yazabilmesi icin.
 
-    CLAUDE.md kural 4 KORUNUYOR: SADECE outcome IS NULL olan (henuz hic
-    sonuclanmamis) satirlar guncellenir - zaten WON/LOST/VOID yazilmis
-    bir kayit bu ucla ASLA degistirilemez, WHERE kosulu bunu yapisal
-    olarak engelliyor."""
+    CLAUDE.md kural 4 KORUNUYOR: guncellenebilen tek durum outcome IS NULL
+    (henuz hic sonuclanmamis) VEYA outcome='VOID' (kaynak maci canli takip
+    edemedigi icin belirsiz kalmis - reconcile_void_signals ile ayni
+    kategori). Zaten WON/LOST yazilmis bir kayit bu ucla ASLA degistirilemez,
+    WHERE kosulu bunu yapisal olarak engelliyor. VOID -> WON/LOST, kullanicinin
+    gercek dunyada dogruladigi bir sonucu paylasilmis ama "SONUC DOGRULANAMADI"
+    kalmis bir sinyale yazabilmesi icin (2026-09-10, takipci sorulari)."""
     from fastapi.responses import JSONResponse
     if not _check_admin(request):
         return JSONResponse({"error": "yetkisiz"}, status_code=403)
@@ -1005,7 +1008,7 @@ def admin_manual_settle_signal(request: Request, match_id: int, outcome: str):
         cur = conn.cursor()
         cur.execute(
             "UPDATE consensus_predictions SET outcome=?, settled_at=CURRENT_TIMESTAMP "
-            "WHERE match_id=? AND decision='signal' AND outcome IS NULL",
+            "WHERE match_id=? AND decision='signal' AND (outcome IS NULL OR outcome='VOID')",
             (outcome, match_id),
         )
         updated = cur.rowcount

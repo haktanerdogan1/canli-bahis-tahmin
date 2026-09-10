@@ -529,19 +529,32 @@ async def process_api_matches(session):
     if not _DATE_ENDPOINT_PROBED:
         _DATE_ENDPOINT_PROBED = True
         _bugun = time.strftime("%Y%m%d")
-        for _cand in ("football-get-matches-by-date", "football-get-all-matches-by-date",
-                      "football-matches-by-date", "football-get-list-detail-matches-by-date",
-                      "football-league-matches", "football-get-matches"):
+        try:
+            async with session.get(f"https://{HOST}/football-get-matches-by-date",
+                                   params={"date": _bugun}, headers=HEADERS,
+                                   timeout=12) as _r:
+                _d = await _r.json()
+                _ms = ((_d.get("response") or {}).get("matches")) or []
+                print(f"🩺 DATE-PROBE by-date -> {_r.status} toplam={len(_ms)}", flush=True)
+                # bitmis bir mac ornegi bul (skoru olan)
+                _fin = next((x for x in _ms if str(x.get("status", {})).strip()
+                             not in ("", "{}")), _ms[0] if _ms else None)
+                if _fin is not None:
+                    import json as _json
+                    print(f"🩺 DATE-PROBE ornek mac: "
+                          f"{_json.dumps(_fin, ensure_ascii=False)[:700]}", flush=True)
+        except Exception as _e:
+            print(f"🩺 DATE-PROBE HATA: {_e}", flush=True)
+        for _cand in ("football-get-match-detail", "football-match-detail",
+                      "football-get-match-by-id"):
             try:
                 async with session.get(f"https://{HOST}/{_cand}",
-                                       params={"date": _bugun}, headers=HEADERS,
-                                       timeout=10) as _r:
-                    _body = await _r.text()
-                    _snip = _body[:220].replace("\n", " ")
-                    print(f"🩺 DATE-PROBE /{_cand}?date={_bugun} -> {_r.status} {_snip}",
-                          flush=True)
+                                       params={"eventid": "6106246", "matchid": "6106246"},
+                                       headers=HEADERS, timeout=10) as _r2:
+                    _b2 = (await _r2.text())[:300].replace("\n", " ")
+                    print(f"🩺 DETAIL-PROBE /{_cand} -> {_r2.status} {_b2}", flush=True)
             except Exception as _e:
-                print(f"🩺 DATE-PROBE /{_cand} HATA: {_e}", flush=True)
+                print(f"🩺 DETAIL-PROBE /{_cand} HATA: {_e}", flush=True)
 
     # GECICI TESHIS (2026-09-10): kullanici "eskiden bu API gunde 150+ mac
     # donuyordu, simdi 7" diyor - kod Agustos'tan beri ayni. API'nin HAM

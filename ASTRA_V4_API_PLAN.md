@@ -195,3 +195,59 @@ düzeltmesinden sonra gerçekten çalışıyor.
 
 Bu gece için değişiklik burada durduruldu (yeterli, doğrulanmış
 ilerleme + kullanıcı uyurken ek risk almamak için).
+
+## P0 TAMAMLANDI (2026-09-10, commit 84f0160) + Astra PDF değerlendirmesi
+
+Astra'nın tam kod incelemesi (Matchrix_Degerlendirme PDF): önceki P0
+fix'i (c116220) EKSİKTİ - sadece `_no_stats() -> None` yolunu düzeltmişti.
+`_parse_stats([])` (boş API yanıtı, ayrı yol) hâlâ sıfır üretiyordu;
+`[12, None]` → ikisi de 0 + 12 kayboluyor; `"12 (44%)"` → 0; `"NaN"` →
+kabul ediliyordu.
+
+**84f0160:** `_parse_stats` yeniden yazıldı. Tüm alanlar `None` başlar,
+her taraf `_stat_one_side()` ile BAĞIMSIZ ayrıştırılır (int/float/"12"/
+"12 (44%)" kabul; None/""/"-"/"NaN"/Inf/negatif/"12abc"/bool → None).
+`None` ve `[]` ikisi de → hepsi None. Astra'nın tüm test vakaları geçiyor
+(ağ/DB olmadan inline test edildi). Downstream zaten doğru (`features.py:_g`
+NULL → None, `_toplam` bir taraf None ise None).
+
+**Deploy doğrulaması (09:39 → 09:53, 14dk):** crash yok, Traceback yok
+(NameError riski için `import re` eklendi - temiz), her v4 turu ~0.6sn.
+`SQLITE_BUSY` sıfır (iddaa fix hâlâ tutuyor, yeni deploy'un restart'ı
+bile fırtına yaratmadı). Sinyal etkisi ÖLÇÜLEMEDI - öğlen olduğu için
+canlı feed BOŞ (0 maç). Akşam maçları başlayınca ölçülecek.
+
+## Astra'nın önerdiği SIRA (PDF'ten)
+
+1. ✅ Parser'daki kalan sahte sıfırlar (84f0160)
+2. **Teşhis + istatistik seçim ölçümü + canlı-veri şartının GÖLGE
+   değerlendirmesi.** Tam akış görünmeli: feed → uygun maç → istatistik
+   için seçilen → geçerli/taze istatistik → değerlendirilen → güçlü aday
+   → DB'ye kaydedilen → Telegram'a gönderilen. Her turda: seviye
+   dağılımı + "none" nedeni (düşük mutabakat / düşük olasılık / ikisi) +
+   her dakika dönüşümlü 5 örnek maç (SIFIR oylu dahil) — bot adı, karar,
+   olasılık, veri kalitesi, eksik alanlar, kaynak, veri yaşı. 15sn'de
+   bütün maçları basmak YÜK.
+3. Gerçek canlı-veri şartını etkinleştir + seçim açlığını düzelt.
+   ŞART: bot SINIF ADINA bağlama (GameStateBot de Specialist!). Açık
+   şart: "pozitif etkin ağırlıklı + çekilmemiş + ihtiyacı olan gerçek/
+   geçerli/yeterince-güncel canlı istatistikle çalışan en az 1 bot."
+   Momentum botunda iki ölçümün zaman aralığı da doğrulanmalı.
+   Başlangıçta 24 saat GÖLGE ölçüm - hangi mevcut sinyaller elenirdi.
+   Sayısal eşikleri bu sırada DEĞİŞTİRME.
+4. Deploy açılışı + ertelenebilir bakım kilitleri. Şema kurulumu bir
+   kez; geçerli referans sürümü varsa yeniden hesaplama; ağır hesap
+   kilit dışında. Ertelenebilir temizliğe bağlantıya-özel 0.5-1sn kilit
+   bütçesi + sonraki tura erteleme (global timeout aynı).
+5. Kaynak denemesi + eşik kalibrasyonu. v4 kalsın; önce 7-istek
+   verimini düzelt. Alternatif kaynak 48-72 saat ÜRETİME KARIŞTIRMADAN
+   karşılaştır.
+
+## Güvenli çalışma kuralı (Astra)
+
+24 saatte EN FAZLA 1 planlı davranış değişikliği (veri bütünlüğü
+acilleri istisna). Her yayın: tek sorun, ayrı commit, örnek-girdi
+doğrulaması, geri dönüş hazır, 30-60dk aktif takip + 24 saat gözlem.
+Geri dönüş tetikleyici: 3 döngü yeni snapshot yok / tekrarlayan kritik
+yazma hatası / yeniden sahte veri. Kod geri alınır; sonuçlanmış
+kayıtlar/DB geçmişi geri SARILMAZ.

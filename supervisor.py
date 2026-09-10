@@ -221,7 +221,27 @@ def main():
     signal.signal(signal.SIGINT, _handle_signal)
 
     print(f"[supervisor] proje dizini: {PROJECT_DIR}", flush=True)
-    for name in SERVICES:
+    # DUZELTME (2026-09-10 gece, /goal oturumu): HER deploy bugun ayni
+    # deseni gosterdi - butun surecler (api/orchestrator/v4_api_bot/
+    # telegram_poster/telegram_bilgilendirme/iddaa_odds_client) AYNI ANDA
+    # baslayip neredeyse ayni saniyede DB'ye yazmaya calisiyordu, bu da
+    # ~5 dakikalik surekli "database is locked" firtinasina yol aciyordu
+    # (canli olculdu, commit c116220'nin deploy'u - ayrintilar
+    # SINGLE_WRITER_QUEUE_DESIGN.md'de). Gercek kok neden (SQLite'ta tek
+    # yazici) bu degisiklikle COZULMUYOR - sadece restart anindaki
+    # CAKISMA azaltiliyor. api ilk (baska hicbir sey ona bagli degil,
+    # digerleri Railway public URL'sine veya direkt DB'ye yazar), agir/
+    # sik yazan surecler (orchestrator, v4_api_bot) araya kademeli
+    # bosluklarla yerlestirildi.
+    # NOT: bu bir ARALIK (her servisten oncesine eklenen sabit bekleme),
+    # TOPLAM/mutlak zaman DEGIL - "api" ilk servis oldugu icin 0 bekler,
+    # ondan SONRAKI HER servis kendinden onceki servisten 3sn sonra
+    # baslar (7 servis icin toplam ~18sn'lik bir yayilma - kabul edilebilir,
+    # eskiden hepsi <1sn icinde basliyordu).
+    _STARTUP_STAGGER_SECONDS = 3
+    for i, name in enumerate(SERVICES):
+        if i > 0:
+            time.sleep(_STARTUP_STAGGER_SECONDS)
         start_service(name)
 
     while not _shutdown:

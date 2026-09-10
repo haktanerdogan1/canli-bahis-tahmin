@@ -223,14 +223,47 @@ def _scrape_stats(page, mid):
     try:
         page.wait_for_selector('[data-testid="wcl-statistics"]', timeout=10000)
     except Exception:
+        print(f"⚠️  fs {mid}: istatistik widget'i hic yuklenmedi "
+              "(mac cok erken olabilir ya da sayfa yapisi degisti)", flush=True)
         return {}
 
+    rows = page.locator('[data-testid="wcl-statistics"]').all()
     out = {}
-    for row in page.locator('[data-testid="wcl-statistics"]').all():
+    for row in rows:
+        # KATEGORI + DEGERLER (2026-09-10 duzeltmesi): Flashscore ic
+        # data-testid'leri kaldirdi - 'wcl-statistics-category' ve
+        # 'wcl-statistics-value' ARTIK YOK. Yeni yapi:
+        #   <div data-testid="wcl-statistics">
+        #     <div class="wcl-labelRow_...">
+        #       <div><div class="wcl-value_...">0.13</div></div>      <- ev
+        #       <div class="wcl-label_..."><span>Expected goals (xG)</span>
+        #       <div class="wcl-awayValue_..."><div class="wcl-value_...">0.01</div>
+        # Bu yuzden fonksiyon HER MACTA sessizce {} donuyordu (asagidaki
+        # "continue"lar hicbir sey loglamiyordu) - istemci saatlerce
+        # "0 basarili" yazip durdu, kimse fark etmedi.
+        # Sinif adlarindaki hash ekleri (wcl-value_Ywp3J) surum surum
+        # degisebildigi icin ONCE prefix-eslemeli CSS deneniyor, o da
+        # tutmazsa satirin innerText'i ("0.13\nExpected goals (xG)\n0.01")
+        # yedek olarak ayristiriliyor.
+        category = v0 = v1 = None
         try:
-            category = row.locator('[data-testid="wcl-statistics-category"]').inner_text().strip().lower()
+            category = row.locator('div[class*="wcl-label_"]').first.inner_text().strip()
+            vals = row.locator('div[class*="wcl-value_"]')
+            if vals.count() >= 2:
+                v0 = vals.nth(0).inner_text().strip()
+                v1 = vals.nth(1).inner_text().strip()
         except Exception:
-            continue
+            pass
+        if not category or v0 is None or v1 is None:
+            try:
+                satirlar = [s.strip() for s in row.inner_text().split("\n") if s.strip()]
+            except Exception:
+                continue
+            if len(satirlar) < 3:
+                continue
+            v0, category, v1 = satirlar[0], satirlar[1], satirlar[2]
+
+        category = category.lower()
         field = None
         for needle, name in _STAT_CATEGORY_MAP:
             if needle in category:
@@ -238,11 +271,21 @@ def _scrape_stats(page, mid):
                 break
         if not field or field in out:
             continue
-        values = row.locator('[data-testid="wcl-statistics-value"]')
         try:
-            v0 = values.nth(0).inner_text().strip().replace("%", "")
-            v1 = values.nth(1).inner_text().strip().replace("%", "")
-            out[field] = [float(v0), float(v1)] if field == "xg" else [int(v0), int(v1)]
-        except Exception:
+            c0 = v0.replace("%", "").strip()
+            c1 = v1.replace("%", "").strip()
+            out[field] = [float(c0), float(c1)] if field == "xg" else [int(c0), int(c1)]
+        except (TypeError, ValueError):
             continue
+
+    if rows and not out:
+        # Widget yuklendi ama TEK BIR alan bile cikaramadik - bu sessiz
+        # kalmamali, yukaridaki gibi bir DOM degisikliginin habercisi.
+        try:
+            ornek = rows[0].inner_text().replace("\n", " | ")[:120]
+        except Exception:
+            ornek = "(okunamadi)"
+        print(f"⚠️  fs {mid}: {len(rows)} istatistik satiri var ama hicbiri "
+              f"ayristirilamadi - DOM degismis olabilir. Ornek satir: {ornek}",
+              flush=True)
     return out

@@ -243,6 +243,42 @@ canlı feed BOŞ (0 maç). Akşam maçları başlayınca ölçülecek.
    verimini düzelt. Alternatif kaynak 48-72 saat ÜRETİME KARIŞTIRMADAN
    karşılaştır.
 
+## Kota bütçesi devrede (2026-09-10, commit 08e3e60) - kullanıcı kararı
+
+Kullanıcı: "%60'ını kullanabiliriz" + "300K'ya ulaşınca daha temkinli
+olsun, aynen devam". 500K/ay kotanın sadece ~%12'si kullanılıyordu
+(deploy anında `kota=2105/500000`), istatistik kapsaması bu yüzden
+düşüktü (eski sabit `MAX_STATS_PER_CYCLE=7`).
+
+**Yapılan:**
+- `MAX_STATS_PER_CYCLE` artık dinamik, `_kota_kademesi()`:
+  `used<300K → 25/tur` · `300-420K → 10` · `≥420K → 4`. Başlık gelmezse
+  orta kademe (10). RapidAPI'nin her yanıtta gönderdiği
+  `X-RateLimit-Requests-Limit/-Remaining` okunuyor (restart-güvenli,
+  bellekte sayaç yok). Kotayı asla aşmaz - kullanım arttıkça otomatik
+  geri çeker.
+- **Astra K2/madde 4 rotasyonu düzeltildi:** eskiden "feed sırasındaki
+  ilk N" seçiliyordu → aynı maçlar sürekli, gerisi hiç. Artık takip
+  edilenler önce, onların içinde EN UZUN SÜREDİR istatistik çekilmemiş
+  olan önce (`_son_stat_cekim`, monotonik saat).
+- `📊 feed=` log satırına kota durumu eklendi: `kota=used/limit (%N)
+  stat_butce=N/tur`.
+
+**Deploy doğrulaması (11:24 → 11:33, 9dk):** crash/Traceback yok, her v4
+turu ~1sn. `kota=2105→2115` (5dk'da ~10, tek canlı maç olduğu için).
+`stat_butce=25/tur` (agresif kademe, beklendiği gibi). iddaa DB-kilit
+fix'i (1ae9e7f) HÂLÂ tutuyor: bakım turu tur=20'de
+`delete_unresolvable_void` dahil TÜM işler `wait_ms=0.0`, tek bir
+`SQLITE_BUSY` yok. Bu deploy'un restart'ı fırtına yaratmadı.
+
+Sinyal etkisi henüz ölçülemedi (öğlen, tek canlı maç `17548885`,
+`eksik=16` - API bu maça istatistik döndürmüyor gibi, kod değil kapsam).
+Akşam maçlarında `eksik=` düşüşü ve hacim izlenecek.
+
+**Bugün 3. deploy. Astra kuralı gereği bugün BAŞKA deploy yok** - kalan
+adımlar (2-5) tasarım aşamasında, P0/iddaa/kota değişiklikleri ~24 saat
+stabil kalınca uygulanacak.
+
 ## Güvenli çalışma kuralı (Astra)
 
 24 saatte EN FAZLA 1 planlı davranış değişikliği (veri bütünlüğü

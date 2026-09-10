@@ -639,6 +639,17 @@ async def refresh_stalled_matches(session):
                        last_progress_at=CURRENT_TIMESTAMP, last_seen_at=CURRENT_TIMESTAMP
                 WHERE id=? AND status IN ('LIVE','HT')
             """, (h, a, dk, mid_db))
+            # KRITIK: ilk-yari marketlerinin sonuclanmasi live_snapshots'taki
+            # "<=45. dk son kayit"a bakiyor (bkz. settlement.compute_outcome
+            # fh_end). Donuk mac icin o kayit golden ONCEKI skorda kalmisti -
+            # sinyal kazandigi halde LOST/belirsiz cikiyordu. Tazelenen gercek
+            # skoru snapshot olarak da yaziyoruz. Istatistikler NULL (P0:
+            # "cekilmedi" ile "gercekten sifir" ayri kalsin).
+            if dk is not None and dk <= 45:
+                wc.execute("""
+                    INSERT INTO live_snapshots (match_id, minute, home_score, away_score)
+                    VALUES (?, ?, ?, ?)
+                """, (mid_db, dk, h, a))
         for h, a, mid_db in biten:
             wc.execute("""
                 UPDATE matches SET home_score=?, away_score=?, minute=90,

@@ -545,16 +545,21 @@ async def process_api_matches(session):
                           f"{_json.dumps(_fin, ensure_ascii=False)[:700]}", flush=True)
         except Exception as _e:
             print(f"🩺 DATE-PROBE HATA: {_e}", flush=True)
-        for _cand in ("football-get-match-detail", "football-match-detail",
-                      "football-get-match-by-id"):
-            try:
-                async with session.get(f"https://{HOST}/{_cand}",
-                                       params={"eventid": "6106246", "matchid": "6106246"},
-                                       headers=HEADERS, timeout=10) as _r2:
-                    _b2 = (await _r2.text())[:300].replace("\n", " ")
-                    print(f"🩺 DETAIL-PROBE /{_cand} -> {_r2.status} {_b2}", flush=True)
-            except Exception as _e:
-                print(f"🩺 DETAIL-PROBE /{_cand} HATA: {_e}", flush=True)
+        try:
+            async with session.get(f"https://{HOST}/football-get-match-detail",
+                                   params={"matchid": "6106246"},
+                                   headers=HEADERS, timeout=10) as _r2:
+                _dd = await _r2.json()
+                _det = ((_dd.get("response") or {}).get("detail")) or {}
+                print(f"🩺 DETAIL-PROBE detail_keys={list(_det.keys())}", flush=True)
+                import json as _json
+                for _k in ("homeScore", "awayScore", "htScore", "halfScore",
+                           "events", "goals", "matchFacts", "header", "status"):
+                    if _k in _det:
+                        print(f"🩺 DETAIL-PROBE detail[{_k}]="
+                              f"{_json.dumps(_det[_k], ensure_ascii=False)[:400]}", flush=True)
+        except Exception as _e:
+            print(f"🩺 DETAIL-PROBE HATA: {_e}", flush=True)
 
     # GECICI TESHIS (2026-09-10): kullanici "eskiden bu API gunde 150+ mac
     # donuyordu, simdi 7" diyor - kod Agustos'tan beri ayni. API'nin HAM

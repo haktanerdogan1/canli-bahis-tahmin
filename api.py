@@ -1017,6 +1017,65 @@ def admin_manual_settle_signal(request: Request, match_id: int, outcome: str):
     return {"success": True, "guncellenen_sinyal_sayisi": updated}
 
 
+@app.get("/api/admin/stuck-signals")
+def admin_stuck_signals(request: Request, gun: int = 3):
+    """SALT OKUNUR rapor: sonuclanmamis (PENDING) veya VOID kalmis TUM
+    paylasilmis sinyaller - mac adi, market, bizim skorumuz, ilk-yari
+    referansi ve NEDEN takildigi.
+
+    NEDEN (2026-09-10, kullanici: "kazanan maclari kazandi yap"): canli
+    feed donan/dusen maclarda sinyaller belirsiz kaldi. Otomatik kurtarma
+    (v4_api_bot.fetch_missing_results) SADECE sonucu KESIN olanlari
+    yaziyor - uydurmuyor. Geri kalanlar icin kullanicinin gercek dunyada
+    dogruladigi sonucu manual-settle-signal ile yazabilmesi lazim; bu uc
+    o listeyi tek bakista veriyor. HICBIR SEY YAZMAZ."""
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    gun = max(1, min(gun, 30))
+    conn = connect()
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(f"""
+            SELECT p.id AS sinyal_id, p.match_id, p.market, p.signal_minute,
+                   p.initial_goals, p.weighted_probability, p.outcome,
+                   p.created_at,
+                   m.home_team_id, m.away_team_id, m.league_name, m.status,
+                   m.home_score, m.away_score, m.minute,
+                   (SELECT s.home_score || '-' || s.away_score
+                      FROM live_snapshots s
+                     WHERE s.match_id = m.id AND s.minute <= 45
+                     ORDER BY s.minute DESC, s.id DESC LIMIT 1) AS iy_son_gozlem
+            FROM consensus_predictions p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.decision = 'signal'
+              AND (p.outcome IS NULL OR p.outcome = 'VOID')
+              AND p.created_at > datetime('now', '-{gun} days')
+            ORDER BY p.created_at DESC
+        """).fetchall()
+    finally:
+        conn.close()
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        ilk_yari = d["signal_minute"] is not None and d["signal_minute"] <= 45
+        d["market_tipi"] = "ilk_yari" if ilk_yari else "mac_sonu"
+        d["mac"] = f'{d.pop("home_team_id")} - {d.pop("away_team_id")}'
+        d["bizim_skor"] = f'{d.pop("home_score")}-{d.pop("away_score")}'
+        if d["status"] not in ("FINISHED", "Ended", "FT"):
+            d["neden_takildi"] = "mac bizde bitmemis (feed dondu/dustu)"
+        elif ilk_yari:
+            d["neden_takildi"] = ("ilk yari skoru bilinmiyor - API yari skoru "
+                                  "vermiyor, gol IY'de mi 2Y'de mi belirsiz")
+        else:
+            d["neden_takildi"] = "settlement henuz calismadi"
+        d["elle_duzeltme"] = (f'POST /api/admin/manual-settle-signal'
+                              f'?match_id={d["match_id"]}&outcome=WON|LOST')
+        out.append(d)
+    return {"success": True, "gun": gun, "toplam": len(out), "sinyaller": out}
+
+
 @app.get("/api/admin/signal-audit")
 def signal_audit(request: Request, home: str, away: str):
     """Read only: inspect one named fixture without exporting unrelated data."""

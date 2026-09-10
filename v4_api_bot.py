@@ -149,6 +149,7 @@ def _kesif_ozeti_yaz():
 # Hafıza havuzu
 V4_HISTORY = {}
 _STATS_SHAPE_LOGGED = False  # gecici teshis (bkz. fetch_stats)
+_DATE_ENDPOINT_PROBED = False  # gecici teshis (bkz. process_api_matches)
 
 # ─────────────────────────────────────────────────────────────────────────
 # KOTA BUTCESI (2026-09-10, kullanici karari: "%60'ini kullanabiliriz,
@@ -520,6 +521,27 @@ async def process_api_matches(session):
 
     if not matches:
         matches = []
+
+    # GECICI TESHIS (2026-09-10): donmus/dusmus maclarin GERCEK final skorunu
+    # cekebilecegimiz bir "tarihe gore maclar" ucu var mi? Aday isimleri
+    # denenir, calisan + sekli loglanir. Bir kez.
+    global _DATE_ENDPOINT_PROBED
+    if not _DATE_ENDPOINT_PROBED:
+        _DATE_ENDPOINT_PROBED = True
+        _bugun = time.strftime("%Y%m%d")
+        for _cand in ("football-get-matches-by-date", "football-get-all-matches-by-date",
+                      "football-matches-by-date", "football-get-list-detail-matches-by-date",
+                      "football-league-matches", "football-get-matches"):
+            try:
+                async with session.get(f"https://{HOST}/{_cand}",
+                                       params={"date": _bugun}, headers=HEADERS,
+                                       timeout=10) as _r:
+                    _body = await _r.text()
+                    _snip = _body[:220].replace("\n", " ")
+                    print(f"🩺 DATE-PROBE /{_cand}?date={_bugun} -> {_r.status} {_snip}",
+                          flush=True)
+            except Exception as _e:
+                print(f"🩺 DATE-PROBE /{_cand} HATA: {_e}", flush=True)
 
     # GECICI TESHIS (2026-09-10): kullanici "eskiden bu API gunde 150+ mac
     # donuyordu, simdi 7" diyor - kod Agustos'tan beri ayni. API'nin HAM

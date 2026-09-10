@@ -135,3 +135,30 @@ doğru hem hızlı çalışıyor. Yarın Seçenek B'nin geri kalanına (diğer
 desen çalıştığı doğrulandı.
 
 **Bu gece için iş burada NİHAİ olarak bırakıldı.**
+
+## Kararlı-durum kilit fix'i (commit 1ae9e7f) — DOĞRULANDI, GÜÇLÜ SONUÇ (2026-09-10 09:29 UTC)
+
+Deploy 09:18 UTC. 11 dakika sonra ölçüm:
+
+**Öncesi (deploy'dan önce, 6 saat):** `settlement.delete_unresolvable_void`
+26 ardışık `SQLITE_BUSY`, her biri 30sn timeout (phase=begin), ~5-15dk'da
+bir. v4_api_bot da steady-state'te düzenli 30sn kilit alıyordu.
+
+**Sonrası (deploy'dan sonra, 12dk):**
+| İş | Ölçüm |
+|---|---|
+| `delete_unresolvable_void` | 09:23:42 ve 09:28:50 — 2/2 tur, `wait_ms=0.0 body_ms=0.2 commit_ms=0.0` (anında alıyor) |
+| `iddaa_odds_sync.upsert` | 324 event → 7 parça (6×50 + 1×24), her transaction `wait_ms=0.0 body_ms=0.2-0.6`, toplam ~308ms |
+| `iddaa_backfill.write` | `batch=100 wait_ms=0.0 body_ms=1.0 commit_ms=0.2` (fuzzy hesap kilit dışında) |
+| `v4_api_bot.write_matches` | 09:24-09:28 arası 5 tur, `wait_ms` hep 0.0 (bir turda 33.5ms blip) |
+| Genel `SQLITE_BUSY` | 09:18-09:30 arası **SIFIR** |
+
+**Sonuç:** Kararlı-durum kronik DB kilidi ÇÖZÜLDÜ. iddaa-odds-sync'in
+dev tek-transaction'ı gerçekten tek gizli tutucuydu. measured_write
+migrasyonunu tamamlamak veya tek-yazıcı-kuyruğuna geçmek şu an için
+GEREKMEYEBİLİR - Astra'nın "önce sık yazma yollarını ölç+kısalt, hâlâ
+yetersizse kuyruğa geç" yaklaşımı doğrulandı.
+
+**Kalan AÇIK:** Deploy-anı fırtınası (6 süreç aynı anda restart) - ayrı
+sorun, sonraki adım. Astra önerisi: 3sn kademe yerine "işlerin hazır
+oluşunu esas al" + ertelenebilir bakım işlerine 0.5-1sn kilit bütçesi.

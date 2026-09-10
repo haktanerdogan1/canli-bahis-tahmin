@@ -5,7 +5,7 @@ import os
 import aiohttp
 from collections import deque
 
-from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
+from db_config import DB_PATH, connect, measured_write  # Railway kalici disk destegi (bkz. db_config.py)
 API_KEY = os.environ.get("RAPIDAPI_KEY")
 if not API_KEY:
     raise RuntimeError("RAPIDAPI_KEY ortam degiskeni tanimli degil. Railway'de Variables'a ekle.")
@@ -736,80 +736,83 @@ async def process_api_matches(session):
 
     # --- ASAMA 4: TEK KISA transaction'da hepsini yaz, hemen kapat. Ag cagrisi
     # bitmis, elde sadece bellekteki sonuclar var - bu blokta hic "await" yok. ---
-    conn = connect()
-    cursor = conn.cursor()
+    # DUZELTME (2026-09-09/10 gece, /goal oturumu): ciplak connect()/commit()
+    # yerine measured_write() - BEGIN IMMEDIATE + olcum/log + otomatik
+    # rollback-on-error, bugun diger yazma noktalarinda kanitlanmis desen.
+    # Davranis DEGISMEDI (ayni sorgular, ayni sira) - sadece transaction
+    # yonetimi ve gozlemlenebilirlik guclendirildi.
+    with measured_write("v4_api_bot.write_matches", batch_size=len(to_process)) as conn:
+        cursor = conn.cursor()
 
-    for m in to_process:
-        # NOT: Buraya bir ara "mac bir kere FINISHED olduysa bir daha asla guncellenmesin"
-        # kilidi konulmustu. O kilit KALDIRILDI: yukaridaki "feed tamamen bos ise hepsini
-        # FINISHED yap" temizligiyle birlesince, feed'de tek seferlik gecici bir bosluk
-        # olusmasi durumunda o an gercekten oynanan tum maclar kalici olarak olu sayilacak
-        # ve bir daha asla guncellenmeyeceklerdi. Gecici olarak yanlis FINISHED olmus bir mac
-        # geri donebilmeli; nasil olsa bitince tekrar dogru sekilde sonuclanir.
-        cursor.execute('''
-            INSERT INTO matches
-            (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT(source_match_id) DO UPDATE SET
-                minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
-                status=excluded.status,
-                home_score=excluded.home_score,
-                away_score=excluded.away_score,
-                league_name=excluded.league_name,
-                league_ccode=excluded.league_ccode,
-                league_logo=excluded.league_logo,
-                home_team_logo=excluded.home_team_logo,
-                away_team_logo=excluded.away_team_logo,
-                aggregate_score=excluded.aggregate_score,
-                last_seen_at=CURRENT_TIMESTAMP,
-                -- last_progress_at SADECE dakika GERCEKTEN degistiyse tazelenir.
-                -- Feed'de gorunmeye devam edip dakikasi hic ilerlemeyen bir mac
-                -- (RapidAPI'nin bayat veri dondurdugu fikstur), last_seen_at surekli
-                -- tazelense bile burada eskiyip _close_stale_progress'e yakalanir.
-                last_progress_at=CASE
-                    WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
-                    THEN CURRENT_TIMESTAMP
-                    ELSE matches.last_progress_at
-                END
-        ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
-              m["league_info"]["name"], m["league_info"]["ccode"], m["league_info"]["logo"],
-              m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
-              m["aggregate_score"], m["minute_parsed_ok"], m["minute_parsed_ok"]))
+        for m in to_process:
+            # NOT: Buraya bir ara "mac bir kere FINISHED olduysa bir daha asla guncellenmesin"
+            # kilidi konulmustu. O kilit KALDIRILDI: yukaridaki "feed tamamen bos ise hepsini
+            # FINISHED yap" temizligiyle birlesince, feed'de tek seferlik gecici bir bosluk
+            # olusmasi durumunda o an gercekten oynanan tum maclar kalici olarak olu sayilacak
+            # ve bir daha asla guncellenmeyeceklerdi. Gecici olarak yanlis FINISHED olmus bir mac
+            # geri donebilmeli; nasil olsa bitince tekrar dogru sekilde sonuclanir.
+            cursor.execute('''
+                INSERT INTO matches
+                (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(source_match_id) DO UPDATE SET
+                    minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
+                    status=excluded.status,
+                    home_score=excluded.home_score,
+                    away_score=excluded.away_score,
+                    league_name=excluded.league_name,
+                    league_ccode=excluded.league_ccode,
+                    league_logo=excluded.league_logo,
+                    home_team_logo=excluded.home_team_logo,
+                    away_team_logo=excluded.away_team_logo,
+                    aggregate_score=excluded.aggregate_score,
+                    last_seen_at=CURRENT_TIMESTAMP,
+                    -- last_progress_at SADECE dakika GERCEKTEN degistiyse tazelenir.
+                    -- Feed'de gorunmeye devam edip dakikasi hic ilerlemeyen bir mac
+                    -- (RapidAPI'nin bayat veri dondurdugu fikstur), last_seen_at surekli
+                    -- tazelense bile burada eskiyip _close_stale_progress'e yakalanir.
+                    last_progress_at=CASE
+                        WHEN (CASE WHEN ? THEN excluded.minute ELSE matches.minute END) IS NOT matches.minute
+                        THEN CURRENT_TIMESTAMP
+                        ELSE matches.last_progress_at
+                    END
+            ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
+                  m["league_info"]["name"], m["league_info"]["ccode"], m["league_info"]["logo"],
+                  m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
+                  m["aggregate_score"], m["minute_parsed_ok"], m["minute_parsed_ok"]))
 
-        cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))
-        match_id_db_res = cursor.fetchone()
-        if not match_id_db_res:
-            continue
-        match_id_db = match_id_db_res[0]
+            cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))
+            match_id_db_res = cursor.fetchone()
+            if not match_id_db_res:
+                continue
+            match_id_db = match_id_db_res[0]
 
-        (h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
-         h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
-         h_red, a_red, h_big, a_big) = m["stats"]
+            (h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
+             h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
+             h_red, a_red, h_big, a_big) = m["stats"]
 
-        # Veritabanına canlı anlık görüntü (snapshot) kaydet
-        cursor.execute('''
-            INSERT INTO live_snapshots (
-                match_id, minute, period, home_score, away_score,
-                home_possession, away_possession, home_xg, away_xg,
-                home_shots, away_shots, home_shots_on_target, away_shots_on_target,
-                home_shots_off_target, away_shots_off_target,
-                home_dangerous_attacks, away_dangerous_attacks,
-                home_attacks, away_attacks,
-                home_corners, away_corners,
-                home_red_cards, away_red_cards,
-                home_big_chances, away_big_chances
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (match_id_db, m["minute"], 'first_half' if m["minute"] <= 45 else 'second_half',
-              m["score_h"], m["score_a"], h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
-              h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
-              h_red, a_red, h_big, a_big))
+            # Veritabanına canlı anlık görüntü (snapshot) kaydet
+            cursor.execute('''
+                INSERT INTO live_snapshots (
+                    match_id, minute, period, home_score, away_score,
+                    home_possession, away_possession, home_xg, away_xg,
+                    home_shots, away_shots, home_shots_on_target, away_shots_on_target,
+                    home_shots_off_target, away_shots_off_target,
+                    home_dangerous_attacks, away_dangerous_attacks,
+                    home_attacks, away_attacks,
+                    home_corners, away_corners,
+                    home_red_cards, away_red_cards,
+                    home_big_chances, away_big_chances
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (match_id_db, m["minute"], 'first_half' if m["minute"] <= 45 else 'second_half',
+                  m["score_h"], m["score_a"], h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
+                  h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
+                  h_red, a_red, h_big, a_big))
 
-    cursor.execute("SELECT COUNT(*) FROM matches "
-                   "WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')")
-    still_open = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM matches "
+                       "WHERE status NOT IN ('FINISHED','ABANDONED','Ended','FT','Canceled')")
+        still_open = cursor.fetchone()[0]
 
-    conn.commit()
-    conn.close()
 
     _kesif_ozeti_yaz()
 

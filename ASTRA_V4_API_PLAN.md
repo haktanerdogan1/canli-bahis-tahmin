@@ -287,3 +287,58 @@ doğrulaması, geri dönüş hazır, 30-60dk aktif takip + 24 saat gözlem.
 Geri dönüş tetikleyici: 3 döngü yeni snapshot yok / tekrarlayan kritik
 yazma hatası / yeniden sahte veri. Kod geri alınır; sonuçlanmış
 kayıtlar/DB geçmişi geri SARILMAZ.
+
+## VOID / "neden sildiniz" sorunu çözüldü (2026-09-10 akşam, /goal oturumu)
+
+**Hedef (kullanıcı):** "bu void işini çöz. paylaştığımızı görenler neden
+sildiniz diye soruyorlar."
+
+**Kök neden:** RapidAPI canlı feed'i bir maçı ortada donduruyor
+(dakika ilerlemiyor) ya da tamamen düşürüyor. `_close_stale_progress`
+(15 dk) / `_close_stale_missing` (5 dk) o maçı ABANDONED yapıyor →
+`reconcile_void_signals` donmuş skordan sonuç çıkaramıyor → sinyal VOID
+kalıyor. Ama gerçek maç oynanıp bitiyor (örn. Ibri-Saham: bizde 0-0/15',
+gerçekte ilk yarı 0-1, "İY 0.5 Üst" KAZANACAKTI).
+
+**3 katmanlı çözüm (hepsi canlı):**
+
+1. **`888486c` (Astra):** kapasite dolunca en zayıf açık sinyali VOID
+   yapıp yerine güçlü aday açma KALDIRILDI (kapasite sadece YENİ sinyali
+   sınırlar). `delete_unresolvable_void` → no-op (VOID satırlar
+   silinmiyor). UI'da VOID = "SONUÇ DOĞRULANAMADI", results sekmesinde
+   görünüyor. Yeni `/api/admin/signal-audit` (tek maç, x-backup-secret).
+
+2. **`fc04181`:** `_SINYAL_KORUMA_CLAUSE` - açık VEYA VOID yayınlanmış
+   sinyali olan + `created_at < 4 saat` olan maç stale-close'dan MUAF.
+   Feed genelde birkaç dk sonra tazeleniyor, maç kendi gerçek skoruyla
+   dönüyor. 4 saat sonra gerçek maç kesin bitmiştir, normal kapanış.
+
+3. **`f8373e8`:** `fetch_missing_results()` (v4_api_bot, ~10 turda bir) -
+   feed hiç dönmese bile, sinyali olan + 140 dk+ geçmiş + FINISHED'e
+   ulaşmamış maçların GERÇEK final skorunu `football-get-matches-by-date`
+   'den çekip `matches`e FINISHED olarak yazıyor. settle_pending /
+   reconcile_void_signals sonra WON/LOST yapıyor.
+
+**API uç bulguları (Railway'de test edildi, geri alındı):**
+- `football-get-match-event-all-stats` → `{stats:[...]}` sadece, skor yok.
+- `football-get-match-detail` → sadece metadata (teamColors, matchName),
+  gol timeline'ı / dakika YOK.
+- **`football-get-matches-by-date?date=YYYYMMDD`** → o günün TÜM maçları
+  `id + home.score + away.score + status.finished + scoreStr` ile.
+  108 maç/gün. **YARI SKORU HİÇBİR YERDE YOK.**
+
+**Yarı skoru olmadığı için** ilk-yarı marketleri SADECE kesin durumda
+otomatik sonuçlanıyor: final toplam 0 → LOST kesin; elimizdeki ≤45. dk
+snapshot'ı referansı zaten aşmış → WON kesin; ikisi de değilse (gol IY
+mı 2Y mı) DOKUNULMUYOR, "SONUÇ DOĞRULANAMADI" kalıyor (uydurma yok).
+Maç-sonu marketleri (Maç Sonu 1.5/2.5 Üst) tam çözüm.
+
+**Deploy doğrulaması (17:15 →):** crash yok. `DB'de açık maç` 32→23'e
+düştü (maçlar finalize edilip sonuçlanıyor). 17:22:43 `settle_pending`
+"1 sinyal sonuçlandı (kazanan=1)". feed akşam 26'ya çıktı (öğlen 10'du -
+"sakin öğleden sonraydı" doğrulandı, API bozuk değil).
+
+**Kalıcı sınır:** RapidAPI yarı skoru vermiyor → maçı ilk yarıdan önce
+kaybettiğimiz (feed erken donan) ilk-yarı sinyalleri kesin
+sonuçlanamaz. Bunun tek gerçek çözümü ikinci bir kaynak (flashscore
+local çalışıyor, ya da API-Football).

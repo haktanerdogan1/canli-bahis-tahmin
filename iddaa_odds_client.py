@@ -136,14 +136,26 @@ def fetch_prematch_events(session):
 def run_cycle(session, api_base, secret):
     events = fetch_prematch_events(session)
     if not events:
-        return 0, 0
+        return 0
     r = session.post(
         f"{api_base}/api/admin/iddaa-odds-sync",
         headers={"x-backup-secret": secret}, json={"events": events}, timeout=30,
     )
     r.raise_for_status()
     d = r.json()
-    return d.get("yazilan", 0), d.get("sonuc_dolduruldu", 0)
+    return d.get("yazilan", 0)
+
+
+def run_backfill(session, api_base, secret):
+    """Sonuc-doldurma (fuzzy eslestirme) - iddaa_odds_sync'ten AYRILDI
+    (2026-09-10, Astra DB-kilit incelemesi). ~30dk'da bir (her 6. dongu)
+    cagrilir; sunucu tarafinda yazma kilidi TUTMADAN calisir."""
+    r = session.post(
+        f"{api_base}/api/admin/iddaa-backfill",
+        headers={"x-backup-secret": secret}, timeout=60,
+    )
+    r.raise_for_status()
+    return r.json().get("sonuc_dolduruldu", 0)
 
 
 def main():
@@ -158,18 +170,29 @@ def main():
         sys.exit(1)
 
     print(f"🚀 İddaa oran istemcisi baslatiliyor -> {args.api_base} "
-          f"({CYCLE_PAUSE_SECONDS}sn'de bir)", flush=True)
+          f"({CYCLE_PAUSE_SECONDS}sn'de bir; backfill her 6. dongu ~30dk)", flush=True)
     session = requests.Session()
+    dongu = 0
     while True:
+        dongu += 1
         start = time.time()
         try:
-            yazilan, sonuc_dolan = run_cycle(session, args.api_base, secret)
+            yazilan = run_cycle(session, args.api_base, secret)
         except Exception as e:
             print(f"⚠️  Dongu hatasi: {e}", flush=True)
-            yazilan, sonuc_dolan = 0, 0
+            yazilan = 0
+        # Sonuc-doldurma AYRI ve SEYREK (her 6. dongu = ~30dk) - artik oran
+        # senkronundan bagimsiz (bkz. api.py iddaa_backfill).
+        sonuc_dolan = "-"
+        if dongu % 6 == 1:
+            try:
+                sonuc_dolan = run_backfill(session, args.api_base, secret)
+            except Exception as e:
+                print(f"⚠️  Backfill hatasi: {e}", flush=True)
+                sonuc_dolan = "hata"
         elapsed = time.time() - start
-        print(f"📊 {yazilan} mac oran kaydi guncellendi, {sonuc_dolan} eski kayda sonuc "
-              f"dolduruldu ({elapsed:.1f}sn). {CYCLE_PAUSE_SECONDS}sn bekleniyor...", flush=True)
+        print(f"📊 {yazilan} mac oran kaydi guncellendi, sonuc_dolduruldu={sonuc_dolan} "
+              f"({elapsed:.1f}sn). {CYCLE_PAUSE_SECONDS}sn bekleniyor...", flush=True)
         time.sleep(CYCLE_PAUSE_SECONDS)
 
 

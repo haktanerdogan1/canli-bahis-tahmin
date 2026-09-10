@@ -1519,6 +1519,12 @@ def _iddaa_ensure_schema():
         "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_ms_over_line REAL",
         "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_ms_over_odd REAL",
         "ALTER TABLE iddaa_odds_archive ADD COLUMN opening_ms_under_odd REAL",
+        # 2026-09-10 (GPT-6 Astra, DB-kilit incelemesi): backfill artik
+        # rotasyonlu - her calismada "en uzun suredir kontrol edilmemis"
+        # 100 kayit secilir. Bu kolon o siralamayi saglar; eslesmese bile
+        # kontrol edilen her kayit isaretlenir, boylece hic eslesmeyen
+        # (kucuk lig) kayitlar sonsuza kadar sirayi tikamaz.
+        "ALTER TABLE iddaa_odds_archive ADD COLUMN result_backfill_checked_at TIMESTAMP",
     ):
         try:
             conn.execute(stmt)
@@ -1608,53 +1614,98 @@ def _iddaa_write_odds_rows(cur, match_db_id, best):
     )
 
 
-def _iddaa_backfill_results(cur):
+_IDDAA_BACKFILL_LIMIT = 100  # her calismada en fazla bu kadar bekleyen kayit kontrol edilir
+
+
+def _iddaa_backfill_results():
     """Arsivde SONUCU henuz bilinmeyen (ft_home_score NULL) kayitlar icin
     kendi matches tablomuzda (status='FINISHED') fuzzy takim adiyla eslesen
     bir mac var mi diye bakar, varsa skoru (MS + IY) kopyalar. Ayri bir
     "sonuc scraper"ina gerek yok - zaten canli takip ettigimiz maclarin
     sonucunu KENDI verimizden ariyoruz. Iddaa'nin listeledigi ama bizim hic
-    canli gormedigimiz maclar (kucuk ligler, bizim kaynaklarimizin
-    kapsamadigi) sonucsuz kalir - bu BEKLENEN bir durum, uydurma yok."""
+    canli gormedigimiz maclar (kucuk ligler) sonucsuz kalir - BEKLENEN.
+
+    YENIDEN YAZILDI (2026-09-10, GPT-6 Astra DB-kilit incelemesi): eskiden
+    bu fonksiyon iddaa_odds_sync'in ACIK YAZMA TRANSACTION'I icinde
+    calisiyordu ve O(bekleyen x bitmis) difflib hesabini yazma kilidi
+    tutarken yapiyordu - kararli-durumdaki kronik "database is locked"in
+    kok nedeni buydu (26 ardisik SQLITE_BUSY, hepsi bakim turunda).
+    Yeni akis:
+      1. OKU (kisa baglanti, hemen kapat) - rotasyonlu ilk N bekleyen +
+         son 3 gunun bitmis maclari.
+      2. HESAPLA (bellekte, HICBIR baglanti acik degil) - fuzzy eslesme.
+      3. YAZ (kucuk measured_write) - kontrol edilen HER kaydi isaretle
+         (rotasyon) + eslesenler icin skoru yaz. UPDATE'te 'ft_home_score
+         IS NULL' TEKRAR kontrol edilir - hesap sirasinda baska bir islem
+         doldurduysa ezme (Astra uyarisi).
+    Bu fonksiyon artik iddaa_odds_sync'ten DEGIL, ayri ve seyrek bir
+    uctan (/api/admin/iddaa-backfill, ~30dk'da bir) cagriliyor."""
     from flashscore_xg_bot import _normalize as _tnorm, MIN_MATCH_SCORE
     import difflib
-    cur.execute('''
-        SELECT iddaa_event_id, home_norm, away_norm FROM iddaa_odds_archive
-        WHERE ft_home_score IS NULL
-          AND last_seen_at <= datetime('now', '-2 hours')
-    ''')
-    bekleyen = cur.fetchall()
-    if not bekleyen:
-        return 0
-    cur.execute('''
-        SELECT home_team_id, away_team_id, home_score, away_score,
-               first_half_home_score, first_half_away_score
-        FROM matches WHERE status='FINISHED'
-          AND last_seen_at >= datetime('now', '-3 days')
-    ''')
-    bitmis = cur.fetchall()
-    bitmis_norm = [(_tnorm(h), _tnorm(a), hs, as_, fhs, fas) for h, a, hs, as_, fhs, fas in bitmis]
 
-    guncellenen = 0
+    # --- 1. OKU: kisa baglanti, hemen kapat ---
+    conn = connect()
+    try:
+        cur = conn.cursor()
+        # Rotasyon: en uzun suredir kontrol edilmemis (NULL once) N kayit.
+        # SQLite NULLS FIRST'i eski surumlerde yok - "IS NOT NULL" ile ayni
+        # etkiyi aliyoruz (0=NULL basta).
+        cur.execute('''
+            SELECT iddaa_event_id, home_norm, away_norm FROM iddaa_odds_archive
+            WHERE ft_home_score IS NULL
+              AND last_seen_at <= datetime('now', '-2 hours')
+            ORDER BY (result_backfill_checked_at IS NOT NULL),
+                     result_backfill_checked_at, iddaa_event_id
+            LIMIT ?
+        ''', (_IDDAA_BACKFILL_LIMIT,))
+        bekleyen = cur.fetchall()
+        if not bekleyen:
+            return 0
+        cur.execute('''
+            SELECT home_team_id, away_team_id, home_score, away_score,
+                   first_half_home_score, first_half_away_score
+            FROM matches WHERE status='FINISHED'
+              AND last_seen_at >= datetime('now', '-3 days')
+        ''')
+        bitmis = cur.fetchall()
+    finally:
+        conn.close()
+
+    bitmis_norm = [(_tnorm(h), _tnorm(a), hs, as_, fhs, fas)
+                   for h, a, hs, as_, fhs, fas in bitmis]
+
+    # --- 2. HESAPLA: bellekte, hicbir baglanti acik degil ---
+    checked_eids = []
+    matched = []  # (eid, hs, as_, fhs, fas)
     for eid, hn, an in bekleyen:
+        checked_eids.append(eid)
         best, best_score = None, 0.0
         for bh, ba, hs, as_, fhs, fas in bitmis_norm:
             score = (difflib.SequenceMatcher(None, hn or "", bh).ratio()
                      + difflib.SequenceMatcher(None, an or "", ba).ratio()) / 2
             if score > best_score:
                 best_score, best = score, (hs, as_, fhs, fas)
-        if not best or best_score < MIN_MATCH_SCORE:
-            continue
-        hs, as_, fhs, fas = best
-        if hs is None or as_ is None:
-            continue
-        cur.execute('''
-            UPDATE iddaa_odds_archive
-            SET ft_home_score=?, ft_away_score=?, fh_home_score=?, fh_away_score=?,
-                result_captured_at=CURRENT_TIMESTAMP
-            WHERE iddaa_event_id=?
-        ''', (hs, as_, fhs, fas, eid))
-        guncellenen += 1
+        if best and best_score >= MIN_MATCH_SCORE and best[0] is not None and best[1] is not None:
+            matched.append((eid,) + best)
+
+    # --- 3. YAZ: tek kucuk measured_write ---
+    guncellenen = 0
+    if not checked_eids:
+        return 0
+    with measured_write("iddaa_backfill.write", batch_size=len(checked_eids)) as conn:
+        cur = conn.cursor()
+        ph = ",".join("?" for _ in checked_eids)
+        cur.execute(
+            f"UPDATE iddaa_odds_archive SET result_backfill_checked_at=CURRENT_TIMESTAMP "
+            f"WHERE iddaa_event_id IN ({ph})", checked_eids)
+        for eid, hs, as_, fhs, fas in matched:
+            cur.execute('''
+                UPDATE iddaa_odds_archive
+                SET ft_home_score=?, ft_away_score=?, fh_home_score=?, fh_away_score=?,
+                    result_captured_at=CURRENT_TIMESTAMP
+                WHERE iddaa_event_id=? AND ft_home_score IS NULL
+            ''', (hs, as_, fhs, fas, eid))
+            guncellenen += cur.rowcount
     return guncellenen
 
 
@@ -1835,6 +1886,9 @@ def iddaa_odds_preview(request: Request, ornekler: int = 0):
     return {"success": True, "toplam": len(sonuc), "maclar": sonuc}
 
 
+_IDDAA_UPSERT_CHUNK = 50  # bir yazma transaction'inda en fazla bu kadar event
+
+
 @app.post("/api/admin/iddaa-odds-sync")
 def iddaa_odds_sync(request: Request, payload: dict):
     """iddaa_odds_client.py'den (Railway'de calisan, HER GUN oynanan
@@ -1842,9 +1896,20 @@ def iddaa_odds_sync(request: Request, payload: dict):
     guncellemeyi isler ve kalici arsive (iddaa_odds_archive) yazar.
     bot_odds_profile.py bu arsivi DOGRUDAN kullanmaz - mac canliya
     gectiginde live_sync icinde _iddaa_transfer_odds ile 1X2'si TEK
-    SEFERLIK live_odds'a aktarilir. Ayrica her cagrida _iddaa_backfill_results
-    ile SONUCU belli olan eski kayitlar kendi canli verimizden doldurulur -
-    zamanla buyuyen bagimsiz bir oran+sonuc arsivi olusturuyor."""
+    SEFERLIK live_odds'a aktarilir.
+
+    YENIDEN YAZILDI (2026-09-10, GPT-6 Astra DB-kilit incelemesi):
+      - Hazirlik (validasyon + normalizasyon) transaction DISINDA yapilir.
+      - Upsert'ler 50'lik parcalara bolunur, HER parca AYRI kisa
+        measured_write - kilit parcalar arasinda birakilir (Astra: "tek
+        commit diger yaziciilara adil sira garantilemez", parcalar
+        arasinda 50ms nefes payi).
+      - _iddaa_backfill_results ARTIK BURADA CAGRILMIYOR - HTTP'nin
+        kritik yolundan cikarildi, ayri seyrek bir uca tasindi
+        (/api/admin/iddaa-backfill). Eskiden fuzzy sonuc-eslestirme
+        acik yazma kilidini onlarca saniye tutuyordu (kararli-durum
+        kronik "database is locked"in kok nedeni).
+    """
     from fastapi.responses import JSONResponse
     expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
     provided = request.headers.get("x-backup-secret")
@@ -1853,50 +1918,77 @@ def iddaa_odds_sync(request: Request, payload: dict):
     _iddaa_ensure_schema()
 
     events = payload.get("events") or []
-    conn = connect()
-    cur = conn.cursor()
-    yazilan = 0
     from flashscore_xg_bot import _normalize as _tnorm
+
+    # --- HAZIRLIK: transaction DISINDA ---
+    prepared = []
     for e in events:
         eid = e.get("event_id")
         home = (e.get("home") or "").strip()
         away = (e.get("away") or "").strip()
-        odd_1, odd_x, odd_2 = e.get("odd_1"), e.get("odd_x"), e.get("odd_2")
         if not eid or not home or not away:
             continue
+        if not (e.get("odd_1") and e.get("odd_x") and e.get("odd_2")):
+            continue
+        o1, ox, o2 = e.get("odd_1"), e.get("odd_x"), e.get("odd_2")
         fh_line, fh_over, fh_under = e.get("fh_over_line"), e.get("fh_over_odd"), e.get("fh_under_odd")
         ms_line, ms_over, ms_under = e.get("ms_over_line"), e.get("ms_over_odd"), e.get("ms_under_odd")
-        cur.execute('''
-            INSERT INTO iddaa_odds_archive
-                (iddaa_event_id, home_raw, away_raw, home_norm, away_norm, league,
-                 odd_1, odd_x, odd_2, fh_over_line, fh_over_odd, fh_under_odd,
-                 ms_over_line, ms_over_odd, ms_under_odd, first_seen_at, last_seen_at,
-                 opening_odd_1, opening_odd_x, opening_odd_2,
-                 opening_fh_over_line, opening_fh_over_odd, opening_fh_under_odd,
-                 opening_ms_over_line, opening_ms_over_odd, opening_ms_under_odd)
-            VALUES (?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
-                    ?,?,?, ?,?,?, ?,?,?)
-            ON CONFLICT(iddaa_event_id) DO UPDATE SET
-                odd_1=excluded.odd_1, odd_x=excluded.odd_x, odd_2=excluded.odd_2,
-                fh_over_line=excluded.fh_over_line, fh_over_odd=excluded.fh_over_odd, fh_under_odd=excluded.fh_under_odd,
-                ms_over_line=excluded.ms_over_line, ms_over_odd=excluded.ms_over_odd, ms_under_odd=excluded.ms_under_odd,
-                last_seen_at=CURRENT_TIMESTAMP
-                -- opening_* KASITLI OLARAK burada YOK - sadece ilk INSERT'te
-                -- yazilir, bir daha guncellenmez (CLV = opening vs closing
-                -- karsilastirmasi icin gercek acilis orani lazim, 2026-09-03).
-        ''', (eid, home, away, _tnorm(home), _tnorm(away), e.get("league") or "",
-              odd_1, odd_x, odd_2, fh_line, fh_over, fh_under, ms_line, ms_over, ms_under,
-              odd_1, odd_x, odd_2, fh_line, fh_over, fh_under, ms_line, ms_over, ms_under))
-        yazilan += 1
+        prepared.append((
+            eid, home, away, _tnorm(home), _tnorm(away), e.get("league") or "",
+            o1, ox, o2, fh_line, fh_over, fh_under, ms_line, ms_over, ms_under,
+            # opening_* icin AYNI degerler (ON CONFLICT'te bunlar KULLANILMIYOR)
+            o1, ox, o2, fh_line, fh_over, fh_under, ms_line, ms_over, ms_under,
+        ))
 
-    guncellenen = 0
+    # --- YAZMA: 50'lik parcalar, her biri ayri kisa measured_write ---
+    yazilan = 0
+    for i in range(0, len(prepared), _IDDAA_UPSERT_CHUNK):
+        chunk = prepared[i:i + _IDDAA_UPSERT_CHUNK]
+        with measured_write("iddaa_odds_sync.upsert", batch_size=len(chunk)) as conn:
+            cur = conn.cursor()
+            cur.executemany('''
+                INSERT INTO iddaa_odds_archive
+                    (iddaa_event_id, home_raw, away_raw, home_norm, away_norm, league,
+                     odd_1, odd_x, odd_2, fh_over_line, fh_over_odd, fh_under_odd,
+                     ms_over_line, ms_over_odd, ms_under_odd,
+                     opening_odd_1, opening_odd_x, opening_odd_2,
+                     opening_fh_over_line, opening_fh_over_odd, opening_fh_under_odd,
+                     opening_ms_over_line, opening_ms_over_odd, opening_ms_under_odd)
+                VALUES (?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)
+                ON CONFLICT(iddaa_event_id) DO UPDATE SET
+                    odd_1=excluded.odd_1, odd_x=excluded.odd_x, odd_2=excluded.odd_2,
+                    fh_over_line=excluded.fh_over_line, fh_over_odd=excluded.fh_over_odd, fh_under_odd=excluded.fh_under_odd,
+                    ms_over_line=excluded.ms_over_line, ms_over_odd=excluded.ms_over_odd, ms_under_odd=excluded.ms_under_odd,
+                    last_seen_at=CURRENT_TIMESTAMP
+                    -- opening_* KASITLI OLARAK burada YOK - sadece ilk INSERT'te
+                    -- yazilir, bir daha guncellenmez (CLV takibi, 2026-09-03).
+            ''', chunk)
+            yazilan += len(chunk)
+        if i + _IDDAA_UPSERT_CHUNK < len(prepared):
+            time.sleep(0.05)  # kilidi diger yazicilar icin birak
+
+    return {"success": True, "yazilan": yazilan}
+
+
+@app.post("/api/admin/iddaa-backfill")
+def iddaa_backfill(request: Request):
+    """Iddaa arsivindeki sonucu bilinmeyen eski kayitlari kendi bitmis
+    maclarimizla eslestirip skor doldurur. iddaa_odds_sync'ten AYRILDI
+    (2026-09-10, Astra) - fuzzy eslestirme artik yazma kilidi TUTMADAN
+    bellekte yapiliyor, sonuc kucuk bir transaction'la yaziliyor.
+    iddaa_odds_client bunu ~30dk'da bir (her 6. dongude) cagirir."""
+    from fastapi.responses import JSONResponse
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret")
+    if not expected or provided != expected:
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    _iddaa_ensure_schema()
     try:
-        guncellenen = _iddaa_backfill_results(cur)
+        guncellenen = _iddaa_backfill_results()
     except Exception as e:
-        print(f"⚠️  Iddaa sonuc doldurma hatasi: {e}", flush=True)
-    conn.commit()
-    conn.close()
-    return {"success": True, "yazilan": yazilan, "sonuc_dolduruldu": guncellenen}
+        print(f"⚠️  Iddaa backfill hatasi: {e}", flush=True)
+        return {"success": False, "error": str(e)}
+    return {"success": True, "sonuc_dolduruldu": guncellenen}
 
 
 @app.post("/api/admin/archive-csv-import")

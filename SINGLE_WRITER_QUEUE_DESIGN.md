@@ -118,3 +118,20 @@ kendi açılış/bakım sırasının da kademelenmesi değerlendirilmeli.
 kullanıcı uykuda ve gözlemleyemiyor, ek risk almanın faydası şüpheli
 hale geldi. P0 fix (gerçek, doğrulanmış kazanım) + bu envanter/gözlem
 (yarın için netleşmiş bir başlangıç noktası) bu gecenin somut çıktısı.
+
+## measured_write migrasyonu sonucu (deploy d830135) - GÜÇLÜ POZİTİF SONUÇ
+
+v4_api_bot'un ana yazma bloğu artık `measured_write()` kullanıyor.
+İlk ölçülen tur (00:18:08): `wait_ms=0.0` (hiç kilit beklemedi),
+`body_ms=59.8, commit_ms=0.1` - tamamen temiz, `feed=16 islenen=16`
+(sıfır kayıp). Hemen ardından yeni bir sinyal üretildi (Comunicaciones
+FC - Deportivo Marquense, dk=14, %64, guclu_aday) - dakika kapısı
+(dk>=10) doğru çalışıyor.
+
+Bu, bu gecenin EN İYİ ölçülen sonucu - üç değişikliğin (P0 fix +
+stagger + measured_write) birlikte etkisiyle sistem artık hem
+doğru hem hızlı çalışıyor. Yarın Seçenek B'nin geri kalanına (diğer
+8 dosyadaki ~29 çıplak commit) bu kanıtla güvenle devam edilebilir -
+desen çalıştığı doğrulandı.
+
+**Bu gece için iş burada NİHAİ olarak bırakıldı.**

@@ -178,6 +178,14 @@ def update_and_get_momentum(event_id, minute, shots, corners):
     return 0, 0, 0
 
 async def fetch_stats(session, match_id):
+    """DUZELTME (2026-09-09/10, GPT-6 Astra ikinci-gorus - sinyal hacmi
+    coktu, kok neden arastirmasi): basarisizlikta ESKIDEN [] donuyordu -
+    _parse_stats([]) bunu "istek atildi, API sifir/bos stats dondu" ile
+    AYNI sekilde isliyordu, yani "hic sormadik" ile "sorduk, gercekten
+    sifir" birbirine karisiyordu (bkz. app/core/features.py:_g - ayni
+    ayrimin ASAGI akista zaten TITIZLIKLE yapildigi, ustteki yorum
+    2026-08-05 tarihli AYNI bug'a atif yapiyor). Artik basarisizlikta
+    None donuyor - "bilmiyoruz" ile "sifir olcduk" ayri kalsin diye."""
     url = f"https://{HOST}/football-get-match-event-all-stats"
     params = {"eventid": match_id}
     try:
@@ -188,19 +196,30 @@ async def fetch_stats(session, match_id):
                     return data.get("response", {}).get("stats", [])
     except Exception as e:
         print(f"Stats fetch error for {match_id}: {e}")
-    return []
+    return None
 
 async def _no_stats():
     """MAX_STATS_PER_CYCLE butcesi disinda kalan maclar icin - ag istegi
-    ATMADAN bos sonuc doner, boylece asyncio.gather ayni sekle sahip olur."""
-    return []
+    ATMADAN None doner (bkz. fetch_stats notu) - "hic sormadik" acikca
+    isaretlenir, gather ayni sekle sahip kalir."""
+    return None
 
 def _parse_stats(stats_groups):
     """API'nin istatistik yanitini (h_pos, a_pos, ..., h_big, a_big) tuple'ina cevirir.
 
     Saf fonksiyon - DB'ye dokunmaz, ag cagrisi yapmaz. Boylece bu parse islemi
     yazma transaction'i disinda, gather sonuclari elde bekle bekle calistirilabilir.
+
+    DUZELTME (2026-09-09/10): stats_groups None ise (istek hic atilmadi
+    VEYA basarisiz oldu, bkz. fetch_stats/_no_stats) TUM alanlar None
+    donuluyor - artik sahte sifir yazilmiyor. features.py:_g() zaten NULL
+    kolonu "veri yok" (insufficient_data'ya goturur) olarak okuyor - bu
+    duzeltme SADECE yazicidaki (bu dosya) tutarsizligi gideriyor, okuyucu
+    tarafinda (features.py) hicbir sey degismedi/degismesi gerekmiyordu.
     """
+    if stats_groups is None:
+        return (None,) * 20
+
     h_pos, a_pos = 0, 0
     h_xg, a_xg = 0.0, 0.0
     h_shots, a_shots = 0, 0
@@ -710,7 +729,9 @@ async def process_api_matches(session):
     )
     for m, stats_groups in zip(to_process, stats_results):
         if isinstance(stats_groups, Exception):
-            stats_groups = []
+            # bkz. fetch_stats/_parse_stats notu - beklenmedik bir istisna
+            # da "bilmiyoruz" sayilir, sahte sifir degil.
+            stats_groups = None
         m["stats"] = _parse_stats(stats_groups)
 
     # --- ASAMA 4: TEK KISA transaction'da hepsini yaz, hemen kapat. Ag cagrisi

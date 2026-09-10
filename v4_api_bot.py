@@ -149,6 +149,62 @@ def _kesif_ozeti_yaz():
 # Hafıza havuzu
 V4_HISTORY = {}
 
+# ─────────────────────────────────────────────────────────────────────────
+# KOTA BUTCESI (2026-09-10, kullanici karari: "%60'ini kullanabiliriz,
+# 300K'ya ulasinca daha temkinli, aynen devam")
+# ─────────────────────────────────────────────────────────────────────────
+# RapidAPI abonelik yaniti X-RateLimit-Requests-Limit / -Remaining
+# basliklarini gonderir (her istekte). Bunu her turda football-current-live
+# yanitindan okuyoruz - restart-guvenli, bellekte sayac tutmaya gerek yok.
+# used = limit - remaining. Kullanima gore MAX_STATS_PER_CYCLE kademesi:
+#   used < 300K (%60)  -> 25  (agresif - tum takip edilen maclara istatistik)
+#   300K-420K          -> 10  (temkinli)
+#   >= 420K (%84)      -> 4   (minimum - sadece en kritik maclar)
+# Baslik gelmezse (bazi planlar gondermez) orta kademe (10) - guvenli taraf.
+QUOTA_LIMIT_VARSAYILAN = 500_000
+QUOTA_ESIK_TEMKINLI = 300_000
+QUOTA_ESIK_MINIMUM = 420_000
+_quota_limit = None       # RapidAPI'nin bildirdigi aylik limit
+_quota_remaining = None   # RapidAPI'nin bildirdigi kalan
+_quota_baslik_uyarisi_verildi = False
+
+# event_id -> son istatistik cekilen monotonik zaman. Rotasyon icin
+# (Astra K2: eskiden hep "feed sirasindaki ilk 7" seciliyordu, ayni
+# maclar surekli, gerisi hic istatistik almiyordu).
+_son_stat_cekim = {}
+
+
+def _kota_baslik_oku(headers):
+    """RapidAPI'nin X-RateLimit-Requests-* basliklarini oku (buyuk/kucuk
+    harf duyarsiz). Yoksa bir kez uyar, sessizce gec."""
+    global _quota_limit, _quota_remaining, _quota_baslik_uyarisi_verildi
+    lim = headers.get("x-ratelimit-requests-limit") or headers.get("X-RateLimit-Requests-Limit")
+    rem = headers.get("x-ratelimit-requests-remaining") or headers.get("X-RateLimit-Requests-Remaining")
+    try:
+        if lim is not None:
+            _quota_limit = int(lim)
+        if rem is not None:
+            _quota_remaining = int(rem)
+    except (TypeError, ValueError):
+        return
+    if (_quota_limit is None or _quota_remaining is None) and not _quota_baslik_uyarisi_verildi:
+        _quota_baslik_uyarisi_verildi = True
+        print("⚠️  RapidAPI kota basligi (X-RateLimit-Requests-*) gelmiyor - "
+              "istatistik butcesi orta kademede (10/tur) sabit tutulacak.", flush=True)
+
+
+def _kota_kademesi():
+    """Mevcut kota kullanimina gore tur basina istatistik butcesi."""
+    if _quota_limit is not None and _quota_remaining is not None:
+        used = _quota_limit - _quota_remaining
+    else:
+        return 10  # baslik yok - orta/guvenli kademe
+    if used >= QUOTA_ESIK_MINIMUM:
+        return 4
+    if used >= QUOTA_ESIK_TEMKINLI:
+        return 10
+    return 25
+
 def update_and_get_momentum(event_id, minute, shots, corners):
     current_ts = int(time.time())
     if event_id not in V4_HISTORY:
@@ -417,6 +473,7 @@ async def process_api_matches(session):
     url_live = f"https://{HOST}/football-current-live"
     try:
         async with session.get(url_live, headers=HEADERS, timeout=10) as resp:
+            _kota_baslik_oku(resp.headers)
             if resp.status != 200:
                 print(f"Failed to fetch live matches: {resp.status}")
                 return resp.status
@@ -727,27 +784,38 @@ async def process_api_matches(session):
     # acik degil - onceki halde tam da bu bekleme sirasinda (mac basina 10-20
     # saniye surebiliyordu, 22 mac * ag gecikmesi) yazma kilidi acik kaliyordu.
     #
-    # NEDEN SINIRLANDIRILIYOR: gunluk YENI mac kotasi kaldirildiktan sonra
-    # (kullanici istegiyle) es zamanli takip edilen mac sayisi sinirsiz
-    # buyuyebiliyordu - her biri icin ayri bir istatistik istegi atildigindan
-    # (bu dongu), yogun saatlerde RapidAPI'nin hesap genelindeki hiz/kota
-    # sinirina carpip TUM istekler (temel canli-mac cekme dahil) 429 donmeye
-    # basladi - sistem saatlerce hicbir mac cekemedi, sifir sinyal uretti.
-    # Zaten takip edilen maclar ONCELIKLI (aktif sinyalleri var, guncel
-    # kalmalari sart); kalan butce YENI maclara ayriliyor. Oncelik disi
-    # kalanlar DB'den ve ekrandan DUSMEZ - sadece bu dongude detayli
-    # istatistik cekilmez, temel skor/dakika guncellemesi yine olur.
+    # NEDEN SINIRLANDIRILIYOR: es zamanli takip edilen mac sayisi sinirsiz
+    # buyuyebiliyor; her biri icin ayri istatistik istegi atildigindan yogun
+    # saatlerde RapidAPI hiz/kota sinirina carpip TUM istekleri 429'a
+    # dusurebiliyor (gecmiste saatlerce sifir sinyal - bkz. git log).
     #
-    # KOTA HESABI (2026-09-09 GUNCELLEMESI - kullanicinin yeni plani: aylik
-    # 500.000 istek, eskiden varsayilan 2.5M'den COK daha dusuk). Ayni hesap
-    # yontemi: dongu basina (1 temel + MAX_STATS_PER_CYCLE) istek,
-    # NORMAL_CYCLE_SECONDS'te bir. 60sn + 7 ile en kotu ihtimalde:
-    # (86400/60)*(1+7) = 11.520 istek/gun * 30 = 345.600/ay (~%69) - eski
-    # koddaki ~%72 guvenlik payi felsefesiyle tutarli. Onceki ayar (30sn+20)
-    # bu planda ayda ~1.8M cekerdi - 500K kotayi ILK GUNDE tuketirdi.
-    MAX_STATS_PER_CYCLE = 7
-    prioritized = sorted(to_process, key=lambda m: not m["already_tracked"])
+    # DINAMIK BUTCE (2026-09-10, kullanici karari + Astra K2/kota onerisi):
+    # tur basina istatistik sayisi ARTIK SABIT DEGIL - RapidAPI'nin bildirdigi
+    # gercek kota kullanimina gore kademeleniyor (bkz. _kota_kademesi):
+    #   <300K (%60) -> 25/tur  |  300-420K -> 10  |  >=420K -> 4
+    # Boylece rahat oldugumuzda tum takip edilen maclara istatistik cikiyor,
+    # kota daralinca otomatik geri cekiliyor - "300K'ya ulasinca daha
+    # temkinli, aynen devam" (kullanici, 2026-09-10).
+    #
+    # ROTASYON (Astra K2): eskiden "feed sirasindaki ilk 7" seciliyordu -
+    # feed sirasi sabitse AYNI maclar surekli istatistik aliyor, gerisi HIC.
+    # Artik: takip edilenler once, ONLARIN icinde EN UZUN SUREDIR istatistik
+    # cekilmemis olan once (_son_stat_cekim).
+    MAX_STATS_PER_CYCLE = _kota_kademesi()
+    _simdi = time.monotonic()
+    prioritized = sorted(
+        to_process,
+        key=lambda m: (not m["already_tracked"],
+                       _son_stat_cekim.get(m["event_id"], 0.0)),
+    )
     stats_targets = set(id(m) for m in prioritized[:MAX_STATS_PER_CYCLE])
+    for m in prioritized[:MAX_STATS_PER_CYCLE]:
+        _son_stat_cekim[m["event_id"]] = _simdi
+    # _son_stat_cekim'i sinirla - artik canli olmayan maclarin kaydini at
+    if len(_son_stat_cekim) > 500:
+        _canli = {m["event_id"] for m in to_process}
+        for k in [k for k in _son_stat_cekim if k not in _canli]:
+            _son_stat_cekim.pop(k, None)
 
     stats_results = await asyncio.gather(
         *[fetch_stats(session, m["match_id_api"]) if id(m) in stats_targets
@@ -843,10 +911,15 @@ async def process_api_matches(session):
 
     _kesif_ozeti_yaz()
 
+    _kota_str = ""
+    if _quota_limit is not None and _quota_remaining is not None:
+        _used = _quota_limit - _quota_remaining
+        _kota_str = (f" | kota={_used}/{_quota_limit} "
+                     f"(%{100 * _used // _quota_limit}) stat_butce={MAX_STATS_PER_CYCLE}/tur")
     print(
         f"📊 feed={stat_feed_total} islenen={stat_processed} "
         f"atlanan(taninmayan)={stat_skipped_unknown} atlanan(kota)={stat_skipped_cap} "
-        f"| DB'de hala acik(LIVE/HT)={still_open}",
+        f"| DB'de hala acik(LIVE/HT)={still_open}{_kota_str}",
         flush=True,
     )
     return 200

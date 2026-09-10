@@ -176,3 +176,22 @@ NEDEN artık ertelenemeyecek kadar acil olduğunu somut şekilde
 gösteriyor - her küçük düzeltme bile üretimde dakikalarca kesintiye
 neden oluyor. Bu, Astra ile daha önce konuşulan ama "yarın, sakin bir
 oturumda" diye ertelenen konu.
+
+## Gece sonu doğrulama (2026-09-10, ~00:15 UTC)
+
+P0 fix'in GERÇEK etkisi doğrulandı: yeni günün (09-10) İLK sinyali
+üretildi ve **kazandı** (`bugun_paylasilan=1, bugun_kazanan=1,
+bugun_isabet_orani=1.0`). Genel toplam da ilerledi (`sonuclanan`
+1844→1847, 3 sinyal daha sonuçlandı gece boyunca). Sistem sahte-sıfır
+düzeltmesinden sonra gerçekten çalışıyor.
+
+**Bu gecenin özeti:**
+1. ✅ P0 (sahte sıfır → gerçek NULL) - doğrulandı, çalışıyor, ilk
+   sinyal üretti ve kazandı.
+2. ⚠️ Başlangıç kademeleme (Seçenek A) - deploy edildi ama etkisi
+   belirsiz/sınırlı görünüyor - yarın gözden geçirilmeli.
+3. 📝 Tek-yazıcı-kuyruğu envanteri ve 3 seçenek belgelendi
+   (`SINGLE_WRITER_QUEUE_DESIGN.md`) - yarının başlangıç noktası hazır.
+
+Bu gece için değişiklik burada durduruldu (yeterli, doğrulanmış
+ilerleme + kullanıcı uyurken ek risk almamak için).

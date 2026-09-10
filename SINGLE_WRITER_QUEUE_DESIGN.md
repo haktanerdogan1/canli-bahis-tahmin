@@ -96,3 +96,25 @@ büyük bir refactor'u SAKİN, iyi test edilmiş bir günde yapmak şart.
 
 Bu gece HİÇBİR ŞEY UYGULANMADI - sadece envanter çıkarıldı ve seçenekler
 somutlaştırıldı, yarınki karar için.
+
+## Seçenek A sonucu (2026-09-10, aynı gece, deploy 59227d4)
+
+Deploy edildi, doğrulandı. **Sonuç belirsiz/sınırlı:** v4_api_bot 3s
+kademeli gecikmeyle başladı (00:11:37) ama kendi açılış kontrolü yine
+3 ardışık `database is locked` hatası aldı (00:12:08, 00:12:46,
+00:13:24 - önceki desenle aynı büyüklükte). Kademeleme, v4_api_bot'un
+KENDİ başlangıcını erteledi ama muhtemelen diğer süreçlerin (özellikle
+orchestrator'ın referans verisi/bakım turu) YİNE de çakıştığı bir
+pencereye denk geldi - 7 servisi 3sn aralıklarla başlatmak, hangi
+sürecin NE ZAMAN gerçekten DB'ye yazmaya başladığını (sadece process
+başlatma anını değil) kontrol etmiyor.
+
+**Sonuç:** Seçenek A tek başına yeterli değil gibi görünüyor (bu TEK
+gözlemle kesin yargıya varılamaz - örneklem küçük). Yarın Seçenek B
+(kalan çıplak commit'leri measured_write'a taşımak) veya orchestrator'ın
+kendi açılış/bakım sırasının da kademelenmesi değerlendirilmeli.
+
+**Bu gecelik iş burada bırakıldı** - art arda çok fazla deploy yapıldı,
+kullanıcı uykuda ve gözlemleyemiyor, ek risk almanın faydası şüpheli
+hale geldi. P0 fix (gerçek, doğrulanmış kazanım) + bu envanter/gözlem
+(yarın için netleşmiş bir başlangıç noktası) bu gecenin somut çıktısı.

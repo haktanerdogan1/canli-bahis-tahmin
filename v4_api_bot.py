@@ -508,8 +508,18 @@ def _close_stale_progress(cursor):
 _GEC_SONUC_MIN_YAS_DK = 140  # sinyalden bu kadar sonra mac kesin bitmistir
 
 
-async def _bydate_skorlar(session, yyyymmdd):
-    """{fotmob_id(str): {'finished':bool,'h':int,'a':int}} - o tarihin maclari."""
+_BYDATE_CACHE = {}          # yyyymmdd -> (monotonic_ts, tablo)
+_BYDATE_CACHE_SANIYE = 50   # ayni turda tekrar cekmesin, bir sonraki turda taze
+
+
+async def _bydate_skorlar(session, yyyymmdd, cache=True):
+    """{fotmob_id(str): {'finished':bool,'h':int,'a':int,'dk':int|None}} - o
+    tarihin maclari. Bu uc, canli feed donsa bile GUNCEL skoru veriyor -
+    donmus maclari tazelemenin tek yolu (bkz. refresh_stalled_matches)."""
+    if cache:
+        hit = _BYDATE_CACHE.get(yyyymmdd)
+        if hit and (time.monotonic() - hit[0]) < _BYDATE_CACHE_SANIYE:
+            return hit[1]
     try:
         async with session.get(f"https://{HOST}/football-get-matches-by-date",
                                params={"date": yyyymmdd}, headers=HEADERS,
@@ -528,12 +538,115 @@ async def _bydate_skorlar(session, yyyymmdd):
         st = m.get("status") or {}
         h = (m.get("home") or {}).get("score")
         a = (m.get("away") or {}).get("score")
+        dk = None
+        lt = st.get("liveTime") or {}
+        ham_dk = (lt.get("short") or "").strip()
+        if ham_dk:
+            # "74‎’‎" / "45+2" gibi - bastaki sayiyi al
+            m_dk = re.match(r"\s*(\d+)", ham_dk)
+            if m_dk:
+                dk = int(m_dk.group(1))
         out[str(mid)] = {
             "finished": bool(st.get("finished")),
             "h": h if isinstance(h, int) else None,
             "a": a if isinstance(a, int) else None,
+            "dk": dk,
         }
+    if cache:
+        _BYDATE_CACHE[yyyymmdd] = (time.monotonic(), out)
+        for k in [k for k in _BYDATE_CACHE
+                  if (time.monotonic() - _BYDATE_CACHE[k][0]) > 3600]:
+            _BYDATE_CACHE.pop(k, None)
     return out
+
+
+# Canli feed'i DONMUS (dakikasi ilerlemeyen) maclar bu kadar dakika sonra
+# by-date ucundan tazelenir. STALE_PROGRESS_MINUTES'ten (15) cok daha kisa:
+# amac maci KAPATMAK degil, DOGRU veriyle beslemek.
+_DONUK_TAZELE_DK = 3
+
+
+async def refresh_stalled_matches(session):
+    """Canli feed'i donmus LIVE/HT maclarin skor+dakikasini by-date ucundan
+    tazeler.
+
+    NEDEN (2026-09-10, kullanici: "kazanan maclar var hala 16. dk
+    gozukuyor"): RapidAPI football-current-live bir fikstur icin surekli
+    AYNI bayat veriyi donebiliyor (ya da maci feed'den dusuruyor). Eskiden
+    bu maclar 15 dk sonra ABANDONED yapiliyordu -> sinyal VOID (bkz.
+    "neden sildiniz" sorunu). fc04181 ile artik kapatilmiyorlar, ama bu
+    sefer sitede 16. dakikada DONUK gorunuyorlardi ve gerceklesen gol
+    hicbir zaman islenmiyordu - sinyal kazandigi halde acik kaliyordu.
+
+    Cozum kapatmak ya da beklemek degil, DOGRU VERIYI BASKA UCTAN ALMAK:
+    football-get-matches-by-date canli feed donsa bile guncel skoru
+    veriyor. Burada sadece donuk maclar (last_progress_at eski) tazeleniyor,
+    normal akan maclara DOKUNULMUYOR.
+    """
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT id, source_match_id, home_score, away_score, minute, created_at
+        FROM matches
+        WHERE status IN ('LIVE','HT')
+          AND source_match_id LIKE 'v4\\_%' ESCAPE '\\'
+          AND last_progress_at IS NOT NULL
+          AND last_progress_at <= datetime('now', '-{_DONUK_TAZELE_DK} minutes')
+          AND created_at > datetime('now', '-1 day')
+    """)
+    donuklar = cur.fetchall()
+    conn.close()
+    if not donuklar:
+        return
+
+    tarihler = set()
+    for r in donuklar:
+        ham = (r[5] or "")[:10].replace("-", "")
+        if len(ham) != 8:
+            continue
+        try:
+            t0 = time.mktime(time.strptime(ham, "%Y%m%d"))
+        except ValueError:
+            continue
+        for off in (0, 86400):  # mac gece yarisini gecmis olabilir
+            tarihler.add(time.strftime("%Y%m%d", time.localtime(t0 + off)))
+    tablo = {}
+    for t in tarihler:
+        tablo.update(await _bydate_skorlar(session, t))
+    if not tablo:
+        return
+
+    guncel, biten = [], []
+    for mid_db, src, hs, as_, dk, ca in donuklar:
+        rid = src[3:] if src.startswith("v4_") else src
+        info = tablo.get(rid)
+        if not info or info["h"] is None or info["a"] is None:
+            continue
+        if info["finished"]:
+            biten.append((info["h"], info["a"], mid_db))
+        elif (info["h"], info["a"]) != (hs, as_) or (info["dk"] or 0) > (dk or 0):
+            guncel.append((info["h"], info["a"], info["dk"] or dk, mid_db))
+
+    if not guncel and not biten:
+        return
+
+    with measured_write("v4_api_bot.donuk_tazele",
+                        batch_size=len(guncel) + len(biten)) as wconn:
+        wc = wconn.cursor()
+        for h, a, dk, mid_db in guncel:
+            wc.execute("""
+                UPDATE matches SET home_score=?, away_score=?, minute=?,
+                       last_progress_at=CURRENT_TIMESTAMP, last_seen_at=CURRENT_TIMESTAMP
+                WHERE id=? AND status IN ('LIVE','HT')
+            """, (h, a, dk, mid_db))
+        for h, a, mid_db in biten:
+            wc.execute("""
+                UPDATE matches SET home_score=?, away_score=?, minute=90,
+                       status='FINISHED', last_seen_at=CURRENT_TIMESTAMP
+                WHERE id=? AND status IN ('LIVE','HT')
+            """, (h, a, mid_db))
+    print(f"♻️  Donuk feed tazelendi: {len(guncel)} mac skor/dakika guncellendi, "
+          f"{len(biten)} mac bitti olarak kapandi (by-date).", flush=True)
 
 
 async def fetch_missing_results(session):
@@ -1163,6 +1276,17 @@ async def main():
             except Exception as e:
                 print(f"⚠️  V4 cycle basarisiz (crash etmeden atlaniyor): {e}", flush=True)
                 status = None
+
+            # Donuk feed tazeleme - HER turda, process_api_matches'ten SONRA.
+            # Sonra olmasi sart: ustteki upsert, feed'deki BAYAT veriyi yazar;
+            # tazeleme en son calisip dogru skoru birakmali (yoksa bir sonraki
+            # tura kadar yine donuk gorunur).
+            if status == 200:
+                try:
+                    await refresh_stalled_matches(session)
+                except Exception as e:
+                    print(f"⚠️  Donuk tazeleme hatasi (atlaniyor): {e}", flush=True)
+
             elapsed = time.time() - start_time
 
             if status == 429:

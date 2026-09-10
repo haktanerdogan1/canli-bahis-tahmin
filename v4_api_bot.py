@@ -148,6 +148,7 @@ def _kesif_ozeti_yaz():
 
 # Hafıza havuzu
 V4_HISTORY = {}
+_STATS_SHAPE_LOGGED = False  # gecici teshis (bkz. fetch_stats)
 
 # ─────────────────────────────────────────────────────────────────────────
 # KOTA BUTCESI (2026-09-10, kullanici karari: "%60'ini kullanabiliriz,
@@ -250,7 +251,16 @@ async def fetch_stats(session, match_id):
             if resp.status == 200:
                 data = await resp.json()
                 if data.get("status") == "success":
-                    return data.get("response", {}).get("stats", [])
+                    resp_obj = data.get("response", {}) or {}
+                    # GECICI TESHIS (2026-09-10): stats ucu skor/durum tasiyor mu?
+                    # (donmus maclarin gercek sonucunu buradan cekebilir miyiz.)
+                    global _STATS_SHAPE_LOGGED
+                    if not _STATS_SHAPE_LOGGED and isinstance(resp_obj, dict):
+                        _STATS_SHAPE_LOGGED = True
+                        _dump = {k: (type(v).__name__ if not isinstance(v, (str, int, float, bool))
+                                     else v) for k, v in resp_obj.items()}
+                        print(f"🩺 STATS-HAM eventid={match_id} response_keys={_dump}", flush=True)
+                    return resp_obj.get("stats", [])
     except Exception as e:
         print(f"Stats fetch error for {match_id}: {e}")
     return None
@@ -415,6 +425,23 @@ def _ensure_match_tracking_schema(tries=5, pause=8):
           f"devam ediyor - bir sonraki dongude tekrar denenecek.", flush=True)
 
 
+# Yayinlanmis (paylasilmis) bir sinyali olan mac, feed'i donsa/dusse bile
+# HEMEN kapatilmaz - RapidAPI feed'i cogu zaman birkac dk sonra tazeleniyor,
+# ve maci ABANDONED yapmak sinyali VOID'e itiyor ("neden sildiniz" sorusunun
+# kaynagi, kullanici talebi 2026-09-10). SINYAL_KORUMA_SAATI boyunca (kickoff
+# ~= created_at'ten itibaren) korunur; o sure sonunda gercek mac kesin
+# bitmistir, normal kapanis kurallari isler.
+SINYAL_KORUMA_SAATI = 4
+_SINYAL_KORUMA_CLAUSE = f"""
+          AND NOT (
+              id IN (
+                  SELECT match_id FROM consensus_predictions
+                  WHERE decision='signal' AND (outcome IS NULL OR outcome='VOID')
+              )
+              AND created_at > datetime('now', '-{SINYAL_KORUMA_SAATI} hours')
+          )"""
+
+
 def _close_stale_missing(cursor, active_ids):
     """Sadece grace suresince feed'e donmeyen maclari kapatir."""
     params = []
@@ -431,6 +458,7 @@ def _close_stale_missing(cursor, active_ids):
           AND last_seen_at IS NOT NULL
           AND last_seen_at <= datetime('now', '-{MISSING_GRACE_MINUTES} minutes')
           {active_clause}
+          {_SINYAL_KORUMA_CLAUSE}
     ''', params)
     return cursor.rowcount
 
@@ -455,6 +483,7 @@ def _close_stale_progress(cursor):
         WHERE status IN ('LIVE','HT')
           AND last_progress_at IS NOT NULL
           AND last_progress_at <= datetime('now', '-{STALE_PROGRESS_MINUTES} minutes')
+          {_SINYAL_KORUMA_CLAUSE}
     ''')
     stale_ids = [row[0] for row in cursor.fetchall()]
     if stale_ids:

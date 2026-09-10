@@ -1,6 +1,8 @@
-"""Telegram grubuna 30 dakikada bir donen iki bilgilendirme mesajini
-otomatik atan istemci - kullanici talebi (2026-09-08): "telegramda yarim
-saatte 1 bu ve bu mesaji otomatik atalim".
+"""Telegram grubuna 3 saatte bir donen iki bilgilendirme mesajini
+otomatik atan istemci - kullanici talebi (2026-09-08): "telegramda ...
+bu ve bu mesaji otomatik atalim". Kadans 2026-09-10'da yarim saatten
+3 saate cikarildi (kullanici: "30 dakika olmasin, 3 saatte 1" - grup
+her yarim saatte tekrarlanan sabit mesajlardan bunaliyordu).
 
 Sinyal anonsu/sonucu (telegram_poster.py) ile TAMAMEN AYRI bir akis - bu
 betik SADECE iki sabit bilgilendirme mesajini donusumlu paylasir, hicbir
@@ -29,7 +31,7 @@ import time
 import requests
 
 DEFAULT_API_BASE = "https://web-production-f1dba.up.railway.app"
-CYCLE_PAUSE_SECONDS = 30 * 60  # yarim saat
+CYCLE_PAUSE_SECONDS = 3 * 60 * 60  # 3 saat (2026-09-10, onceden yarim saatti)
 
 _MESSAGE_A = (
     "Matchrix bir bahis uygulaması değildir; bahis kabul etmez, "
@@ -104,7 +106,7 @@ def main():
         sys.exit(1)
 
     print(f"🚀 Telegram bilgilendirme botu başlatılıyor -> {api_base} "
-          f"({CYCLE_PAUSE_SECONDS // 60}dk'da bir, A/B dönüşümlü)", flush=True)
+          f"({CYCLE_PAUSE_SECONDS / 3600:g} saatte bir, A/B dönüşümlü)", flush=True)
 
     sira = 0
     while True:

@@ -154,3 +154,25 @@ olmasına rağmen. Astra'ya soruldu, cevap:
 gece yarısını geçti). Yarınki öncelik: P0 (sıfır/eksik veri ayrımı)
 + bu teşhis loglaması birlikte ele alınabilir, ikisi de aynı kök
 soruna bakıyor.
+
+## Sonuç (2026-09-10, gece, /goal oturumu): P0 fix doğrulandı
+
+Commit `c116220` deploy edildi (00:02 UTC). Sonuç:
+- Deploy sonrası ~5 dakika (00:02-00:07) sürekli `database is locked`
+  - bugünkü desenle tutarlı, HER deploy bu kadar kilitleniyor. Bu,
+  tek-yazıcı-kuyruğu sorununun hâlâ en büyük kısıtlayıcı olduğunun
+  bir kanıtı daha (bkz. CLAUDE.md kural 6b, bugün defalarca gözlendi).
+- Kilit açılınca (00:07:18) v4_api_bot ilk turunu tamamladı (feed=14,
+  1.15sn) ve HEMEN ardından **farklı maç ID'leri** TESHIS'te görünmeye
+  başladı (17547753, 17547816 - önceki ~5 dakikadır tek bir maç
+  [17547882] donuk şekilde tekrarlanıyordu). P0 fix doğrulandı: sahte
+  sıfır yerine gerçek NULL yazılıyor, sistem normal davranışına döndü.
+- Henüz `SİNYAL BULUNDU` yok ama sistem artık gerçek/taze veriyle
+  çalışıyor - bu iyi bir işaret, hacim zamanla netleşecek.
+
+**Yarın için netleşen öncelik:** Bugünkü OLAYIN TAMAMI (5 kez art arda
+deploy → 5 kez ~5dk kilit fırtınası) tek-yazıcı-kuyruğu mimarisinin
+NEDEN artık ertelenemeyecek kadar acil olduğunu somut şekilde
+gösteriyor - her küçük düzeltme bile üretimde dakikalarca kesintiye
+neden oluyor. Bu, Astra ile daha önce konuşulan ama "yarın, sakin bir
+oturumda" diye ertelenen konu.

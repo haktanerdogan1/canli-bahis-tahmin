@@ -6,11 +6,13 @@ NE YAPAR:
   Railway'de calisan sistemin canli durumunu Mac'inde terminalde gosterir:
     * Sistem nabzi (kac canli mac, son veri ne zaman geldi, kac sinyal)
     * Taranan maclar ve dakikalari
-    * Son sinyaller - ve o sinyalde 16 botun HER BIRININ ne dedigi
+    * Son sinyaller - ve o sinyalde 18 botun HER BIRININ ne dedigi
+      (sayi sabit degil - o an bot_predictions'a satir yazan tum botlar
+       gosterilir; konsensus motoru bot ekley/cikarirsa panel otomatik uyar)
     * Bot bazli ozet
 
 KULLANIM:
-    pip3 install rich requests
+    pip3 install rich
     python3 jcode_monitor.py
 
   Ilk calistirmada e-posta/sifre sorar (uygulamada kayitli hesabin).

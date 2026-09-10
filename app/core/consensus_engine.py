@@ -3,6 +3,30 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from app.schemas.bot_prediction import BotPrediction
 
+# CANLI VERI SARTI (2026-09-10, kullanici: "sonuclar rezalet" - o gun
+# isabet %55.6, olculmus taban oranin [%61.6] BILE altinda).
+#
+# Bu dort bot, macin canli istatistigine HIC bakmadan her zaman oy verir:
+# tarihsel taban oran, skor/sure durumu, mac oncesi tahmin ve acilis orani.
+# Canli istatistik kapsamasi dar oldugunda (RapidAPI cogu ligde sut/xG/korner
+# vermiyor) geri kalan 14 bot "insufficient_data" ile cekiliyor ve sinyal
+# SADECE bu dortluyle uretiliyordu - canli loglarda gorulen desen:
+#     oy_veren=4 pos=2 neg=2 eksik=14 mutabakat=0.5 final_prob=0.648
+# Yani "CANLI SINYAL" diye paylasilan sey, iceriginde macin o anina dair
+# TEK BIR bilgi tasimayan bir mac-oncesi tahmindi; 2'ye 2 bolunmus bir oy
+# esigi tam sinirda geciyordu. Sonuc yazi-tura.
+#
+# Kural: bir sinyal (guclu_aday) ancak GERCEK canli istatistikle calisan
+# EN AZ BIR bot "gol" dediyse acilir. Aksi halde en fazla "izleme".
+# NOT (Astra K5): sart bot SINIFINA baglanmaz - GameStateBot da Specialist
+# ailesindendir ama canli istatistik GEREKTIRMEZ. O yuzden acik isim listesi.
+CANLI_VERI_GEREKTIRMEYEN = frozenset({
+    "bot_base_rate",
+    "bot_game_state",
+    "bot_19_prematch_prophet",
+    "bot_odds_profile",
+})
+
 class ConsensusResult(BaseModel):
     match_id: str
     snapshot_id: Optional[int] = None
@@ -11,6 +35,7 @@ class ConsensusResult(BaseModel):
     negative_bot_count: int
     insufficient_data_count: int
     weighted_probability: float
+    canli_veri_oyu: int = 0  # gercek canli istatistikle "gol" diyen bot sayisi
     signal_level: str  # "none", "eksik_veri", "izleme", "guclu_aday" (eski "cok_guclu" kaldirildi - bkz. ConsensusEngine.evaluate)
     decision: str      # "signal", "no_signal"
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -71,10 +96,11 @@ class ConsensusEngine:
         pos_count = 0
         neg_count = 0
         insufficient_count = 0
-        
+        canli_veri_oyu = 0  # bkz. CANLI_VERI_GEREKTIRMEYEN
+
         total_weight = 0.0
         weighted_prob_sum = 0.0
-        
+
         for p in predictions:
             if p.decision == "insufficient_data":
                 insufficient_count += 1
@@ -101,6 +127,9 @@ class ConsensusEngine:
 
             if p.decision == "goal":
                 pos_count += 1
+                # Sinyali ancak GERCEK canli veriye bakan bir bot ACABILIR.
+                if p.bot_name not in CANLI_VERI_GEREKTIRMEYEN:
+                    canli_veri_oyu += 1
             else:
                 neg_count += 1
 
@@ -172,11 +201,28 @@ class ConsensusEngine:
         # dk>=10 sart). Ayni korumayi iki kez (esik + dakika kapisi)
         # uygulamak gereksiz sikilik - dakika kapisi tek basina yeterli,
         # esik tekrar 4'e cekildi.
+        #
+        # 2026-09-10 EKI: "dakika kapisi tek basina yeterli" varsayimi URETIMDE
+        # YANLIS CIKTI. MIN_SIGNAL_MINUTE=10 sinyali sadece ERTELIYOR; ayni 4
+        # hazir bot 10., 15., 20. dakikada da tek baslarina esigi geciyor.
+        # O gunun canli loglari (dk 10-25 arasi, feed'de 20-26 mac):
+        #     oy_veren=4 pos=3 neg=1 eksik=14   -> guclu_aday
+        #     oy_veren=4 pos=2 neg=2 eksik=14   -> guclu_aday (2'ye 2!)
+        # Gunun isabeti %55.6 - olculmus taban oranin (%61.6) ALTINDA, yani
+        # sistem rastgeleden kotu. Cozum esigi oynatmak DEGIL (o denendi,
+        # 5<->4 gidip geldi): sinyalin ICINDE canli veri OLMASINI sart kosmak.
+        # Sayisal esikler AYNEN korunuyor - sadece "hic canli veri yoksa
+        # sinyal degil, izleme" kurali ekleniyor.
         if oy_veren < 4:
             signal_level = "eksik_veri"
         elif mutabakat >= 0.50 and final_prob >= 0.63:
-            signal_level = "guclu_aday"
-            decision = "signal"
+            if canli_veri_oyu >= 1:
+                signal_level = "guclu_aday"
+                decision = "signal"
+            else:
+                # Esikleri geciyor ama tek bir canli-veri botu bile "gol"
+                # demedi - bu bir mac-oncesi tahmin, canli sinyal degil.
+                signal_level = "izleme"
         elif mutabakat >= 0.40 and final_prob >= 0.55:
             signal_level = "izleme"
 
@@ -186,6 +232,7 @@ class ConsensusEngine:
             positive_bot_count=pos_count,
             negative_bot_count=neg_count,
             insufficient_data_count=insufficient_count,
+            canli_veri_oyu=canli_veri_oyu,
             weighted_probability=round(final_prob, 3),
             signal_level=signal_level,
             decision=decision

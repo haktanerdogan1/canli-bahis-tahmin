@@ -467,6 +467,7 @@ def run_orchestrator():
                     print(f"🔎 TESHIS mac={match_id} dk={minute} seviye={consensus_result.signal_level} "
                           f"oy_veren={_ov} pos={consensus_result.positive_bot_count} "
                           f"neg={consensus_result.negative_bot_count} eksik={consensus_result.insufficient_data_count} "
+                          f"canli_oy={consensus_result.canli_veri_oyu} "
                           f"mutabakat={_mb} final_prob={consensus_result.weighted_probability}", flush=True)
 
                 # Sinyalin uretildigi dakika ve hedeflenen market SABIT olarak hesaplanip

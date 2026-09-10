@@ -2,6 +2,7 @@ import asyncio
 import time
 import sqlite3
 import os
+import re
 import aiohttp
 from collections import deque
 
@@ -204,71 +205,97 @@ async def _no_stats():
     isaretlenir, gather ayni sekle sahip kalir."""
     return None
 
-def _parse_stats(stats_groups):
-    """API'nin istatistik yanitini (h_pos, a_pos, ..., h_big, a_big) tuple'ina cevirir.
+_STAT_PCT_PREFIX = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*(?:\(|$)')  # "12 (44%)" -> "12", "12" -> "12"
+_STAT_PLAIN_NUM = re.compile(r'^\s*-?\d+(?:\.\d+)?\s*$')
+_STAT_MISSING = {"", "-", "n/a", "na", "null", "none", "?"}
 
-    Saf fonksiyon - DB'ye dokunmaz, ag cagrisi yapmaz. Boylece bu parse islemi
-    yazma transaction'i disinda, gather sonuclari elde bekle bekle calistirilabilir.
 
-    DUZELTME (2026-09-09/10): stats_groups None ise (istek hic atilmadi
-    VEYA basarisiz oldu, bkz. fetch_stats/_no_stats) TUM alanlar None
-    donuluyor - artik sahte sifir yazilmiyor. features.py:_g() zaten NULL
-    kolonu "veri yok" (insufficient_data'ya goturur) olarak okuyor - bu
-    duzeltme SADECE yazicidaki (bu dosya) tutarsizligi gideriyor, okuyucu
-    tarafinda (features.py) hicbir sey degismedi/degismesi gerekmiyordu.
+def _stat_one_side(v, want_float):
+    """API'nin tutarsiz istatistik formatini TEK bir tarafin (ev VEYA
+    deplasman) sayisal degerine cevirir. GEÇERSİZ veya EKSİK ise None
+    doner - ASLA 0 (2026-09-10, GPT-6 Astra: sahte sifir = veri bozulmasi).
+
+    Kabul:
+      12, "12", "12.0", "12 (44%)"  -> sayi (yuzdeli formda BASTAKI sayi = adet)
+    Ret (-> None):
+      None, "", "-", "N/A"          -> eksik
+      "NaN", "Infinity", "-5"       -> gecersiz (negatif sayim/xG olmaz)
+      "12abc", "abc", "(44%)"       -> ayristirilamaz
+      bool                          -> sayi degil (True/False sayi sayilmaz)
     """
-    if stats_groups is None:
-        return (None,) * 20
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        x = float(v)
+    elif isinstance(v, str):
+        s = v.strip()
+        if s.lower() in _STAT_MISSING:
+            return None
+        m = _STAT_PCT_PREFIX.match(s)
+        if m:
+            x = float(m.group(1))
+        elif _STAT_PLAIN_NUM.match(s):
+            x = float(s)
+        else:
+            return None
+    else:
+        return None
+    # NaN / +-Inf / negatif ele
+    if x != x or x in (float("inf"), float("-inf")) or x < 0:
+        return None
+    return x if want_float else int(x)
 
-    h_pos, a_pos = 0, 0
-    h_xg, a_xg = 0.0, 0.0
-    h_shots, a_shots = 0, 0
-    h_sot, a_sot = 0, 0
-    h_cor, a_cor = 0, 0
-    # NOT: asagidaki alanlarin API anahtar eslesmesi henuz bilinmiyor
-    # (kesif Railway'de calisip "YENI ISTATISTIK ANAHTARI" loglari
-    # cikinca yapilacak). Simdilik hep 0 yazilir, kolonlar en azindan
-    # INSERT'te yer alsin diye eklendi.
-    h_sot_off, a_sot_off = 0, 0
-    h_danger, a_danger = 0, 0
-    h_atk, a_atk = 0, 0
-    h_red, a_red = 0, 0
-    h_big, a_big = 0, 0
+
+def _parse_stats(stats_groups):
+    """API'nin istatistik yanitini (h_pos, a_pos, ..., h_big, a_big) 20'li
+    tuple'ina cevirir. Saf fonksiyon - DB/ag yok, transaction disinda calisir.
+
+    VERI BUTUNLUGU (2026-09-10, GPT-6 Astra kod incelemesi - onceki
+    duzeltme [c116220] EKSIKTI):
+      - TUM alanlar None baslar. Sadece DOGRULANMIS deger doldurulur.
+        Desteklenmeyen/gelmeyen alan 0 DEGIL None kalir.
+      - stats_groups None VEYA [] (istek atilmadi / bos yanit) -> hepsi None.
+      - Iki taraf AYRI ayristirilir. Bir taraf eksik/gecersizse SADECE
+        o taraf None, diger tarafin gecerli degeri KAYBOLMAZ.
+      - "12 (44%)" -> 12 (adet). "NaN"/negatif/"12abc" -> None.
+    features.py:_g() NULL kolonu zaten "veri yok" (insufficient_data)
+    olarak okuyor - bu duzeltme yazici tarafindaki sahte sifiri kaldiriyor.
+    """
+    fields = ["h_pos", "a_pos", "h_xg", "a_xg", "h_shots", "a_shots",
+              "h_sot", "a_sot", "h_sot_off", "a_sot_off", "h_danger", "a_danger",
+              "h_atk", "a_atk", "h_cor", "a_cor", "h_red", "a_red", "h_big", "a_big"]
+    f = {k: None for k in fields}
+
+    if not stats_groups:  # None VEYA bos liste
+        return tuple(f[k] for k in fields)
+
+    # key -> (h_field, a_field, want_float)
+    key_map = {
+        "BallPossesion":  ("h_pos", "a_pos", False),
+        "expected_goals": ("h_xg", "a_xg", True),
+        "total_shots":    ("h_shots", "a_shots", False),
+        "ShotsOnTarget":  ("h_sot", "a_sot", False),
+        "corners":        ("h_cor", "a_cor", False),
+    }
 
     for group in stats_groups:
         for item in group.get("stats", []):
             key = item.get("key")
-            vals = item.get("stats", [0, 0])
-
-            # KESIF: Tanimadigimiz istatistik anahtarlarini kaydet.
-            # Su an sadece 5 alan okuyoruz (topla oynama, xG, sut, isabetli sut,
-            # korner). Kirmizi kart, tehlikeli atak, buyuk sans gibi alanlar
-            # hic doldurulmuyor - bu yuzden o alanlara bakan botlar (bot_red_card,
-            # bot_attack_volume) HIC CALISAMIYOR. API'nin gercekte hangi anahtarlari
-            # gonderdigini tahmin etmek yerine BURADAN OGRENIYORUZ.
+            vals = item.get("stats")
             _bilinmeyen_anahtar_kaydet(key, vals)
+            target = key_map.get(key)
+            if not target or not isinstance(vals, (list, tuple)) or len(vals) < 2:
+                continue
+            hf, af, want_float = target
+            hv = _stat_one_side(vals[0], want_float)
+            av = _stat_one_side(vals[1], want_float)
+            # Her tarafi BAGIMSIZ yaz - biri None olsa digeri kaydedilir.
+            if hv is not None:
+                f[hf] = hv
+            if av is not None:
+                f[af] = av
 
-            # Check if vals is valid
-            if isinstance(vals, list) and len(vals) >= 2 and vals[0] is not None and vals[1] is not None:
-                if key == "BallPossesion":
-                    try: h_pos, a_pos = int(vals[0]), int(vals[1])
-                    except: pass
-                elif key == "expected_goals":
-                    try: h_xg, a_xg = float(vals[0]), float(vals[1])
-                    except: pass
-                elif key == "total_shots":
-                    try: h_shots, a_shots = int(vals[0]), int(vals[1])
-                    except: pass
-                elif key == "ShotsOnTarget":
-                    try: h_sot, a_sot = int(vals[0]), int(vals[1])
-                    except: pass
-                elif key == "corners":
-                    try: h_cor, a_cor = int(vals[0]), int(vals[1])
-                    except: pass
-
-    return (h_pos, a_pos, h_xg, a_xg, h_shots, a_shots, h_sot, a_sot,
-            h_sot_off, a_sot_off, h_danger, a_danger, h_atk, a_atk, h_cor, a_cor,
-            h_red, a_red, h_big, a_big)
+    return tuple(f[k] for k in fields)
 
 
 def _ensure_match_tracking_schema(tries=5, pause=8):

@@ -482,7 +482,8 @@ async def process_api_matches(session):
         print(f"Error fetching live matches: {e}")
         return None
 
-    matches = data.get("response", {})
+    _resp_raw = data.get("response", {})
+    matches = _resp_raw
     if isinstance(matches, dict) and "live" in matches:
         matches = matches["live"]
     elif isinstance(matches, dict) and "matches" in matches:
@@ -490,6 +491,27 @@ async def process_api_matches(session):
 
     if not matches:
         matches = []
+
+    # GECICI TESHIS (2026-09-10): kullanici "eskiden bu API gunde 150+ mac
+    # donuyordu, simdi 7" diyor - kod Agustos'tan beri ayni. API'nin HAM
+    # yanitini gormeden teshis edemiyoruz. Her turda ham yapiyi bas.
+    try:
+        _ust = (list(data.keys()) if isinstance(data, dict) else type(data).__name__)
+        _resp_tip = (f"dict:{list(_resp_raw.keys())}" if isinstance(_resp_raw, dict)
+                     else f"list:{len(_resp_raw)}" if isinstance(_resp_raw, list)
+                     else type(_resp_raw).__name__)
+        _ornek = ""
+        if isinstance(matches, list) and matches and isinstance(matches[0], dict):
+            _m0 = matches[0]
+            _st = _m0.get("status", {}) or {}
+            _ornek = (f" ornek: id={_m0.get('id')} lig={_m0.get('leagueId')} "
+                      f"status_keys={list(_st.keys())} "
+                      f"halfs={_st.get('halfs')} liveTime={_st.get('liveTime')}")
+        print(f"🩺 API-HAM: data_keys={_ust} response={_resp_tip} "
+              f"cikarilan_mac={len(matches) if hasattr(matches, '__len__') else '?'}"
+              f"{_ornek}", flush=True)
+    except Exception as _e:
+        print(f"🩺 API-HAM teshis hatasi: {_e}", flush=True)
 
     # HAM feed'de gorunen TUM mac id'leri - onay/guven durumundan BAGIMSIZ.
     # Asagidaki plausibilite filtresi bir maci "henuz onaylanmadi" diye bir

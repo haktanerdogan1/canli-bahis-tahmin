@@ -547,17 +547,22 @@ async def process_api_matches(session):
             print(f"🩺 DATE-PROBE HATA: {_e}", flush=True)
         try:
             async with session.get(f"https://{HOST}/football-get-match-detail",
-                                   params={"matchid": "6106246"},
+                                   params={"eventid": "6106246"},
                                    headers=HEADERS, timeout=10) as _r2:
                 _dd = await _r2.json()
-                _det = ((_dd.get("response") or {}).get("detail")) or {}
-                print(f"🩺 DETAIL-PROBE detail_keys={list(_det.keys())}", flush=True)
+                _resp2 = _dd.get("response") or {}
+                _det = _resp2.get("detail") if isinstance(_resp2, dict) else None
                 import json as _json
-                for _k in ("homeScore", "awayScore", "htScore", "halfScore",
-                           "events", "goals", "matchFacts", "header", "status"):
-                    if _k in _det:
-                        print(f"🩺 DETAIL-PROBE detail[{_k}]="
-                              f"{_json.dumps(_det[_k], ensure_ascii=False)[:400]}", flush=True)
+                print(f"🩺 DETAIL-PROBE resp_keys={list(_resp2.keys()) if isinstance(_resp2, dict) else type(_resp2).__name__}",
+                      flush=True)
+                _dump2 = _json.dumps(_resp2, ensure_ascii=False)
+                # skor/gol/dakika iceren kisimlari ara
+                for _needle in ('"minute"', '"goal"', '"htScore"', '"halftime"',
+                                '"firstHalf"', '"score"', '"events"'):
+                    _i = _dump2.find(_needle)
+                    if _i >= 0:
+                        print(f"🩺 DETAIL-PROBE {_needle} @ {_i}: ...{_dump2[max(0,_i-40):_i+220]}...",
+                              flush=True)
         except Exception as _e:
             print(f"🩺 DETAIL-PROBE HATA: {_e}", flush=True)
 

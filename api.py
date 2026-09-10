@@ -1014,6 +1014,46 @@ def admin_manual_settle_signal(request: Request, match_id: int, outcome: str):
     return {"success": True, "guncellenen_sinyal_sayisi": updated}
 
 
+@app.get("/api/admin/signal-audit")
+def signal_audit(request: Request, home: str, away: str):
+    """Read only: inspect one named fixture without exporting unrelated data."""
+    from fastapi.responses import JSONResponse
+    import hmac
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret", "")
+    if not expected or not hmac.compare_digest(expected, provided):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    if any(len(name.strip()) < 3 or len(name) > 100 or '%' in name or '_' in name
+           for name in (home, away)):
+        return JSONResponse({"error": "iki takim adi gerekli"}, status_code=400)
+    conn = connect()
+    try:
+        conn.row_factory = sqlite3.Row
+        matches = conn.execute("""
+            SELECT id, source_match_id, home_team_id, away_team_id, status,
+                   minute, home_score, away_score, created_at
+            FROM matches WHERE home_team_id LIKE ? AND away_team_id LIKE ?
+            ORDER BY id DESC LIMIT 5
+        """, ('%' + home.strip() + '%', '%' + away.strip() + '%')).fetchall()
+        result = []
+        for match in matches:
+            item = dict(match)
+            item['signals'] = [dict(row) for row in conn.execute("""
+                SELECT id, snapshot_id, signal_minute, market, initial_goals,
+                       weighted_probability, outcome, created_at, settled_at
+                FROM consensus_predictions WHERE match_id=? AND decision='signal'
+                ORDER BY created_at DESC LIMIT 20
+            """, (match['id'],))]
+            item['recent_snapshots'] = [dict(row) for row in conn.execute("""
+                SELECT id, captured_at, minute, home_score, away_score
+                FROM live_snapshots WHERE match_id=? ORDER BY id DESC LIMIT 3
+            """, (match['id'],))]
+            result.append(item)
+        return {"success": True, "matches": result}
+    finally:
+        conn.close()
+
+
 # --- X (Twitter) otomatik paylasim ------------------------------------------
 # x_poster.py (Railway'de supervisor.py uzerinden calisir, Playwright
 # GEREKTIRMEZ) IKI ASAMALI akis kullanir (kullanici talebi, 2026-08-29):

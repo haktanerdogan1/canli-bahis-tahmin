@@ -669,7 +669,7 @@ function renderCurrentTabList(){
     const data = allMatches.filter(m => m.outcome==='PENDING');
     renderList('listOpen', data);
   } else if(currentTab === 'results'){
-    const data = allMatches.filter(m => ['WON','LOST'].includes(m.outcome) && m.signal_date===todayTR);
+    const data = allMatches.filter(m => ['WON','LOST','VOID'].includes(m.outcome) && m.signal_date===todayTR);
     renderList('listResults', data);
   }
 }
@@ -730,6 +730,7 @@ function signalCardHtml(m){
   let statusBadge, timeLabel;
   if(m.outcome==='WON'){ statusBadge = `<span class="badge-status badge-won"><i class="fa-solid fa-check"></i> KAZANDI</span>`; }
   else if(m.outcome==='LOST'){ statusBadge = `<span class="badge-status badge-lost"><i class="fa-solid fa-xmark"></i> KAYBETTİ</span>`; }
+  else if(m.outcome==='VOID'){ statusBadge = `<span class="badge-status">SONUÇ DOĞRULANAMADI</span>`; }
   else { statusBadge = `<span class="badge-status badge-live"><span class="live-dot" style="display:inline-block;"></span> CANLI</span>`; }
 
   if(m.match_status==='FINISHED') timeLabel='MS';

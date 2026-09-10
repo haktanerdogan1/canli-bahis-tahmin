@@ -1447,7 +1447,7 @@
                 live_alerts_fallback: 'Canlı Alarmlar',
                 outcome_won: 'KAZANDI',
                 outcome_lost: 'KAYBETTİ',
-                outcome_void: 'GEÇERSİZ',
+                outcome_void: 'SONUÇ DOĞRULANAMADI',
                 signal_minute_label: "Tahmin Dakikası: {n}'",
                 lead_bot_title: 'Sinyale en çok katkı veren bot',
                 xg_sniper_title: 'En çok katkı veren bot: xG Sniper',
@@ -1615,7 +1615,7 @@
                 live_alerts_fallback: 'Live Alerts',
                 outcome_won: 'WON',
                 outcome_lost: 'LOST',
-                outcome_void: 'VOID',
+                outcome_void: 'RESULT UNCONFIRMED',
                 signal_minute_label: "Signal Minute: {n}'",
                 lead_bot_title: 'Bot that contributed most to this signal',
                 xg_sniper_title: 'Top contributing bot: xG Sniper',
@@ -2509,13 +2509,9 @@
                                 : t('today_no_signals') + ' <i class="fa-solid fa-arrow-down" style="font-size:0.75em;"></i>';
                         }
                     } else if (requestTab === 'results') {
-                        // Kullanici acikca istedi: SADECE bugun paylasilan maclarin
-                        // kazanc/kayip sonucu gorunsun, 1-2 gun oncesi dahil edilmesin.
-                        // VOID artik kalici bir kategori degil (backend'de reconcile
-                        // edilip WON/LOST'a cevriliyor ya da silinip gidiyor - bkz.
-                        // settlement.py) - bu yuzden burada da gosterilmiyor.
+                        // VOID remains visible: a shared prediction must not disappear.
                         dataToRender = dataToRender.filter(m =>
-                            ["WON", "LOST"].includes(m.outcome) && m.signal_date === currentTodayTR);
+                            ["WON", "LOST", "VOID"].includes(m.outcome) && m.signal_date === currentTodayTR);
                     }
                     renderGroups(dataToRender, requestTab);
                 } else {

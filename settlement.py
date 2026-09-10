@@ -783,35 +783,13 @@ def reconcile_void_signals(verbose=True):
 
 
 def delete_unresolvable_void(verbose=True):
-    """Kalici olarak ASLA cozulemeyecek VOID sinyalleri siler - kullanici
-    talebi ("gercekten belirsiz olanlari sil"). reconcile_void_signals()'in
-    tam tersi: o kesin sonuca ulasanlari WON/LOST yapar, bu da bir daha HICBIR
-    ZAMAN kesin sonuca ulasamayacaklari temizler.
+    """Compatibility no-op: never erase published predictions automatically.
 
-    Sadece IKI DAR durumda siler (yanlislikla hala cozulebilecek bir kaydi
-    silmemek icin):
-      1. initial_goals NULL - sinyal anindaki referans gol sayisi hic
-         kaydedilmemis, hangi esigi takip ettigimizi ASLA bilemeyiz.
-      2. Bagli mac status='ABANDONED' - tracking bu maca bir daha DONMEYECEK
-         (thesports_bot durumu boyle birakti), gercek sonuc asla gelmeyecek.
-    Hala CANLI (LIVE/HT/FINISHED-henuz-reconcile-edilmemis) bir maca bagli
-    VOID kayitlara DOKUNULMAZ - onlar reconcile_void_signals() ile mac
-    (gercekten) bitince kesin sonuca ulasir, erken silinmemeli.
+    ABANDONED means tracking was lost, not that a result can never arrive.
+    Preserve VOID rows, including incomplete ones, for visible history and
+    later reconciliation. Explicit administrative deletion is a separate action.
     """
-    with measured_write("settlement.delete_unresolvable_void") as conn:
-        cur = conn.cursor()
-        cur.execute('''
-            DELETE FROM consensus_predictions
-            WHERE decision='signal' AND outcome='VOID'
-              AND (
-                  initial_goals IS NULL
-                  OR match_id IN (SELECT id FROM matches WHERE status='ABANDONED')
-              )
-        ''')
-        silinen = cur.rowcount
-    if verbose and silinen:
-        print(f"[settlement] {silinen} kalici cozulemeyen VOID sinyal silindi", flush=True)
-    return silinen
+    return 0
 
 
 # live_snapshots SINIRSIZ BUYUYORDU (2026-09-05'te tespit edildi). Iki canli

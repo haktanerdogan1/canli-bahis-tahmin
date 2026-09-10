@@ -82,35 +82,16 @@ AYNI_ANDA_ACIK_KAPASITE = 10
 
 
 def _kapasite_kontrolu(cursor, yeni_olasilik):
-    """En fazla AYNI_ANDA_ACIK_KAPASITE kadar PENDING sinyal ayni anda acik
-    kalsin - "cok fazla acik bahis, secici olmaliyiz" karari (kullanici
-    talebi). Kapasite doluysa:
-      - yeni aday, acik olanlarin EN ZAYIFINDAN daha guvenilirse (daha yuksek
-        agirlikli olasilik) o zayif sinyal VOID yapilip yerine yenisine yer
-        acilir (outcome bir kez daha KALICI - VOID yazildiktan sonra bu kayda
-        bir daha dokunulmaz, tipki normal sonuclanma gibi).
-      - degilse yeni sinyal hic acilmaz (kapasite doluyken daha guvenilir
-        olmayan bir aday icin yer acilmaz).
-    Kapasite dolu degilse dogrudan True doner - hicbir sey degismez.
-    """
-    cursor.execute('''
-        SELECT id, weighted_probability FROM consensus_predictions
-        WHERE decision='signal' AND outcome IS NULL
-        ORDER BY weighted_probability ASC
-    ''')
-    acik = cursor.fetchall()
-    if len(acik) < AYNI_ANDA_ACIK_KAPASITE:
-        return True
+    """Capacity limits NEW signals; an already published signal is never evicted.
 
-    en_zayif_id, en_zayif_olasilik = acik[0]
-    if yeni_olasilik is not None and en_zayif_olasilik is not None and yeni_olasilik > en_zayif_olasilik:
-        cursor.execute(
-            "UPDATE consensus_predictions SET outcome='VOID', settled_at=CURRENT_TIMESTAMP "
-            "WHERE id=? AND outcome IS NULL",
-            (en_zayif_id,),
-        )
-        return True
-    return False
+    A higher probability on another match is not evidence that an existing
+    prediction is void. Keep tracking it until settlement determines its result.
+    """
+    cursor.execute("""
+        SELECT COUNT(*) FROM consensus_predictions
+        WHERE decision='signal' AND outcome IS NULL
+    """)
+    return cursor.fetchone()[0] < AYNI_ANDA_ACIK_KAPASITE
 
 
 _LEAGUE_HIT_RATE_CACHE = {}
@@ -666,11 +647,7 @@ def run_orchestrator():
                 except Exception as ve:
                     print(f"⚠️  VOID yeniden kontrol hatasi: {ve}")
 
-                # Kalici olarak asla cozulemeyecek VOID sinyalleri sil - kullanici talebi.
-                try:
-                    settlement.delete_unresolvable_void()
-                except Exception as de:
-                    print(f"⚠️  VOID silme hatasi: {de}")
+                # Published VOID signals remain visible and available for reconciliation.
 
             # settlement.finalize_fully_settled_matches() KASITLI OLARAK
             # devre disi (2026-08-24, kullanici raporu: "sonuçlar ekranında

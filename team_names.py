@@ -74,24 +74,33 @@ _JENERIK_KELIMELER = frozenset({
 def ayni_fikstur(home_a, away_a, home_b, away_b, league_a=None, league_b=None):
     """Iki mac ayni gercek fiksturu mu anlatiyor?
 
-    UC KADEMELI (2026-09-11 genisletildi - bkz. asagidaki not):
+    IKI KADEME:
       1. TAM eslesme - normalize edilmis ev VE deplasman ayni. Lig sarti
          aranmaz; "FC Rapperswil-Jona" = "Rapperswil-Jona" gibi.
-      2. Lig BILINIYOR ve ESITSE - alt-kume (subset) eslesmesi serbest:
-         "Sekhukhune United" / "Sekhukhune", "Radnik" / "Radnik Surdulica".
-      3. Lig BILINMIYORSA (bos/eksik) veya UYUSMUYORSA - alt-kume eslesmesi
-         yine denenir ama SADECE eslesen kelime kumelerinden EN AZ BIRI
-         jenerik-olmayan (ozgun) bir kelime iceriyorsa kabul edilir.
+      2. GEVSEK (alt-kume) - "Sekhukhune United"/"Sekhukhune", "Radnik"/
+         "Radnik Surdulica", "Maastricht"/"MVV Maastricht" gibi bir
+         kaynagin ekstra/farkli kelime ekledigi durumlar. SADECE eslesen
+         kelime kumelerinden EN AZ BIRI jenerik-olmayan (ozgun) bir kelime
+         iceriyorsa kabul edilir - "Racing"/"Union" gibi SADECE jenerik
+         kelimelerden olusan bir eslesme HER ZAMAN reddedilir.
 
-    NEDEN 3. kademe eklendi: "Maastricht - Almere City" / "MVV Maastricht -
-    Almere City FC" ayni gercek mac, ama "MVV" atilan kulup eki listesinde
-    yok (ulkeye/kulube ozgu kisaltma, genellenemez) ve kaynaklardan biri
-    lig adini farkli/bos gonderdigi icin 2. kademe reddediyordu - AYNI MAC
-    IKI KEZ paylasildi (kullanici raporu, msg 1084 + msg 1086, 2026-09-11).
-    "Maastricht" jenerik degil (dunyada tek boyle bir kulup sehri var),
-    riski dusuk. Buna karsilik "Racing"/"Union" gibi SADECE jenerik
-    kelimelerden olusan bir eslesme lig dogrulamasi olmadan HALA reddedilir
-    - farkli ulkelerdeki ayni jenerik isimli kulupleri birlestirmez.
+    LIG ADI ARTIK KOSUL DEGIL (2026-09-11, uretimde bulundu): "lig
+    biliniyor ve esitse gevsek kurali uygula, biliniyor ve FARKLIYSA
+    reddet" kurali vardi - ama kaynaklar (v4_/fs_/ss_) ayni gercek lig
+    icin TAMAMEN FARKLI stringler gonderiyor (biri "Eerste Divisie" digeri
+    bombos/tanimsiz, sitede "Unknown League" olarak gorunuyor). Bu, iki
+    KESIN ayni-fikstur cifti (Maastricht/MVV Maastricht, Jong Ajax/
+    Waalwijk vs RKC Waalwijk) icin "lig farkli" dalina dusup HARD REJECT
+    edilmesine ve AYNI MACIN IKI KEZ PAYLASILMASINA yol acti (msg 1086,
+    msg 1098 - kullanici raporu). Lig adi kaynaklar arasi guvenilir bir
+    sinyal degil; tek gercek guvence artik ozgun-kelime sarti.
+
+    NOT - bilinen kalinti risk: bu artik "Racing" + "Union Berlin" gibi,
+    bir tarafta ozgun kelime olan ama GERCEKTEN farkli iki maci da
+    (farkli ulke/lig) BIRLESTIREBILIR - cok dusuk olasilikli, gozlemlenen
+    "ayni maci iki kez paylasma" sorunundan (sik, kanitlanmis) daha az
+    onemli kabul edildi. league_a/league_b parametreleri geriye-uyumluluk
+    icin duruyor, karar artik onlara bakmiyor.
 
     Bos/eksik isimde False - bilmiyorsak birlestirmeyiz."""
     a, b = fixture_key(home_a, away_a), fixture_key(home_b, away_b)
@@ -100,22 +109,15 @@ def ayni_fikstur(home_a, away_a, home_b, away_b, league_a=None, league_b=None):
     if a == b:
         return True
 
-    lig_a, lig_b = normalize_team_name(league_a), normalize_team_name(league_b)
-    lig_biliniyor_ve_esit = bool(lig_a) and bool(lig_b) and lig_a == lig_b
-    lig_biliniyor_ve_farkli = bool(lig_a) and bool(lig_b) and lig_a != lig_b
-    if lig_biliniyor_ve_farkli:
-        return False  # gercekten farkli iki lig - guclu ayristirici, reddet
-
-    ozgun_kelime_var = False
     for x, y in ((home_a, home_b), (away_a, away_b)):
         sx, sy = normalize_loose(x), normalize_loose(y)
         if not sx or not sy:
             return False
         if not (sx <= sy or sy <= sx):
             return False
-        if (sx - _JENERIK_KELIMELER) or (sy - _JENERIK_KELIMELER):
-            ozgun_kelime_var = True
 
-    if lig_biliniyor_ve_esit:
-        return True
-    return ozgun_kelime_var  # lig bilinmiyor - sadece ozgun kelime varsa kabul
+    ozgun_kelime_var = any(
+        (normalize_loose(x) - _JENERIK_KELIMELER) or (normalize_loose(y) - _JENERIK_KELIMELER)
+        for x, y in ((home_a, home_b), (away_a, away_b))
+    )
+    return ozgun_kelime_var

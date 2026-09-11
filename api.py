@@ -1488,6 +1488,130 @@ def thesports_test(request: Request, path: str = "/v1/football/match/detail_live
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/api/admin/astra-export")
+def astra_export(request: Request, tip: str = "sinyaller"):
+    """Bot yeniden-agirliklandirmasi icin KOMPAKT disa aktarim (CSV / markdown).
+
+    NEDEN (2026-09-11): /api/admin/db-backup 1.1 GB'lik SQLite dosyasini
+    stream ediyor ve Railway proxy'si bunu tamamlayamiyor - indirilen dosya
+    9.5 MB'ta kesiliyor, "database disk image is malformed" veriyor.
+    Zaten botlari yeniden ayarlamak icin ham live_snapshots (970 bin satir,
+    boyutun ~%95'i) GEREKMIYOR; gereken sinyal bazinda sonuc + bot oylari.
+    Bunlar birkac MB - proxy'den sorunsuz geciyor.
+
+    tip=sinyaller  -> her paylasilmis sinyal + sonucu (CSV)
+    tip=bot_oylari -> her sinyalde her botun oyu + sinyalin sonucu (CSV)
+    tip=ozet       -> hazir kirilim tablolari (markdown)
+    """
+    from fastapi.responses import JSONResponse, PlainTextResponse
+    import csv as _csv
+    import hmac as _hmac
+    import io as _io
+    expected = os.environ.get("BACKUP_SECRET") or os.environ.get("SECRET_KEY")
+    provided = request.headers.get("x-backup-secret", "")
+    if not expected or not _hmac.compare_digest(expected, provided):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    if tip not in ("sinyaller", "bot_oylari", "ozet"):
+        return JSONResponse({"error": "tip: sinyaller|bot_oylari|ozet"}, status_code=400)
+
+    conn = connect()
+    try:
+        cur = conn.cursor()
+
+        if tip == "sinyaller":
+            cur.execute("""
+                SELECT p.id, date(p.created_at), p.created_at,
+                       m.league_name, m.home_team_id, m.away_team_id,
+                       p.market, p.signal_minute, p.initial_goals,
+                       p.weighted_probability, p.signal_level,
+                       p.positive_bot_count, p.negative_bot_count,
+                       p.insufficient_data_count,
+                       m.home_score, m.away_score, m.status, p.outcome
+                FROM consensus_predictions p
+                LEFT JOIN matches m ON m.id = p.match_id
+                WHERE p.decision='signal' ORDER BY p.created_at
+            """)
+            basliklar = ["sinyal_id", "gun", "olusturma", "lig", "ev", "deplasman",
+                         "market", "sinyal_dakika", "referans_gol", "olasilik",
+                         "seviye", "pozitif_bot", "negatif_bot", "eksik_veri_bot",
+                         "ev_skor", "dep_skor", "mac_durum", "sonuc"]
+        elif tip == "bot_oylari":
+            cur.execute("""
+                SELECT c.id, date(c.created_at), c.market, c.signal_minute,
+                       c.weighted_probability, b.bot_name, b.decision,
+                       b.probability, b.confidence, b.data_quality, c.outcome
+                FROM bot_predictions b
+                JOIN consensus_predictions c
+                  ON c.match_id=b.match_id AND c.snapshot_id=b.snapshot_id
+                WHERE c.decision='signal' AND c.outcome IN ('WON','LOST')
+                ORDER BY c.id, b.bot_name
+            """)
+            basliklar = ["sinyal_id", "gun", "market", "sinyal_dakika",
+                         "sinyal_olasilik", "bot", "bot_karar", "bot_olasilik",
+                         "bot_guven", "veri_kalitesi", "sinyal_sonuc"]
+
+        if tip in ("sinyaller", "bot_oylari"):
+            buf = _io.StringIO()
+            w = _csv.writer(buf)
+            w.writerow(basliklar)
+            w.writerows(cur.fetchall())
+            return PlainTextResponse(
+                buf.getvalue(), media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{tip}.csv"'})
+
+        # --- ozet ---
+        def _oran(a, b):
+            return f"%{100*a/(a+b):.1f}" if (a + b) else "-"
+
+        s = ["# Matchrix - kapanis oncesi gercek performans (ham veriden)\n"]
+        cur.execute("SELECT outcome, COUNT(*) FROM consensus_predictions "
+                    "WHERE decision='signal' GROUP BY outcome")
+        t = {str(k): v for k, v in cur.fetchall()}
+        w_, l_ = t.get("WON", 0), t.get("LOST", 0)
+        s.append("## Genel\n")
+        s.append("| outcome | adet |\n|---|---|")
+        s += [f"| {k} | {v} |" for k, v in sorted(t.items())]
+        s.append(f"\n**Isabet: {_oran(w_, l_)}**  ({w_} / {w_+l_} sonuclanmis)\n")
+
+        for baslik, sql, kolon in (
+            ("Gune gore (son 21 gun)",
+             """SELECT date(created_at), SUM(outcome='WON'), SUM(outcome='LOST')
+                FROM consensus_predictions WHERE decision='signal'
+                GROUP BY 1 ORDER BY 1 DESC LIMIT 21""", "gun"),
+            ("Markete gore",
+             """SELECT market, SUM(outcome='WON'), SUM(outcome='LOST')
+                FROM consensus_predictions WHERE decision='signal'
+                GROUP BY market ORDER BY COUNT(*) DESC LIMIT 15""", "market"),
+            ("Oy sayisina gore (canli veri kalitesinin etkisi)",
+             """SELECT (positive_bot_count + negative_bot_count),
+                       SUM(outcome='WON'), SUM(outcome='LOST')
+                FROM consensus_predictions WHERE decision='signal'
+                  AND outcome IN ('WON','LOST') GROUP BY 1 ORDER BY 1""", "oy_veren"),
+            ("Bot bazinda ('gol' diyen botun sinyali tuttu mu)",
+             """SELECT b.bot_name, SUM(c.outcome='WON'), SUM(c.outcome='LOST')
+                FROM bot_predictions b
+                JOIN consensus_predictions c
+                  ON c.match_id=b.match_id AND c.snapshot_id=b.snapshot_id
+                WHERE b.decision='goal' AND c.decision='signal'
+                  AND c.outcome IN ('WON','LOST')
+                GROUP BY b.bot_name ORDER BY COUNT(*) DESC""", "bot"),
+        ):
+            s.append(f"\n## {baslik}\n")
+            s.append(f"| {kolon} | W | L | isabet |\n|---|---|---|---|")
+            try:
+                cur.execute(sql)
+                for k, a, b in cur.fetchall():
+                    s.append(f"| {k} | {a or 0} | {b or 0} | {_oran(a or 0, b or 0)} |")
+            except sqlite3.Error as e:
+                s.append(f"| (sorgu hatasi: {e}) | | | |")
+
+        s.append("\n_Taban oranlar: ilk yari gol %61.6 | MS 1.5 ust %73.7 | "
+                 "MS 2.5 ust %50.2_\n")
+        return PlainTextResponse("\n".join(s), media_type="text/markdown")
+    finally:
+        conn.close()
+
+
 @app.get("/api/admin/db-backup")
 def db_backup(request: Request):
     """Canli SQLite dosyasinin salt-okunur yedegini indirir.

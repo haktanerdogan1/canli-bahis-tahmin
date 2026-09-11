@@ -14,14 +14,32 @@ import odds as odds_mod
 import baserates
 import odds_profile
 import team_history
+import team_names  # kaynaklar arasi fikstur eslestirmesi (mukerrer sinyal engeli)
 
 from db_config import DB_PATH, connect  # Railway kalici disk destegi (bkz. db_config.py)
 COOLDOWN_SECONDS = 300  # 5 dakika içinde aynı maça sinyal atma
 
 
 def _has_signal_for_half(cursor, match_id, minute):
-    """Bir macin ilgili yarisinda daha once sinyal uretilmis mi?"""
+    """Bir macin ilgili yarisinda daha once sinyal uretilmis mi?
+
+    IKI KADEMELI (2026-09-11): once ayni match_id, sonra AYNI FIKSTUR.
+
+    NEDEN FIKSTUR KADEMESI: birden fazla canli veri kaynagi (v4_/fs_/ss_)
+    ayni gercek maci farkli yazabiliyor ("Rapperswil-Jona" vs "FC
+    Rapperswil-Jona", "Stellenbosch FC" vs "Stellenbosch"). Bunlar ayri
+    source_match_id ile ayri `matches` satiri olusturuyor, dolayisiyla
+    ayri match_id aliyorlar. Sadece match_id'ye bakan eski kontrol ikisini
+    de geciriyordu ve AYNI MAC Telegram'a IKI KEZ paylasiliyordu
+    (kullanici raporu 2026-09-11, msg 1076/1077 ve 1075/1078).
+
+    api.py'deki dedup (_dedup_gevsek_eslesme) bunu yakalayamiyor cunku
+    SADECE /api/admin/live-sync yolunda calisiyor; v4_api_bot `matches`
+    tablosuna dogrudan yaziyor ve o yoldan hic gecmiyor. Burada, sinyal
+    anında kontrol etmek kaynaktan bagimsiz calisir - ileride yeni bir
+    kaynak eklense de korur."""
     first_half = minute <= 45
+    yari = 1 if first_half else 0
     cursor.execute('''
         SELECT 1
         FROM consensus_predictions p
@@ -32,8 +50,41 @@ def _has_signal_for_half(cursor, match_id, minute):
                 ELSE 0
               END = ?
         LIMIT 1
-    ''', (match_id, 1 if first_half else 0))
-    return cursor.fetchone() is not None
+    ''', (match_id, yari))
+    if cursor.fetchone() is not None:
+        return True
+
+    # --- Kademe 2: ayni fikstur, FARKLI match_id ---
+    cursor.execute("SELECT home_team_id, away_team_id, league_name "
+                   "FROM matches WHERE id = ?", (match_id,))
+    row = cursor.fetchone()
+    if not row or not row[0] or not row[1]:
+        return False
+    bu_ev, bu_dep, bu_lig = row[0], row[1], row[2]
+
+    # Son 24 saatte bu yarida sinyal almis TUM maclar (gunluk hacim ~20,
+    # sorgu kucuk). Karsilastirma Python tarafinda - normalizasyon SQL'de
+    # yapilamaz.
+    cursor.execute('''
+        SELECT DISTINCT m.home_team_id, m.away_team_id, m.league_name
+        FROM consensus_predictions p
+        JOIN matches m ON m.id = p.match_id
+        LEFT JOIN live_snapshots s ON s.id = p.snapshot_id
+        WHERE p.decision = 'signal'
+          AND p.match_id != ?
+          AND p.created_at >= datetime('now', '-1 day')
+          AND CASE
+                WHEN COALESCE(p.signal_minute, s.minute, 0) <= 45 THEN 1
+                ELSE 0
+              END = ?
+    ''', (match_id, yari))
+    for ev, dep, lig in cursor.fetchall():
+        if team_names.ayni_fikstur(bu_ev, bu_dep, ev, dep, bu_lig, lig):
+            print(f"🔁 Mukerrer engellendi: '{bu_ev} - {bu_dep}' bu yarida "
+                  f"zaten '{ev} - {dep}' olarak paylasilmis (farkli kaynak, "
+                  f"ayri match_id).", flush=True)
+            return True
+    return False
 
 SAATLIK_SINYAL_KOTASI = 20  # kullanici talebi (2026-09-07): "sinyal sayisini arttir" -
 # onceki deger 5'ti ("cok fazla olmasin" - eski kullanici tercihi). Isabet

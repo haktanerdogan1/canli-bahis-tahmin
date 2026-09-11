@@ -7,6 +7,7 @@ import aiohttp
 from collections import deque
 
 from db_config import DB_PATH, connect, measured_write  # Railway kalici disk destegi (bkz. db_config.py)
+import team_names  # kaynaktan bagimsiz fikstur eslestirmesi (bkz. _bydate_bul)
 API_KEY = os.environ.get("RAPIDAPI_KEY")
 if not API_KEY:
     raise RuntimeError("RAPIDAPI_KEY ortam degiskeni tanimli degil. Railway'de Variables'a ekle.")
@@ -513,9 +514,11 @@ _BYDATE_CACHE_SANIYE = 50   # ayni turda tekrar cekmesin, bir sonraki turda taze
 
 
 async def _bydate_skorlar(session, yyyymmdd, cache=True):
-    """{fotmob_id(str): {'finished':bool,'h':int,'a':int,'dk':int|None}} - o
-    tarihin maclari. Bu uc, canli feed donsa bile GUNCEL skoru veriyor -
-    donmus maclari tazelemenin tek yolu (bkz. refresh_stalled_matches)."""
+    """{fotmob_id(str): {'finished':bool,'h':int,'a':int,'dk':int|None,
+    'ev':str,'dep':str}} - o tarihin maclari. Bu uc, canli feed donsa bile
+    GUNCEL skoru veriyor - donmus maclari tazelemenin tek yolu (bkz.
+    refresh_stalled_matches). ev/dep, v4_ OLMAYAN kaynaklarin (fs_/ss_)
+    maclarini ID ile degil ISIMLE eslestirebilmek icin (bkz. _bydate_bul)."""
     if cache:
         hit = _BYDATE_CACHE.get(yyyymmdd)
         if hit and (time.monotonic() - hit[0]) < _BYDATE_CACHE_SANIYE:
@@ -551,6 +554,8 @@ async def _bydate_skorlar(session, yyyymmdd, cache=True):
             "h": h if isinstance(h, int) else None,
             "a": a if isinstance(a, int) else None,
             "dk": dk,
+            "ev": (m.get("home") or {}).get("name") or "",
+            "dep": (m.get("away") or {}).get("name") or "",
         }
     if cache:
         _BYDATE_CACHE[yyyymmdd] = (time.monotonic(), out)
@@ -558,6 +563,32 @@ async def _bydate_skorlar(session, yyyymmdd, cache=True):
                   if (time.monotonic() - _BYDATE_CACHE[k][0]) > 3600]:
             _BYDATE_CACHE.pop(k, None)
     return out
+
+
+def _bydate_bul(skor_tablosu, src, ev, dep):
+    """Bir maci by-date tablosunda bulur - once ID ile (v4_ kaynagi,
+    hizli/kesin), bulamazsa/v4_ degilse ISIMLE (team_names.ayni_fikstur).
+
+    NEDEN GEREKLI (2026-09-11): fs_/ss_ (flashscore/sofascore) kaynakli
+    maclarin source_match_id'si RapidAPI'nin kendi id semasiyla HICBIR
+    ILGISI olmayan, o kaynagin kendi ic kimligi (ornegin flashscore'un
+    "p4qtPzNN" gibi URL kimligi). ID ile arama bu maclarda HER ZAMAN
+    basarisiz olur. Bu iki fonksiyon (refresh_stalled_matches, fetch_
+    missing_results) eskiden SADECE v4_ kaynagina bakiyordu; kullanici
+    flashscore/sofascore'u durdurunca o kaynaklardan gelen (ve acik
+    sinyali oldugu icin _SINYAL_KORUMA_CLAUSE tarafindan 4 saat kapatilmasi
+    engellenen) maclar kimse guncellemedigi icin YETIM kaldi - gercekte
+    bitmis mac sitede hala 'canli/donuk' gorunuyordu (kullanici raporu,
+    2026-09-11). ID eslesmesi basarisiz olunca isim eslesmesine dusmek
+    HERHANGI bir kaynagin yetim maçlarini kurtarir, sadece v4_'u degil."""
+    if src.startswith("v4_"):
+        info = skor_tablosu.get(src[3:])
+        if info:
+            return info
+    for info in skor_tablosu.values():
+        if team_names.ayni_fikstur(ev, dep, info["ev"], info["dep"]):
+            return info
+    return None
 
 
 # Canli feed'i DONMUS (dakikasi ilerlemeyen) maclar bu kadar dakika sonra
@@ -582,14 +613,23 @@ async def refresh_stalled_matches(session):
     football-get-matches-by-date canli feed donsa bile guncel skoru
     veriyor. Burada sadece donuk maclar (last_progress_at eski) tazeleniyor,
     normal akan maclara DOKUNULMUYOR.
-    """
+
+    KAYNAK-BAGIMSIZ (2026-09-11 genisletildi): eskiden SADECE v4_ kaynagina
+    bakiyordu. Kullanici flashscore/sofascore'u durdurunca, o kaynaklardan
+    gelen VE acik sinyali oldugu icin _SINYAL_KORUMA_CLAUSE tarafindan 4
+    saat kapatilmasi engellenen maclari guncelleyen hicbir surec kalmadi -
+    gercekte bitmis mac sitede "canli" gorunmeye devam etti (kullanici
+    raporu: "bazi maclar bitti hala sitede aktif gozukuyor"). Artik TUM
+    kaynaklar taraniyor; fs_/ss_ maclari by-date tablosunda ID ile degil
+    ISIMLE bulunuyor (bkz. _bydate_bul - o kaynaklarin kendi ic ID'si
+    RapidAPI'nin semasiyla hic ilgili degil)."""
     conn = connect()
     cur = conn.cursor()
     cur.execute(f"""
-        SELECT id, source_match_id, home_score, away_score, minute, created_at
+        SELECT id, source_match_id, home_score, away_score, minute, created_at,
+               home_team_id, away_team_id
         FROM matches
         WHERE status IN ('LIVE','HT')
-          AND source_match_id LIKE 'v4\\_%' ESCAPE '\\'
           AND last_progress_at IS NOT NULL
           AND last_progress_at <= datetime('now', '-{_DONUK_TAZELE_DK} minutes')
           AND created_at > datetime('now', '-1 day')
@@ -617,9 +657,8 @@ async def refresh_stalled_matches(session):
         return
 
     guncel, biten = [], []
-    for mid_db, src, hs, as_, dk, ca in donuklar:
-        rid = src[3:] if src.startswith("v4_") else src
-        info = tablo.get(rid)
+    for mid_db, src, hs, as_, dk, ca, ev, dep in donuklar:
+        info = _bydate_bul(tablo, src, ev, dep)
         if not info or info["h"] is None or info["a"] is None:
             continue
         if info["finished"]:
@@ -663,11 +702,16 @@ async def refresh_stalled_matches(session):
 async def fetch_missing_results(session):
     """Feed'den dusmus/donmus, uzerinde acik VEYA VOID sinyal olan maclarin
     gercek final skorunu football-get-matches-by-date'den cekip 'matches'e
-    yazar. Bkz. yukaridaki blok yorumu."""
+    yazar. Bkz. yukaridaki blok yorumu.
+
+    KAYNAK-BAGIMSIZ (2026-09-11): eskiden v4_ kaynagiyla sinirliydi; simdi
+    hepsi taraniyor, fs_/ss_ maclari ISIMLE eslestiriliyor (bkz. _bydate_bul).
+    """
     conn = connect()
     cur = conn.cursor()
     cur.execute(f"""
         SELECT m.id, m.source_match_id, m.kickoff_time, m.created_at,
+               m.home_team_id, m.away_team_id,
                SUM(CASE WHEN p.signal_minute IS NOT NULL AND p.signal_minute <= 45
                         THEN 1 ELSE 0 END) AS iy_market_sayisi,
                MAX(CASE WHEN p.signal_minute IS NOT NULL AND p.signal_minute <= 45
@@ -676,7 +720,6 @@ async def fetch_missing_results(session):
         JOIN matches m ON m.id = p.match_id
         WHERE p.decision = 'signal'
           AND (p.outcome IS NULL OR p.outcome = 'VOID')
-          AND m.source_match_id LIKE 'v4\\_%' ESCAPE '\\'
           AND m.status NOT IN ('FINISHED','Ended','FT','Canceled')
           AND m.created_at > datetime('now', '-3 days')
           AND m.created_at < datetime('now', '-{_GEC_SONUC_MIN_YAS_DK} minutes')
@@ -721,9 +764,8 @@ async def fetch_missing_results(session):
         skor_tablosu.update(await _bydate_skorlar(session, t))
 
     duzeltmeler = []  # (match_id_db, home, away)
-    for (mid_db, src, kt, ca, iy_sayisi, iy_max_ref) in rows:
-        rid = src[3:] if src.startswith("v4_") else src
-        info = skor_tablosu.get(rid)
+    for (mid_db, src, kt, ca, ev, dep, iy_sayisi, iy_max_ref) in rows:
+        info = _bydate_bul(skor_tablosu, src, ev, dep)
         if not info or not info["finished"] or info["h"] is None or info["a"] is None:
             continue
         ft_total = info["h"] + info["a"]

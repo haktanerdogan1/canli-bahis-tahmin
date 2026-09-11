@@ -76,6 +76,9 @@
     .stat-card .lbl { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; }
     .stat-card.win .val { color: var(--success); }
     .stat-card.loss .val { color: var(--danger); }
+    #ht11Cards { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    #sec-ht11 table, #sec-ht11 small, #sec-ht11 .logout { font-size: 0.875rem; }
+    #sec-ht11 input { padding: 0.5rem; font: inherit; }
     .dot {
         display: inline-block; width: 8px; height: 8px; border-radius: 50%;
         margin-right: 6px; vertical-align: middle;
@@ -131,6 +134,7 @@
     <div class="tabs">
         <button class="tab-btn active" data-tab="uyeler" onclick="switchTab('uyeler')">Üyeler</button>
         <button class="tab-btn" data-tab="botlar" onclick="switchTab('botlar')">Bot Sinyalleri</button>
+        <button class="tab-btn" data-tab="ht11" onclick="switchTab('ht11')">1–1 Devre Botu</button>
         <button class="tab-btn" data-tab="istatistik" onclick="switchTab('istatistik')">İstatistikler</button>
         <button class="tab-btn" data-tab="ogrenen" onclick="switchTab('ogrenen')">Öğrenen Ekip</button>
     </div>
@@ -145,6 +149,35 @@
         </div>
     </div>
 
+    <div class="panel-section" id="sec-ht11">
+        <h2>1–1 Devre Botu <span style="color:var(--warn);font-size:0.9rem">Deneme</span></h2>
+        <p style="line-height:1.6">İlk yarısı 1–1 biten maçlarda bir gol daha arar. Bu adaylar kullanıcılara tahmin olarak gönderilmez.</p>
+        <p id="ht11Health" role="status" style="color:var(--text-muted)">Kontrol ediliyor…</p>
+        <div id="ht11Cards" class="stats-row"></div>
+        <p style="font-size:0.9rem;line-height:1.6">Her dakika ayrı bir denemedir; aynı maç farklı gruplarda bulunabilir. Başarıya yalnızca doğrulanmış sonuçlar katılır.</p>
+        <h3>İzlenen maçlar</h3><div id="ht11Watching" class="table-wrap"></div>
+        <h3>Adaylar ve sonuçlar</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center;margin-bottom:1rem">
+            <label>Dakika <select id="ht11Checkpoint" onchange="loadHT11()"><option value="0">Tümü</option><option>60</option><option>65</option><option>70</option><option>75</option></select></label>
+            <label>Sonuç <select id="ht11State" onchange="loadHT11()"><option value="all">Tümü</option><option value="unverified">Doğrulanmamış / bekleyen</option><option value="WON">Kazanan</option><option value="LOST">Kaybeden</option><option value="VOID">Geçersiz</option></select></label>
+            <button type="button" class="logout" onclick="loadHT11()">Yenile</button>
+        </div>
+        <p id="ht11Count" style="color:var(--text-muted)"></p>
+        <div class="table-wrap"><table><thead><tr><th>Maç / tarih</th><th>Deneme</th><th>Giriş skoru</th><th>Tercih</th><th>Son skor</th><th>Sonuç</th><th>Doğrulama</th></tr></thead><tbody id="ht11Body"></tbody></table></div>
+        <form id="ht11Confirm" hidden style="margin-top:1rem;padding:1rem;background:var(--panel);border:1px solid var(--border);border-radius:10px">
+            <h3 id="ht11ConfirmTitle">Maç sonunu doğrula</h3>
+            <p>Maçın bittiğini bağımsız kaynaktan kontrol et. Bu skor, maçın tüm bekleyen dakika denemelerine uygulanır. Doğrulanmış sonuç sonradan değiştirilmez.</p>
+            <input type="hidden" id="ht11Source">
+            <div style="display:flex;flex-wrap:wrap;gap:1rem">
+                <label>Ev skoru <input id="ht11Home" type="number" min="0" max="50" required style="width:5rem"></label>
+                <label>Deplasman skoru <input id="ht11Away" type="number" min="0" max="50" required style="width:5rem"></label>
+                <label style="flex:1;min-width:200px">Kaynak / kontrol notu <input id="ht11Evidence" required maxlength="1000" style="width:100%" placeholder="Sonuç kaynağı ve kontrol zamanı"></label>
+            </div>
+            <p id="ht11SaveError" role="alert" style="color:var(--danger)"></p>
+            <button id="ht11Save" type="submit" class="logout">Bitiş skorunu doğrula</button>
+            <button type="button" class="logout" onclick="document.getElementById('ht11Confirm').hidden=true">Vazgeç</button>
+        </form>
+    </div>
     <div class="panel-section" id="sec-botlar">
         <div class="filter-row">
             <select id="botFilter" onchange="loadBotSinyalleri()">
@@ -236,6 +269,70 @@
 
 <script>
 let ADMIN_SECRET = sessionStorage.getItem('admin_secret') || '';
+let ht11Rows = [];
+let ht11Request = 0;
+function ht11Escape(value) {
+    return String(value ?? '—').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function ht11Date(value) {
+    const date = new Date(String(value).replace(' ', 'T') + (/Z$|[+]\d\d:\d\d$/.test(value) ? '' : 'Z'));
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('tr-TR', {timeZone:'Europe/Istanbul'});
+}
+async function loadHT11() {
+    const seq = ++ht11Request;
+    const health = document.getElementById('ht11Health');
+    try {
+        const query = new URLSearchParams({checkpoint:document.getElementById('ht11Checkpoint').value,state:document.getElementById('ht11State').value});
+        const res = await fetch('/api/admin/panel/ht11?' + query, {headers:{'x-admin-secret':ADMIN_SECRET}});
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.error || 'Veri alınamadı.');
+        if (seq !== ht11Request) return;
+        health.textContent = !d.enabled ? 'Deneme duraklatılmış.' : !d.initialized ? 'Deneme henüz başlamadı; ilk çalışma bekleniyor.' : d.running ? 'Deneme çalışıyor. Bu sekme açıkken 30 saniyede bir yenilenir.' : 'Son çalışma güncel değil. Veri toplayıcısı kontrol edilmeli.';
+        if (d.last_tick) health.textContent += ' Son kontrol: ' + new Date(d.last_tick*1000).toLocaleString('tr-TR',{timeZone:'Europe/Istanbul'});
+        document.getElementById('ht11Cards').innerHTML = [60,65,70,75].map(minute => {
+            const r = d.checkpoints.find(x=>x.checkpoint===minute) || {};
+            const rate = r.verified_hit_rate == null ? 'Henüz yok' : '%' + (r.verified_hit_rate*100).toFixed(1);
+            return `<div class="stat-card"><div style="font-size:1rem">${minute}. dakika</div><div class="val">${rate}</div><div style="font-size:0.875rem;line-height:1.7">${r.won||0} kazanan · ${r.lost||0} kaybeden<br>${r.unverified||0} doğrulanmamış · ${r.void||0} geçersiz</div></div>`;
+        }).join('');
+        document.getElementById('ht11Watching').innerHTML = d.watching.length ? d.watching.map(m=>`<p style="padding:0.5rem">${ht11Escape(m.home_team_id)} – ${ht11Escape(m.away_team_id)} · ${ht11Escape(m.minute)}′ · ${ht11Escape(m.home_score)}–${ht11Escape(m.away_score)}</p>`).join('') : '<p style="padding:0.5rem">Şu anda devresi 1–1 doğrulanmış canlı maç yok. Devre arasında görülmeyen maçlar sonradan tahminle eklenmez.</p>';
+        ht11Rows = d.observations;
+        document.getElementById('ht11Count').textContent = `${d.total} kayıttan son ${ht11Rows.length} gösteriliyor. Saatler Türkiye saati.`;
+        const labels = {WON:'Kazanan',LOST:'Kaybeden',VOID:'Geçersiz'};
+        const provisional = {WON:'Gol geldi görünüyor · teyit gerekli',LOST:'Gol gelmedi görünüyor · teyit gerekli',INVALID_SCORE:'Skor düzeltmesi · teyit gerekli',UNRESOLVED:'Maç sonucu belirsiz'};
+        document.getElementById('ht11Body').innerHTML = ht11Rows.length ? ht11Rows.map((r,i)=>`<tr><td>${ht11Escape(r.home_team)} – ${ht11Escape(r.away_team)}<br><small>${ht11Escape(r.league)} · ${ht11Escape(ht11Date(r.observed_at))}</small></td><td>${r.checkpoint}′<br><small>Gözlem ${r.minute}′</small></td><td>${r.home_score}–${r.away_score}<br><small>Devre 1–1</small></td><td>${ht11Escape(r.market)}</td><td>${ht11Escape(r.current_home)}–${ht11Escape(r.current_away)}</td><td>${ht11Escape(labels[r.outcome] || provisional[r.observed_outcome] || 'Bekliyor')}</td><td>${r.outcome ? ht11Escape(r.result_evidence) : `<button type="button" class="logout" data-ht11-row="${i}">Sonucu doğrula</button>`}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">Bu filtrede aday yok. Uygun maçlar 60, 65, 70 ve 75. dakikada kaydedilecek.</td></tr>';
+    } catch(e) {
+        if (seq === ht11Request) health.textContent = 'Yenileme başarısız: ' + e.message + ' Gösterilen eski veriler güncel olmayabilir.';
+    }
+}
+document.getElementById('ht11Body').addEventListener('click', e => {
+    const button = e.target.closest('[data-ht11-row]');
+    if (!button) return;
+    const r = ht11Rows[Number(button.dataset.ht11Row)];
+    document.getElementById('ht11Source').value = r.source_match_id;
+    document.getElementById('ht11ConfirmTitle').textContent = r.home_team + ' – ' + r.away_team;
+    document.getElementById('ht11Home').value = '';
+    document.getElementById('ht11Away').value = '';
+    document.getElementById('ht11Evidence').value = '';
+    document.getElementById('ht11SaveError').textContent = '';
+    document.getElementById('ht11Confirm').hidden = false;
+    document.getElementById('ht11Home').focus();
+});
+document.getElementById('ht11Confirm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const button = document.getElementById('ht11Save');
+    button.disabled = true;
+    try {
+        const res = await fetch('/api/admin/panel/ht11/confirm', {method:'POST',headers:{'Content-Type':'application/json','x-admin-secret':ADMIN_SECRET},body:JSON.stringify({source_match_id:document.getElementById('ht11Source').value,home:Number(document.getElementById('ht11Home').value),away:Number(document.getElementById('ht11Away').value),evidence:document.getElementById('ht11Evidence').value})});
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.error || 'Kaydedilemedi.');
+        document.getElementById('ht11Confirm').hidden = true;
+        await loadHT11();
+    } catch(e) { document.getElementById('ht11SaveError').textContent = e.message; }
+    finally { button.disabled = false; }
+});
+setInterval(() => {
+    if (ADMIN_SECRET && !document.hidden && document.getElementById('sec-ht11').classList.contains('active')) loadHT11();
+},30000);
 
 function api(path) {
     return fetch(path, { headers: { 'x-admin-secret': ADMIN_SECRET } }).then(r => r.json());
@@ -274,6 +371,7 @@ function switchTab(tab) {
     document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('active'));
     document.getElementById('sec-' + tab).classList.add('active');
     if (tab === 'botlar') loadBotSinyalleri();
+    if (tab === 'ht11') loadHT11();
     if (tab === 'istatistik' && !istatistikYuklendi) {
         istatistikYuklendi = true;
         loadIstatistikler();

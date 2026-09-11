@@ -7,6 +7,7 @@ from app.bots.bot_base_rate import BaseRateBot
 from app.bots.bot_odds_profile import OddsProfileBot
 from app.bots.specialists import tum_uzmanlar
 from app.core.consensus_engine import ConsensusEngine
+from app.core.ht11_shadow import ShadowRunner
 import settlement
 import prematch
 import odds as odds_mod
@@ -272,6 +273,8 @@ def run_orchestrator():
     bots = [PrematchProphetBot(), BaseRateBot(), OddsProfileBot()] + tum_uzmanlar()
 
     consensus_engine = ConsensusEngine()
+    # Experimental cohort runs separately: never contributes votes or notifications.
+    ht11_shadow = ShadowRunner(DB_PATH)
     
     # Hangi maç için en son ne zaman sinyal ürettik? (Spam önleyici)
     # {match_id: last_signal_timestamp}
@@ -311,6 +314,7 @@ def run_orchestrator():
     while True:
         tur_sayaci += 1
         bakim_turu = (tur_sayaci % BAKIM_HER_N_TUR == 0)
+        ht11_shadow.tick()
         try:
             conn = connect()
             conn.row_factory = sqlite3.Row

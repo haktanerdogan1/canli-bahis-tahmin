@@ -826,6 +826,46 @@ def admin_panel_botlar(request: Request):
     return _botlar_ozet_verisi()
 
 
+@app.get("/api/admin/panel/ht11")
+def admin_panel_ht11(request: Request, checkpoint: int = 0, state: str = "all"):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    from app.core.ht11_shadow import dashboard
+    try:
+        return dashboard(DB_PATH, checkpoint, state)
+    except sqlite3.Error:
+        return JSONResponse({"error": "Deneme verisi şu an okunamadı. Yeniden deneyin."}, status_code=503)
+
+
+@app.post("/api/admin/panel/ht11/confirm")
+def admin_panel_ht11_confirm(request: Request, payload: dict):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    from pathlib import Path
+    from app.core.ht11_shadow import store_path, confirm_result, score
+    sid, evidence = payload.get('source_match_id'), payload.get('evidence')
+    home, away = payload.get('home'), payload.get('away')
+    if (not isinstance(sid,str) or len(sid)>120 or not isinstance(evidence,str)
+            or not evidence.strip() or len(evidence)>1000
+            or score(home) is None or score(away) is None or max(home,away)>50):
+        return JSONResponse({"error": "Geçerli maç, bitiş skoru ve doğrulama kaynağı gerekli."}, status_code=422)
+    conn = None
+    try:
+        conn = sqlite3.connect(Path(store_path(DB_PATH)).resolve().as_uri()+"?mode=rw",uri=True,timeout=.25)
+        # The update itself also preserves every existing verified outcome.
+        if not conn.execute("SELECT 1 FROM observations WHERE source_match_id=? AND outcome IS NULL",(sid,)).fetchone():
+            return JSONResponse({"error": "Doğrulanmayı bekleyen kayıt yok."}, status_code=409)
+        confirm_result(conn,sid,home,away,evidence.strip())
+        return {"success": True}
+    except sqlite3.Error:
+        return JSONResponse({"error": "Sonuç kaydedilemedi. Yeniden deneyin."}, status_code=503)
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def _bot_sinyalleri_verisi(bot: str = "", limit: int = 200):
     """Tek bir botun (ya da hepsinin) urettigi tum maç paylaşımlarının detayi:
     hangi mac, ne zaman, ne olasilikla, sonuc ne oldu - admin VE partner

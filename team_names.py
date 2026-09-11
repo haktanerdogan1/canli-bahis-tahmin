@@ -52,18 +52,46 @@ def normalize_loose(name):
     return frozenset(tok for tok in s.split() if not tok.isdigit())
 
 
+# Genel-gecer kulup kelimeleri - alt-kume kuralinin YANLIS POZITIF riski
+# tasidigi durum tam olarak bunlar: farkli ulkelerdeki iki farkli kulup
+# ayni jenerik kelimeyi tasiyabilir ("Racing" Arjantin'de de Fransa'da da
+# var). Lig bilgisi guvenilir DEGILSE (2026-09-11: kaynaklardan biri bos/
+# farkli lig adi gonderebiliyor, bkz. asagidaki not), eslesen kelime
+# kumesinin en az biri SADECE bu listeden olusmuyorsa (yani ozgun/ayirt
+# edici en az bir kelime var - "Maastricht", "Vukovar" gibi) kabul edilir.
+_JENERIK_KELIMELER = frozenset({
+    "racing", "union", "unione", "city", "real", "national", "nacional",
+    "internacional", "atletico", "athletic", "athletico", "united",
+    "dynamo", "dinamo", "inter", "sport", "sporting", "olympic",
+    "olympique", "rangers", "wanderers", "rovers", "town", "county",
+    "central", "north", "south", "east", "west", "boys", "young",
+    "youth", "junior", "juniors", "reserve", "reserves", "ii", "b",
+    "deportivo", "deportes", "independiente", "estrella", "juventus",
+    "milan", "porto", "boca", "river", "america",
+})
+
+
 def ayni_fikstur(home_a, away_a, home_b, away_b, league_a=None, league_b=None):
     """Iki mac ayni gercek fiksturu mu anlatiyor?
 
-    IKI KURAL:
+    UC KADEMELI (2026-09-11 genisletildi - bkz. asagidaki not):
       1. TAM eslesme - normalize edilmis ev VE deplasman ayni. Lig sarti
          aranmaz; "FC Rapperswil-Jona" = "Rapperswil-Jona" gibi.
-      2. GEVSEK (alt-kume) - bir kaynagin ekstra kelime eklediği durumlar:
+      2. Lig BILINIYOR ve ESITSE - alt-kume (subset) eslesmesi serbest:
          "Sekhukhune United" / "Sekhukhune", "Radnik" / "Radnik Surdulica".
-         Bu kural YANLIS POZITIF riski tasir (farkli ulkelerdeki "Racing",
-         "Union", "Independiente"), o yuzden SADECE lig adi da esitse
-         uygulanir - api.py:_dedup_gevsek_eslesme ile ayni guvence.
-         Lig bilgisi verilmemisse gevsek kural HIC calismaz.
+      3. Lig BILINMIYORSA (bos/eksik) veya UYUSMUYORSA - alt-kume eslesmesi
+         yine denenir ama SADECE eslesen kelime kumelerinden EN AZ BIRI
+         jenerik-olmayan (ozgun) bir kelime iceriyorsa kabul edilir.
+
+    NEDEN 3. kademe eklendi: "Maastricht - Almere City" / "MVV Maastricht -
+    Almere City FC" ayni gercek mac, ama "MVV" atilan kulup eki listesinde
+    yok (ulkeye/kulube ozgu kisaltma, genellenemez) ve kaynaklardan biri
+    lig adini farkli/bos gonderdigi icin 2. kademe reddediyordu - AYNI MAC
+    IKI KEZ paylasildi (kullanici raporu, msg 1084 + msg 1086, 2026-09-11).
+    "Maastricht" jenerik degil (dunyada tek boyle bir kulup sehri var),
+    riski dusuk. Buna karsilik "Racing"/"Union" gibi SADECE jenerik
+    kelimelerden olusan bir eslesme lig dogrulamasi olmadan HALA reddedilir
+    - farkli ulkelerdeki ayni jenerik isimli kulupleri birlestirmez.
 
     Bos/eksik isimde False - bilmiyorsak birlestirmeyiz."""
     a, b = fixture_key(home_a, away_a), fixture_key(home_b, away_b)
@@ -72,16 +100,22 @@ def ayni_fikstur(home_a, away_a, home_b, away_b, league_a=None, league_b=None):
     if a == b:
         return True
 
-    if league_a is None or league_b is None:
-        return False
-    if normalize_team_name(league_a) != normalize_team_name(league_b):
-        return False
-    if not normalize_team_name(league_a):
-        return False  # iki tarafta da lig adi bos - guvence yok, birlestirme
+    lig_a, lig_b = normalize_team_name(league_a), normalize_team_name(league_b)
+    lig_biliniyor_ve_esit = bool(lig_a) and bool(lig_b) and lig_a == lig_b
+    lig_biliniyor_ve_farkli = bool(lig_a) and bool(lig_b) and lig_a != lig_b
+    if lig_biliniyor_ve_farkli:
+        return False  # gercekten farkli iki lig - guclu ayristirici, reddet
+
+    ozgun_kelime_var = False
     for x, y in ((home_a, home_b), (away_a, away_b)):
         sx, sy = normalize_loose(x), normalize_loose(y)
         if not sx or not sy:
             return False
         if not (sx <= sy or sy <= sx):
             return False
-    return True
+        if (sx - _JENERIK_KELIMELER) or (sy - _JENERIK_KELIMELER):
+            ozgun_kelime_var = True
+
+    if lig_biliniyor_ve_esit:
+        return True
+    return ozgun_kelime_var  # lig bilinmiyor - sadece ozgun kelime varsa kabul

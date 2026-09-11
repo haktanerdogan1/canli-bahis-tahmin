@@ -1,4 +1,5 @@
 import asyncio
+import calendar
 import time
 import sqlite3
 import os
@@ -381,6 +382,10 @@ def _ensure_match_tracking_schema(tries=5, pause=8):
                 pass
             try:
                 conn.execute("ALTER TABLE matches ADD COLUMN last_progress_at TIMESTAMP")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE matches ADD COLUMN kickoff_ts INTEGER")
             except sqlite3.OperationalError:
                 pass
             conn.execute("""
@@ -1098,6 +1103,28 @@ async def process_api_matches(session):
 
         aggregate_score = status_data.get("aggregatedStr", "")
 
+        # KICKOFF_TS (2026-09-11, kullanici: "bazi maclar bitti hala aktif
+        # gozukuyor" - Etoile-Carouge/Winterthur, dk 47'de hala PENDING).
+        # settlement.py'nin ilk-yari sinyalleri icin SAAT-BAZLI GUVENLIK AGI
+        # var (SAFE_FIRST_HALF_OVER_SECONDS=50dk, bkz. compute_outcome) - AMA
+        # bu, matches.kickoff_ts sutununa BAGIMLI ve o sutunu SADECE
+        # thesports_bot.py yaziyordu (kendi ALTER TABLE'i de orada). thesports
+        # aylardir "yetkisiz" hatasi veriyor (abonelik yok) - yani su an tek
+        # calisan kaynak olan v4_api_bot HICBIR ZAMAN bu sutunu yazmiyordu.
+        # Sonuc: HT durumunu gec/hic bildirmeyen bir kaynak icin ilk-yari
+        # sinyali guvenlik agi OLMADAN sonsuza kadar PENDING kaliyordu - tam
+        # da o agin onlemesi gereken durum. utcTime (FotMob-tarzi ISO8601,
+        # maçın planlanan baslangic saati) zaten HER cevapta geliyor - bkz.
+        # 🩺 teshis dokumu, status_keys icinde 'utcTime' hep vardi.
+        kickoff_ts = None
+        _utc = status_data.get("utcTime")
+        if _utc:
+            try:
+                _taban = _utc.split(".")[0].rstrip("Z")
+                kickoff_ts = calendar.timegm(time.strptime(_taban, "%Y-%m-%dT%H:%M:%S"))
+            except (ValueError, TypeError):
+                kickoff_ts = None
+
         to_process.append({
             "match_id_api": match_id_api,
             "event_id": event_id,
@@ -1113,6 +1140,7 @@ async def process_api_matches(session):
             "minute": minute,
             "minute_parsed_ok": minute_parsed_ok,
             "aggregate_score": aggregate_score,
+            "kickoff_ts": kickoff_ts,
         })
 
     # --- ASAMA 3: TUM istatistikleri ESZAMANLI cek. Burada HICBIR DB baglantisi
@@ -1183,8 +1211,8 @@ async def process_api_matches(session):
             # geri donebilmeli; nasil olsa bitince tekrar dogru sekilde sonuclanir.
             cursor.execute('''
                 INSERT INTO matches
-                (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (source_match_id, home_team_id, away_team_id, status, league_name, league_ccode, league_logo, home_score, away_score, minute, home_team_logo, away_team_logo, aggregate_score, last_seen_at, last_progress_at, kickoff_ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
                 ON CONFLICT(source_match_id) DO UPDATE SET
                     minute=CASE WHEN ? THEN excluded.minute ELSE matches.minute END,
                     status=excluded.status,
@@ -1197,6 +1225,10 @@ async def process_api_matches(session):
                     away_team_logo=excluded.away_team_logo,
                     aggregate_score=excluded.aggregate_score,
                     last_seen_at=CURRENT_TIMESTAMP,
+                    -- BIR KEZ yazilir, bir daha DEGISTIRILMEZ (settlement.py'nin
+                    -- saat-bazli guvenlik agi icin sabit bir baslangic sart -
+                    -- gec/hatali bir okuma dogru olani EZMESIN).
+                    kickoff_ts=COALESCE(matches.kickoff_ts, excluded.kickoff_ts),
                     -- last_progress_at SADECE dakika GERCEKTEN degistiyse tazelenir.
                     -- Feed'de gorunmeye devam edip dakikasi hic ilerlemeyen bir mac
                     -- (RapidAPI'nin bayat veri dondurdugu fikstur), last_seen_at surekli
@@ -1209,7 +1241,7 @@ async def process_api_matches(session):
             ''', (m["event_id"], m["home_name"], m["away_name"], m["match_status"],
                   m["league_info"]["name"], m["league_info"]["ccode"], m["league_info"]["logo"],
                   m["score_h"], m["score_a"], m["minute"], m["home_logo"], m["away_logo"],
-                  m["aggregate_score"], m["minute_parsed_ok"], m["minute_parsed_ok"]))
+                  m["aggregate_score"], m["kickoff_ts"], m["minute_parsed_ok"], m["minute_parsed_ok"]))
 
             cursor.execute('SELECT id FROM matches WHERE source_match_id = ?', (m["event_id"],))
             match_id_db_res = cursor.fetchone()

@@ -77,6 +77,10 @@
     .stat-card.win .val { color: var(--success); }
     .stat-card.loss .val { color: var(--danger); }
     #ht11Cards { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    #sec-iddaa table, #sec-iddaa small { font-size: .875rem; }
+    #sec-iddaa td { vertical-align: top; }
+    #sec-iddaa details { white-space: normal; min-width: 220px; max-width: 320px; }
+    #sec-iddaa input { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
     #sec-ht11 table, #sec-ht11 small, #sec-ht11 .logout { font-size: 0.875rem; }
     #sec-ht11 input { padding: 0.5rem; font: inherit; }
     .dot {
@@ -135,6 +139,7 @@
         <button class="tab-btn active" data-tab="uyeler" onclick="switchTab('uyeler')">Üyeler</button>
         <button class="tab-btn" data-tab="botlar" onclick="switchTab('botlar')">Bot Sinyalleri</button>
         <button class="tab-btn" data-tab="ht11" onclick="switchTab('ht11')">1–1 Devre Botu</button>
+        <button class="tab-btn" data-tab="iddaa" onclick="switchTab('iddaa')">İddaa Oran Analizi</button>
         <button class="tab-btn" data-tab="istatistik" onclick="switchTab('istatistik')">İstatistikler</button>
         <button class="tab-btn" data-tab="ogrenen" onclick="switchTab('ogrenen')">Öğrenen Ekip</button>
     </div>
@@ -147,6 +152,22 @@
                 <tbody id="uyelerBody"><tr><td colspan="6" class="loading">Yükleniyor...</td></tr></tbody>
             </table>
         </div>
+    </div>
+
+    <div class="panel-section" id="sec-iddaa">
+        <h2>İddaa Oran Analizi</h2>
+        <p style="line-height:1.7">Güncel maçların oranlarına benzeyen geçmiş maçlarda <strong>KG Var</strong> ve <strong>2,5 Üst</strong> ne sıklıkla gerçekleşti?</p>
+        <p class="warn-note">Yüzdeler benzer geçmiş maçların sonuç sıklığıdır; doğrulanmış tahmin başarısı değildir. Arşivdeki açılış oranları, bugünkü son görülen maç öncesi oranlarla karşılaştırılır. Geçmişten geleceğe testte katkı sınırlı bulundu.</p>
+        <p id="iddaaHealth" role="status">Oranlar kontrol ediliyor…</p>
+        <div class="filters">
+            <label>Göster <select id="iddaaMarket" onchange="renderIddaa()"><option value="kg">KG Var oranına göre</option><option value="over25">2,5 Üst oranına göre</option><option value="time">Başlama saatine göre</option></select></label>
+            <label>En az gerçekleşme <select id="iddaaMin" onchange="renderIddaa()"><option value="0">Tümü</option><option value="55">%55</option><option value="60">%60</option><option value="65">%65</option><option value="70">%70</option></select></label>
+            <label>Maç ara <input id="iddaaSearch" oninput="renderIddaa()" placeholder="Takım adı" style="padding:.5rem;max-width:100%"></label>
+            <button class="logout" onclick="loadIddaa()">Yenile</button>
+        </div>
+        <p id="iddaaCount" style="color:var(--text-muted)"></p>
+        <div class="table-wrap"><table><thead><tr><th>Maç / Türkiye saati</th><th>Güncel oranlar</th><th>KG Var</th><th>2,5 Üst</th><th>Benzer maçlar</th></tr></thead><tbody id="iddaaBody"></tbody></table></div>
+        <p style="color:var(--text-muted);line-height:1.7">Karşılaştırma: marjı çıkarılmış 1–X–2 ve 2,5 Alt/Üst olasılıkları; her alanda en fazla 5 yüzde puan fark, en yakın 300 maç. En az 100 örnek gerekir. Aralıklar geçmiş örneklem için %95 Wilson aralığıdır; gelecekteki maçın garantisi değildir. “Piyasa” yalnızca 2,5 Üst/Alt oranlarından marj çıkarılarak hesaplanır.</p>
     </div>
 
     <div class="panel-section" id="sec-ht11">
@@ -269,6 +290,44 @@
 
 <script>
 let ADMIN_SECRET = sessionStorage.getItem('admin_secret') || '';
+let iddaaData = null;
+let iddaaRequest = 0;
+async function loadIddaa() {
+    const seq = ++iddaaRequest;
+    document.getElementById('iddaaHealth').textContent = 'Güncel oranlar ve arşiv karşılaştırılıyor…';
+    try {
+        const response = await fetch('/api/admin/panel/iddaa-analysis', {headers:{'x-admin-secret':ADMIN_SECRET}});
+        const d = await response.json();
+        if (!response.ok) throw new Error(d.error || 'Bağlantı hatası');
+        if (seq !== iddaaRequest) return;
+        iddaaData = d;
+        document.getElementById('iddaaHealth').textContent = `${d.archive_count.toLocaleString('tr-TR')} geçmiş maç (${d.archive_start || '—'} – ${d.archive_end || '—'}). ` + (d.fresh ? `Son oran güncellemesi: ${new Date(d.fetched_at*1000).toLocaleString('tr-TR',{timeZone:'Europe/Istanbul'})}.` : 'Güncel oran akışı bekleniyor veya son veri 15 dakikadan eski. Eski maç listesi gösterilmez.');
+        renderIddaa();
+    } catch(e) {
+        if (seq !== iddaaRequest) return;
+        iddaaData = null;
+        document.getElementById('iddaaBody').innerHTML = '';
+        document.getElementById('iddaaCount').textContent = '';
+        document.getElementById('iddaaHealth').textContent = 'Analiz yüklenemedi: ' + e.message;
+    }
+}
+function renderIddaa() {
+    if (!iddaaData) return;
+    const market = document.getElementById('iddaaMarket').value;
+    const minimum = Number(document.getElementById('iddaaMin').value);
+    const query = document.getElementById('iddaaSearch').value.toLocaleLowerCase('tr-TR');
+    const now = Date.now()/1000;
+    const fresh = iddaaData.fresh && now-iddaaData.fetched_at <= 900;
+    const rows = (fresh ? iddaaData.matches : []).filter(r => r.kickoff>now && `${r.home} ${r.away}`.toLocaleLowerCase('tr-TR').includes(query) && (!minimum || (market==='time' ? Math.max(r.kg?.rate || 0,r.over25?.rate || 0) : r[market]?.rate || 0)>=minimum));
+    rows.sort((a,b) => market==='time' ? a.kickoff-b.kickoff : (b[market]?.rate || 0)-(a[market]?.rate || 0) || a.kickoff-b.kickoff);
+    const rate = v => v ? `<strong>%${v.rate.toFixed(1)}</strong><br><small>%${v.interval[0]}–${v.interval[1]}</small>` : 'Yetersiz örnek';
+    document.getElementById('iddaaCount').textContent = `${rows.length} maç gösteriliyor. Tam 1–X–2 ve 2,5 Alt/Üst oranı eksik: ${iddaaData.missing_odds}. Başlama saati eksik: ${iddaaData.invalid_kickoff}.`;
+    document.getElementById('iddaaBody').innerHTML = rows.length ? rows.map(r=>`<tr><td><strong>${ht11Escape(r.home)} – ${ht11Escape(r.away)}</strong><br><small>${new Date(r.kickoff*1000).toLocaleString('tr-TR',{timeZone:'Europe/Istanbul'})}</small></td><td><small>1 / X / 2: ${r.odds.slice(0,3).map(ht11Escape).join(' / ')}<br>2,5 Üst / Alt: ${r.odds.slice(3).map(ht11Escape).join(' / ')}</small></td><td>${rate(r.kg)}</td><td>${rate(r.over25)}<br><small>Piyasa: %${r.market_over25}</small></td><td>${r.samples} örnek${r.sufficient ? `<details><summary style="cursor:pointer">Geçmiş maçları gör</summary>${r.examples.map(e=>`<p>${ht11Escape(e.date)} · ${ht11Escape(e.match)} · <b>${ht11Escape(e.score)}</b><br><small>Açılış 1/X/2/Üst/Alt: ${e.odds.map(ht11Escape).join(' / ')}</small></p>`).join('')}</details>` : '<br><small>En az 100 gerekli</small>'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">Bu filtrede güncel, karşılaştırılabilir maç yok.</td></tr>';
+}
+setInterval(() => {
+    if (ADMIN_SECRET && !document.hidden && document.getElementById('sec-iddaa').classList.contains('active')) loadIddaa();
+}, 60000);
+
 let ht11Rows = [];
 let ht11Request = 0;
 function ht11Escape(value) {
@@ -372,6 +431,7 @@ function switchTab(tab) {
     document.getElementById('sec-' + tab).classList.add('active');
     if (tab === 'botlar') loadBotSinyalleri();
     if (tab === 'ht11') loadHT11();
+    if (tab === 'iddaa') loadIddaa();
     if (tab === 'istatistik' && !istatistikYuklendi) {
         istatistikYuklendi = true;
         loadIstatistikler();

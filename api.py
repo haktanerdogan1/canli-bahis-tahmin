@@ -826,6 +826,18 @@ def admin_panel_botlar(request: Request):
     return _botlar_ozet_verisi()
 
 
+@app.get("/api/admin/panel/iddaa-analysis")
+def admin_panel_iddaa_analysis(request: Request):
+    from fastapi.responses import JSONResponse
+    if not _check_admin(request):
+        return JSONResponse({"error": "yetkisiz"}, status_code=403)
+    from iddaa_analysis import dashboard
+    try:
+        return dashboard(DB_PATH)
+    except (OSError, ValueError, KeyError, TypeError):
+        return JSONResponse({"error": "Oran analizi okunamadı. Yeniden deneyin."}, status_code=503)
+
+
 @app.get("/api/admin/panel/ht11")
 def admin_panel_ht11(request: Request, checkpoint: int = 0, state: str = "all"):
     from fastapi.responses import JSONResponse
@@ -2233,7 +2245,15 @@ def iddaa_odds_sync(request: Request, payload: dict):
         if i + _IDDAA_UPSERT_CHUNK < len(prepared):
             time.sleep(0.05)  # kilidi diger yazicilar icin birak
 
-    return {"success": True, "yazilan": yazilan}
+    snapshot_saved = False
+    if payload.get('fetched_at') is not None:
+        from iddaa_analysis import save_snapshot
+        try:
+            save_snapshot(DB_PATH, events, payload['fetched_at'])
+            snapshot_saved = True
+        except (OSError, ValueError, TypeError) as exc:
+            print(f'[iddaa] Analysis snapshot failed: {type(exc).__name__}', flush=True)
+    return {"success": True, "yazilan": yazilan, "analysis_snapshot_saved": snapshot_saved}
 
 
 @app.post("/api/admin/iddaa-backfill")

@@ -18,3 +18,5 @@ database/ht11_shadow.sqlite3*
 oran_*.json
 oran_ciktilari/
 canli.json
+iddaa_current_snapshot.json
+database/iddaa_current_snapshot.json

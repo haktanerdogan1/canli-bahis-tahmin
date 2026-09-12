@@ -107,7 +107,9 @@ def fetch_prematch_events(session):
     r = session.get(EVENTS_URL, headers=HEADERS, timeout=25)
     r.raise_for_status()
     data = r.json()
-    events = ((data.get("data") or {}).get("events")) or []
+    events = (data.get("data") or {}).get("events")
+    if not isinstance(events, list):
+        raise ValueError('Iddaa response has no valid events list')
 
     out = []
     for e in events:
@@ -121,10 +123,13 @@ def fetch_prematch_events(session):
         odd_1, odd_x, odd_2 = _pick_1x2(markets)
         fh_line, fh_over, fh_under = _pick_ou(markets, MT_FH_OU, FH_PREFERRED_LINES)
         ft_line, ft_over, ft_under = _pick_ou(markets, MT_FT_OU, FT_PREFERRED_LINES)
+        exact25 = [mk for mk in _find_market(markets, MT_FT_OU) if str(mk.get('sov')) in ('2.5', '2.50')]
+        _, over25, under25 = _pick_ou(exact25, MT_FT_OU, ('2.5',))
         if not (odd_1 and odd_x and odd_2):
             continue
         out.append({
             "event_id": eid, "home": home, "away": away,
+            "kickoff": e.get("d"), "over25_odd": over25, "under25_odd": under25,
             "league": str(e.get("ci") or ""),
             "odd_1": odd_1, "odd_x": odd_x, "odd_2": odd_2,
             "fh_over_line": fh_line, "fh_over_odd": fh_over, "fh_under_odd": fh_under,
@@ -135,11 +140,9 @@ def fetch_prematch_events(session):
 
 def run_cycle(session, api_base, secret):
     events = fetch_prematch_events(session)
-    if not events:
-        return 0
     r = session.post(
         f"{api_base}/api/admin/iddaa-odds-sync",
-        headers={"x-backup-secret": secret}, json={"events": events}, timeout=30,
+        headers={"x-backup-secret": secret}, json={"events": events, "fetched_at": time.time()}, timeout=30,
     )
     r.raise_for_status()
     d = r.json()
